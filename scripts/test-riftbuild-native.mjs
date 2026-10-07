@@ -16,13 +16,10 @@ const rappGenericAdapterPath = 'android/app/src/main/java/com/riftos/app/RiftRap
 const rappJsonAdapterPath = 'android/app/src/main/java/com/riftos/app/RiftRappJsonAdapter.kt';
 const rappQuickJsExecutorPath = 'android/app/src/main/java/com/riftos/app/RiftRappQuickJsExecutor.kt';
 const rappCapabilityBrokerPath = 'android/app/src/main/java/com/riftos/app/RiftRappCapabilityBroker.kt';
-const hostedProviderManifestPath = 'apps/riftbuild-hosted/riftapp.json';
-const hostedProviderRuntimePath = 'apps/riftbuild-hosted/runtime.js';
-const hostedProviderStatePath = 'apps/riftbuild-hosted/program.json';
 const rappAbsoluteViewPath = 'android/app/src/main/java/com/riftos/app/RiftRappAbsoluteView.kt';
 const rappHostPath = 'android/app/src/main/java/com/riftos/app/RiftRappHost.kt';
 const rappManagerPath = 'android/app/src/main/java/com/riftos/app/RiftRappManager.kt';
-for (const file of [nativeBuildPath, nativeToolchainPath, nativeAppPath, signerPath, installerPath, appAbiPath, rappAdapterPath, rappWs15AdapterPath, rappGenericAdapterPath, rappJsonAdapterPath, rappQuickJsExecutorPath, rappCapabilityBrokerPath, rappAbsoluteViewPath, rappHostPath, rappManagerPath, hostedProviderManifestPath, hostedProviderRuntimePath, hostedProviderStatePath]) {
+for (const file of [nativeBuildPath, nativeToolchainPath, nativeAppPath, signerPath, installerPath, appAbiPath, rappAdapterPath, rappWs15AdapterPath, rappGenericAdapterPath, rappJsonAdapterPath, rappQuickJsExecutorPath, rappCapabilityBrokerPath, rappAbsoluteViewPath, rappHostPath, rappManagerPath]) {
   assert.ok(exists(file), 'RiftBuild source owner is missing: ' + file);
 }
 
@@ -38,9 +35,6 @@ const rappGenericAdapter = read(rappGenericAdapterPath);
 const rappJsonAdapter = read(rappJsonAdapterPath);
 const rappQuickJsExecutor = read(rappQuickJsExecutorPath);
 const rappCapabilityBroker = read(rappCapabilityBrokerPath);
-const hostedProviderManifest = read(hostedProviderManifestPath);
-const hostedProviderRuntime = read(hostedProviderRuntimePath);
-const hostedProviderState = read(hostedProviderStatePath);
 const rappAbsoluteView = read(rappAbsoluteViewPath);
 const rappHost = read(rappHostPath);
 const rappManager = read(rappManagerPath);
@@ -322,47 +316,6 @@ assert.match(mainActivity, /rappHost = RiftRappHost\(this, nativeDesktop, ::popu
 assert.match(mainActivity, /rappHost\.openFromLauncher\(id\)/);
 assert.match(mainActivity, /rappHost\.onResume\(\)/);
 assert.match(mainActivity, /rappHost\.onPause\(\)/);
-
-for (const required of [
-  '"id": "riftbuild-hosted"',
-  '"adapter": "json-generic-v1"',
-  '"presentation": "json-frame-v1"',
-  '"fs.read"',
-  '"fs.write"',
-  '"build.local"',
-  '"signing.identity"',
-]) assert.ok(hostedProviderManifest.includes(required), 'hosted provider manifest contract missing: ' + required);
-assert.doesNotMatch(hostedProviderManifest, /network|clipboard/, 'hosted provider must request only the generic capabilities it needs');
-for (const required of [
-  'riftbuild-hosted-state/1',
-  'function compileStart(',
-  'build.local',
-  'rift-hosted.json',
-  'function preflight(',
-  'function packStart(',
-  'function signStart(',
-  'function verifyStart(',
-  '0x04034b50',
-  '0x02014b50',
-  '0x06054b50',
-  'APK Sig Block 42',
-  '0x7109871a',
-  '0x0103',
-  '0xa5',
-  '0x5a',
-  'signSha256RsaPkcs1',
-  'verifySha256RsaPkcs1',
-  'certificateDerBase64',
-  'publicKeyDerBase64',
-  'SHA-256 self-test failed',
-]) assert.ok(hostedProviderRuntime.includes(required), 'hosted provider runtime contract missing: ' + required);
-assert.match(hostedProviderState, /riftbuild-hosted-state\/1/);
-assert.doesNotMatch(hostedProviderRuntime, /RiftApkV2Signer|RiftBuildLocalExecutor|PackageInstaller|AndroidKeyStore/, 'hosted provider must use generic host effects rather than embedded RiftOS implementation classes');
-assert.doesNotMatch(hostedProviderRuntime, /build\/riftbuild\/prepared|kotlin-compile/, 'hosted provider must not fall back to the old prepared tree or shell compile command');
-assert.doesNotMatch(hostedProviderRuntime, /Project changed/, 'project-path edits must not append one log row per keystroke');
-assert.match(hostedProviderRuntime, /projectDraft/);
-assert.match(hostedProviderRuntime, /SET PROJECT/);
-assert.match(hostedProviderRuntime, /ID\.setProject/);
 
 for (const required of [
   'class RiftApkV2Signer',

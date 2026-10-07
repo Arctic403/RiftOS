@@ -6,6 +6,16 @@
 
 This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
 
+## Patch 10.68 — RiftBuild Hosted source split
+
+The full external Rift++ editor chain passed on-device: Hosted Compile produced a fresh run-specific prepared tree, Hosted Preflight/Pack/Sign/Verify passed, Android PackageInstaller installed the signed editor APK, and the newly installed editor's background Binder workshop passed `compile`, `preflight`, and `build-debug` with a signed-verified debug APK.
+
+With that promotion gate satisfied, the device-proven `riftbuild-hosted` provider source moved out of the RiftOS repository into the sibling `RiftBuild-Hosted` workspace. The copied provider was hash-verified before removal, and its QuickJS smoke passed from the new external location. Provider-specific manifest/runtime contract assertions moved with it into `contract.mjs`.
+
+RiftOS no longer contains or validates an embedded `apps/riftbuild-hosted` provider. RiftOS tests and Riftos-builder now validate only the reusable platform boundary: generic RAPP hosting, bounded filesystem effects, bounded `build.local` compiler/DEX execution, generic signing identity, and installation/platform infrastructure. Historical provider mentions in patch history remain historical only.
+
+This split does not yet remove the old embedded compatibility compiler/package/sign commands. Those are now explicit purge debt for the next cleanup commit so repository ownership changes and legacy semantic removal remain separately reversible.
+
 ## Patch 10.67 — Hosted Compile + fresh prepared-tree ownership
 
 This migration stage moves compile orchestration and prepared-tree production into `riftbuild-hosted` instead of asking the RAPP to invoke the old `riftbuild kotlin-compile` command or consume `build/riftbuild/prepared`. The generic RAPP boundary now implements permissioned `build.local` operations for managed-toolchain status, registered compiler execution, and JVM class-to-DEX conversion. There is no shell escape and the provider still cannot call embedded pack/sign/install implementation classes. Managed compiler sources/outputs remain project-confined, requested classpaths are restricted to the selected project or RiftOS managed-toolchain root, and `build.local` alone receives a bounded 180-second watchdog because real on-device compilation exceeds the ordinary 60-second capability window.

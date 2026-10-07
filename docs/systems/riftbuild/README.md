@@ -29,7 +29,7 @@ Gradle/NDK compatibility is an adapter above that core, not the authority bounda
 
 ## Hosted build-provider migration boundary
 
-RiftOS is moving build semantics out of the base APK and behind the language-neutral RAPP host. The target boundary is: **RiftOS provides bounded platform primitives; the hosted editor/build runtime owns compile, preflight, package construction, signing-layout semantics and artifact verification.** A hosted provider may be written in Rift++, Codynex, or another runtime as long as its adapter speaks the generic RiftOS app ABI.
+RiftOS has moved active build orchestration out of the base APK and behind the language-neutral RAPP host. The proven boundary is: **RiftOS provides bounded platform primitives; an external hosted build runtime owns compile, preflight, package construction, signing-layout semantics and artifact verification.** A hosted provider may be written in Rift++, Codynex, or another runtime as long as its adapter speaks the generic RiftOS app ABI. The device-proven RiftBuild Hosted provider now lives outside this repository in the sibling `RiftBuild-Hosted` workspace; RiftOS does not own that provider's source.
 
 Current migration infrastructure in the generic host:
 
@@ -42,7 +42,7 @@ Current migration infrastructure in the generic host:
 - `signing.identity/signSha256RsaPkcs1` exposes only the RSA/SHA-256 signing primitive. The hosted provider, not RiftOS, must construct and verify APK Signature Scheme structures;
 - the signing primitive intentionally reuses the existing `riftbuild-apk-v2-rsa-v1` Android Keystore alias so the migration does not silently change the local signing identity.
 
-This is a **migration layer, not retirement proof yet**. Embedded compiler/preparation orchestration, `RiftBuildLocalExecutor.pack`, `RiftApkV2Signer`, embedded preflight/verify logic, and the existing compatibility build commands remain active until the hosted provider has passed the complete external **Compile → Preflight → Pack → Sign → Verify → Install/device-behavior** chain. Only after that proof may obsolete compiler/preparation/package/signing semantics and their old validation/docs be purged. Generic execution primitives required by the external provider, plus Android installation infrastructure, remain platform capabilities rather than build-language authority.
+The full external **Compile → Preflight → Pack → Sign → Verify → Install → background editor bridge/project-build** chain is now device-proven. The provider source has been split out of RiftOS. Embedded compiler/preparation/package/signing commands and their old compatibility validation remain temporarily only as purge debt for the next cleanup commit; they are no longer the promoted build authority. Generic execution primitives required by external providers, plus Android installation infrastructure, remain platform capabilities rather than build-language authority.
 
 The native-buffer service used by `RiftRappHost` is a generic runtime execution primitive even though its current class name is `RiftNativeBufferCompilerService`. Final cleanup must preserve that execution capability (preferably under a neutral runtime/execution name) while removing compiler-specific ownership. `RiftBuildInstaller`/Android `PackageInstaller` is platform installation infrastructure and is not part of the compiler/package/signing semantics targeted for retirement.
 
