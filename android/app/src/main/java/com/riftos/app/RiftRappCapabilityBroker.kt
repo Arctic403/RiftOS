@@ -61,6 +61,8 @@ class RiftRappCapabilityBroker(
             256_000
         private const val OPERATION_TIMEOUT_MS =
             60_000L
+        private const val BUILD_OPERATION_TIMEOUT_MS =
+            180_000L
 
         private val NO_PROMPT_CAPABILITIES =
             setOf(
@@ -83,6 +85,10 @@ class RiftRappCapabilityBroker(
                 mkdirs()
             }
             .canonicalFile
+
+    private val buildExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        RiftBuildLocalExecutor(activity.applicationContext)
+    }
 
     private val executor =
         Executors.newSingleThreadExecutor { runnable ->
@@ -280,7 +286,11 @@ class RiftRappCapabilityBroker(
             executor = executor,
             watchdog = watchdog,
             timeoutMs =
-                OPERATION_TIMEOUT_MS,
+                if (effect.capability == RiftAppAbi.Capability.BUILD_LOCAL) {
+                    BUILD_OPERATION_TIMEOUT_MS
+                } else {
+                    OPERATION_TIMEOUT_MS
+                },
             timeoutValue = {
                 Result(
                     ok = false,
@@ -574,8 +584,12 @@ class RiftRappCapabilityBroker(
                         )
                 }
 
-            RiftAppAbi.Capability.NETWORK,
             RiftAppAbi.Capability.BUILD_LOCAL ->
+                executeBuildLocal(
+                    effect
+                )
+
+            RiftAppAbi.Capability.NETWORK ->
                 unsupported(
                     effect
                 )
@@ -585,6 +599,111 @@ class RiftRappCapabilityBroker(
                     effect
                 )
         }
+
+    private fun executeBuildLocal(
+        effect: RiftAppAbi.HostEffect
+    ): Result {
+        val request =
+            if (effect.text.isBlank()) {
+                JSONObject()
+            } else {
+                JSONObject(effect.text)
+            }
+
+        val value =
+            when (effect.operation) {
+                "toolchainStatus" ->
+                    buildExecutor
+                        .jvmToolchainStatus()
+
+                "compilerRun" -> {
+                    val project =
+                        request
+                            .getString("project")
+                            .trim()
+                    val compilerId =
+                        request
+                            .getString("compilerId")
+                            .trim()
+                    val compilerRequest =
+                        request
+                            .getJSONObject("request")
+
+                    require(project.isNotBlank()) {
+                        "build.local compilerRun requires project"
+                    }
+                    require(
+                        compilerId.matches(
+                            Regex("^[A-Za-z0-9._+-]{1,80}$")
+                        )
+                    ) {
+                        "build.local compiler id is invalid"
+                    }
+
+                    buildExecutor.compilerRunInline(
+                        project,
+                        compilerId,
+                        compilerRequest
+                    )
+                }
+
+                "jvmDex" -> {
+                    val project =
+                        request
+                            .getString("project")
+                            .trim()
+                    val classesDir =
+                        request
+                            .getString("classesDir")
+                            .trim()
+                    val outputDir =
+                        request
+                            .getString("outputDir")
+                            .trim()
+                    val minSdk =
+                        request.optInt(
+                            "minSdk",
+                            26
+                        )
+
+                    require(project.isNotBlank()) {
+                        "build.local jvmDex requires project"
+                    }
+
+                    buildExecutor.dexJvmClasses(
+                        project,
+                        classesDir,
+                        outputDir,
+                        minSdk
+                    )
+                }
+
+                else ->
+                    return unsupported(
+                        effect
+                    )
+            }
+
+        val encoded =
+            value
+                .toString()
+                .toByteArray(
+                    Charsets.UTF_8
+                )
+        require(
+            encoded.size <=
+                MAX_TEXT_BYTES
+        ) {
+            "build.local response exceeds 256 KiB"
+        }
+
+        return Result(
+            ok = true,
+            token = effect.token,
+            text =
+                value.toString()
+        )
+    }
 
     private fun unsupported(
         effect: RiftAppAbi.HostEffect

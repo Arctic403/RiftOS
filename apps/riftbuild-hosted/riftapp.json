@@ -9,6 +9,7 @@
   "permissions": [
     "fs.read",
     "fs.write",
+    "build.local",
     "signing.identity",
     "window.title"
   ],

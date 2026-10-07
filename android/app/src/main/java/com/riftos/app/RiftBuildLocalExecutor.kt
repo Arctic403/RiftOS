@@ -298,6 +298,48 @@ class RiftBuildLocalExecutor(context: Context) {
             .put("request", projectDisplay(ref, requestFile))
     }
 
+    fun compilerRunInline(
+        project: String,
+        compilerId: String,
+        request: JSONObject,
+        cwd: String = "/D:/Workspace"
+    ): JSONObject {
+        val ref = resolveProject(project, cwd)
+        require(ref.file.isDirectory) {
+            "Build project is not a directory: " + ref.display
+        }
+        return runManagedCompiler(
+            ref,
+            compilerId,
+            request
+        )
+    }
+
+    fun jvmToolchainStatus(): JSONObject =
+        kotlinCompiler.status()
+
+    fun dexJvmClasses(
+        project: String,
+        classesDir: String,
+        outputDir: String,
+        minSdk: Int,
+        cwd: String = "/D:/Workspace"
+    ): JSONObject {
+        val ref = resolveProject(project, cwd)
+        require(ref.file.isDirectory) {
+            "Build project is not a directory: " + ref.display
+        }
+        return kotlinCompiler.dexJvmClasses(
+            ref.file,
+            classesDir,
+            outputDir,
+            minSdk
+        ).put(
+            "project",
+            ref.display
+        )
+    }
+
     private fun runManagedCompiler(
         ref: ProjectRef,
         compilerId: String,
@@ -450,6 +492,36 @@ class RiftBuildLocalExecutor(context: Context) {
                 total += file.length()
                 require(total <= 8L * 1024L * 1024L) {
                     "Managed compiler total source bytes exceed 8 MiB"
+                }
+            }
+        }
+
+        request.optJSONArray("classpath")?.let { classpath ->
+            require(classpath.length() in 0..32) {
+                "Managed compiler classpath count is out of bounds"
+            }
+            val toolchainRoot =
+                File(riftRoot, "system/toolchains")
+                    .canonicalFile
+            for (index in 0 until classpath.length()) {
+                val raw =
+                    classpath
+                        .getString(index)
+                        .trim()
+                require(raw.isNotBlank()) {
+                    "Managed compiler classpath entry is blank"
+                }
+                val file =
+                    File(raw)
+                        .canonicalFile
+                require(
+                    confinedTo(ref.file, file) ||
+                        confinedTo(toolchainRoot, file)
+                ) {
+                    "Managed compiler classpath escaped project/toolchains"
+                }
+                require(file.isFile) {
+                    "Managed compiler classpath entry is missing"
                 }
             }
         }

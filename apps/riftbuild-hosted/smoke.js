@@ -5,7 +5,8 @@
     event:{kind:0,targetId:0,arg0:0,arg1:0,arg2:0,arg3:0,text:"",bytesBase64:""}
   })));
   check(boot.schema==="riftos-app-output-json/1","boot schema");
-  check(boot.frame&&Array.isArray(boot.frame.nodes)&&boot.frame.nodes.length>=12,"boot frame");
+  check(boot.frame&&Array.isArray(boot.frame.nodes)&&boot.frame.nodes.length>=13,"boot frame");
+  check(boot.frame.nodes.some(n=>n.id===119&&n.text==="Compile"),"compile control");
   check(typeof boot.stateBase64==="string"&&boot.stateBase64.length>0,"boot state");
 
   const edited=JSON.parse(globalThis.riftRappMain(JSON.stringify({
@@ -28,8 +29,16 @@
     stateBase64:confirmed.stateBase64,
     event:{kind:1,targetId:120,arg0:0,arg1:0,arg2:0,arg3:0,text:"",bytesBase64:""}
   })));
-  check(pre.effect&&pre.effect.capability==="fs.read","preflight capability");
-  check(pre.effect.operation==="list","preflight operation");
-  check(pre.effect.text==="/D:/Workspace/HostedProof/build/riftbuild/prepared","preflight path");
-  print("ok - RiftBuild Hosted RAPP boot/state/preflight protocol");
+  const preStatus=pre.frame.nodes.find(n=>n.id===3);
+  check(!pre.effect,"preflight must not bypass compile");
+  check(preStatus&&preStatus.text.includes("run successful Compile first"),"preflight requires compile");
+
+  const compile=JSON.parse(globalThis.riftRappMain(JSON.stringify({
+    stateBase64:confirmed.stateBase64,
+    event:{kind:1,targetId:119,arg0:0,arg1:0,arg2:0,arg3:0,text:"",bytesBase64:""}
+  })));
+  check(compile.effect&&compile.effect.capability==="fs.read","compile recipe capability");
+  check(compile.effect.operation==="readText","compile recipe operation");
+  check(compile.effect.text==="/D:/Workspace/HostedProof/rift-hosted.json","compile recipe path");
+  print("ok - RiftBuild Hosted RAPP boot/state/compile-gate protocol");
 })();

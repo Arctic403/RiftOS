@@ -271,6 +271,11 @@ assert.match(rappCapabilityBroker, /riftos-fs-bytes-read\/1/);
 assert.match(rappCapabilityBroker, /riftos-fs-bytes-write\/1/);
 assert.match(rappCapabilityBroker, /MAX_BINARY_CHUNK_BYTES\s*=\s*256 \* 1024/);
 assert.match(rappCapabilityBroker, /MAX_BINARY_FILE_BYTES\s*=\s*256L \* 1024L \* 1024L/);
+assert.match(rappCapabilityBroker, /Capability\.BUILD_LOCAL/);
+assert.match(rappCapabilityBroker, /"toolchainStatus"/);
+assert.match(rappCapabilityBroker, /"compilerRun"/);
+assert.match(rappCapabilityBroker, /"jvmDex"/);
+assert.match(rappCapabilityBroker, /BUILD_OPERATION_TIMEOUT_MS\s*=\s*180_000L/);
 assert.match(appAbi, /SIGNING_IDENTITY\s*=\s*"signing\.identity"/);
 assert.match(rappCapabilityBroker, /Capability\.SIGNING_IDENTITY/);
 assert.match(rappCapabilityBroker, /"signSha256RsaPkcs1"/);
@@ -324,11 +329,15 @@ for (const required of [
   '"presentation": "json-frame-v1"',
   '"fs.read"',
   '"fs.write"',
+  '"build.local"',
   '"signing.identity"',
 ]) assert.ok(hostedProviderManifest.includes(required), 'hosted provider manifest contract missing: ' + required);
-assert.doesNotMatch(hostedProviderManifest, /build\.local|network|clipboard/, 'hosted provider must request only the generic capabilities it needs');
+assert.doesNotMatch(hostedProviderManifest, /network|clipboard/, 'hosted provider must request only the generic capabilities it needs');
 for (const required of [
   'riftbuild-hosted-state/1',
+  'function compileStart(',
+  'build.local',
+  'rift-hosted.json',
   'function preflight(',
   'function packStart(',
   'function signStart(',
@@ -349,6 +358,7 @@ for (const required of [
 ]) assert.ok(hostedProviderRuntime.includes(required), 'hosted provider runtime contract missing: ' + required);
 assert.match(hostedProviderState, /riftbuild-hosted-state\/1/);
 assert.doesNotMatch(hostedProviderRuntime, /RiftApkV2Signer|RiftBuildLocalExecutor|PackageInstaller|AndroidKeyStore/, 'hosted provider must use generic host effects rather than embedded RiftOS implementation classes');
+assert.doesNotMatch(hostedProviderRuntime, /build\/riftbuild\/prepared|kotlin-compile/, 'hosted provider must not fall back to the old prepared tree or shell compile command');
 assert.doesNotMatch(hostedProviderRuntime, /Project changed/, 'project-path edits must not append one log row per keystroke');
 assert.match(hostedProviderRuntime, /projectDraft/);
 assert.match(hostedProviderRuntime, /SET PROJECT/);

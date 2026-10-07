@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 const A=1,T=7,H=13,R=1,TX=3,IN=4,B=5,F=1;
-const ID={project:100,setProject:101,a32:110,a64:111,uni:112,pre:120,pack:121,sign:122,verify:123,reset:124};
+const ID={project:100,setProject:101,a32:110,a64:111,uni:112,compile:119,pre:120,pack:121,sign:122,verify:123,reset:124};
 const LIM={io:262144,apk:50331648,entries:128,name:4096};
 const B64='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
@@ -11,17 +11,17 @@ function text(b){let s='';for(let i=0;i<b.length;){const a=b[i++]&255;let c;if(a
 function enc(b){if(!b||!b.length)return '';let s='';for(let i=0;i<b.length;i+=3){const a=b[i]&255,c=i+1<b.length?b[i+1]&255:0,d=i+2<b.length?b[i+2]&255:0,n=(a<<16)|(c<<8)|d;s+=B64[(n>>18)&63]+B64[(n>>12)&63]+(i+1<b.length?B64[(n>>6)&63]:'=')+(i+2<b.length?B64[n&63]:'=');}return s;}
 function dec(s){if(!s)return [];s=String(s).replace(/\s+/g,'');if(s.length%4)throw Error('invalid base64');const o=[];for(let i=0;i<s.length;i+=4){const a=B64.indexOf(s[i]),b=B64.indexOf(s[i+1]),c=s[i+2]==='='?0:B64.indexOf(s[i+2]),d=s[i+3]==='='?0:B64.indexOf(s[i+3]);if(a<0||b<0||c<0||d<0)throw Error('invalid base64');const n=(a<<18)|(b<<12)|(c<<6)|d;o.push((n>>16)&255);if(s[i+2]!=='=')o.push((n>>8)&255);if(s[i+3]!=='=')o.push(n&255);}return o;}
 function u16(b,o){return (b[o]|(b[o+1]<<8))>>>0;} function u32(b,o){return (b[o]|(b[o+1]<<8)|(b[o+2]<<16)|(b[o+3]<<24))>>>0;}
-function fresh(){return {schema:'riftbuild-hosted-state/1',project:'/D:/Workspace',projectDraft:'/D:/Workspace',target:'arm32',status:'Ready',phase:'idle',requestId:1,pending:null,log:['Hosted provider loaded'],work:null,pack:null,sign:null,verify:null};}
+function fresh(){return {schema:'riftbuild-hosted-state/1',project:'/D:/Workspace',projectDraft:'/D:/Workspace',target:'arm32',status:'Ready',phase:'idle',requestId:1,pending:null,log:['Hosted provider loaded'],compile:null,work:null,pack:null,sign:null,verify:null};}
 function load(i){const b=dec(i.stateBase64||'');if(!b.length)return fresh();const s=JSON.parse(text(b));if(s.schema!=='riftbuild-hosted-state/1')throw Error('invalid provider state');s.log=Array.isArray(s.log)?s.log:[];s.requestId=Number.isInteger(s.requestId)&&s.requestId>0?s.requestId:1;s.project=String(s.project||'/D:/Workspace');s.projectDraft=typeof s.projectDraft==='string'?s.projectDraft:s.project;return s;}
 function log(s,m){s.log.push(String(m));if(s.log.length>8)s.log=s.log.slice(-8);}
 function n(k,id,t){return {kind:k,id,parentId:id===1?0:1,text:t||''};}
-function frame(s){const a=[n(R,1,''),n(TX,2,'RiftBuild Hosted · external RAPP provider'),n(IN,ID.project,s.projectDraft),n(B,ID.setProject,'SET PROJECT'),n(TX,4,'Active project: '+s.project),n(TX,3,'Target: '+s.target+' · '+s.status),n(B,ID.a32,'ARM32'),n(B,ID.a64,'ARM64'),n(B,ID.uni,'Universal'),n(B,ID.pre,'Preflight'),n(B,ID.pack,'Pack APK'),n(B,ID.sign,'Sign APK'),n(B,ID.verify,'Verify APK'),n(B,ID.reset,'Reset')];let x=200;for(const l of s.log.slice(-6))a.push(n(TX,x++,l));return {layout:F,nodes:a};}
+function frame(s){const a=[n(R,1,''),n(TX,2,'RiftBuild Hosted · external RAPP provider'),n(IN,ID.project,s.projectDraft),n(B,ID.setProject,'SET PROJECT'),n(TX,4,'Active project: '+s.project),n(TX,3,'Target: '+s.target+' · '+s.status),n(B,ID.a32,'ARM32'),n(B,ID.a64,'ARM64'),n(B,ID.uni,'Universal'),n(B,ID.compile,'Compile'),n(B,ID.pre,'Preflight'),n(B,ID.pack,'Pack APK'),n(B,ID.sign,'Sign APK'),n(B,ID.verify,'Verify APK'),n(B,ID.reset,'Reset')];let x=200;for(const l of s.log.slice(-6))a.push(n(TX,x++,l));return {layout:F,nodes:a};}
 function out(s,e){const o={schema:'riftos-app-output-json/1',stateBase64:enc(utf8(JSON.stringify(s))),frame:frame(s)};if(e)o.effect=e;return JSON.stringify(o);}
 function fail(s,e){s.pending=null;s.phase='error';s.status='Error: '+String(e&&e.message?e.message:e);log(s,s.status);return out(s);}
 function req(s,cap,op,txt,bytes,p){const id=s.requestId++;s.pending=Object.assign({requestId:id},p||{});return out(s,{requestId:id,capability:cap,operation:op,token:0,text:txt||'',bytesBase64:enc(bytes||[])});}
 function rows(e){const v=JSON.parse(text(dec(e.bytesBase64||'')));if(!Array.isArray(v))throw Error('filesystem list returned non-array');return v;}
 function join(a,b){return String(a).replace(/\/+$/,'')+'/'+String(b).replace(/^\/+/,'');}
-function root(s){return join(s.project,'build/riftbuild/prepared');}
+function root(s){if(!s.compile||!s.compile.complete||!s.compile.preparedRoot)throw Error('run successful Compile first');return s.compile.preparedRoot;}
 function safeName(x){return /^[A-Za-z0-9._-]+$/.test(x||'')&&x!=='.'&&x!=='..';}
 function safeZip(x){if(!x||x.length>1024||x[0]==='/'||x.indexOf('\\')>=0)return false;for(const p of x.split('/'))if(!p||p==='.'||p==='..'||utf8(p).length>LIM.name)return false;return utf8(x).length<=65535;}
 function abis(t){if(t==='arm32')return ['armeabi-v7a'];if(t==='arm64')return ['arm64-v8a'];if(t==='universal')return ['arm64-v8a','armeabi-v7a'];throw Error('unsupported target');}
@@ -37,7 +37,7 @@ function preAsset(s){if(s.work.assets.length){const a=s.work.assets[0];return re
 function preAssetDone(s,e,p){s.work.assets.shift();for(const r of rows(e)){const rel=p.rel?p.rel+'/'+r.name:String(r.name||'');if(!safeZip(rel))throw Error('unsafe asset path: '+rel);if(r.kind==='directory')s.work.assets.push({path:r.path,rel});else if(r.kind==='file')s.work.entries.push({zip:'assets/'+rel,src:r.path,size:Number(r.size||0)});else throw Error('unknown asset type');}return preAsset(s);}
 function preFinish(s){s.work.entries.sort(cmp);if(!s.work.entries.length||s.work.entries.length>LIM.entries)throw Error('APK entry-count limit exceeded');let total=0;const seen=new Set();for(const e of s.work.entries){if(!safeZip(e.zip))throw Error('unsafe APK entry: '+e.zip);if(seen.has(e.zip))throw Error('duplicate APK entry: '+e.zip);seen.add(e.zip);if(!Number.isSafeInteger(e.size)||e.size<0)throw Error('invalid APK entry size');total+=e.size;if(total>LIM.apk)throw Error('prepared APK exceeds hosted proof limit');}s.work.total=total;s.phase='preflight-ready';s.status='Preflight ready · '+s.work.entries.length+' entries · '+total+' bytes';s.pending=null;log(s,s.status);return out(s);}
 
-function invalidate(s,m){s.work=s.pack=s.sign=s.verify=null;s.pending=null;s.phase='idle';s.status='Ready';if(m)log(s,m);}
+function invalidate(s,m){s.compile=s.work=s.pack=s.sign=s.verify=null;s.pending=null;s.phase='idle';s.status='Ready';if(m)log(s,m);}
 function action(s,id){if(id===ID.a32||id===ID.a64||id===ID.uni){s.target=id===ID.a32?'arm32':id===ID.a64?'arm64':'universal';invalidate(s,'Target changed to '+s.target);return out(s);}if(id===ID.pre)return preflight(s);if(id===ID.reset){const p=s.project,t=s.target;s=fresh();s.project=p;s.target=t;return out(s);}if(id===ID.pack||id===ID.sign||id===ID.verify)throw Error('provider phase not installed yet');return out(s);}
 function effect(s,e){const p=s.pending;if(!p||p.requestId!==e.targetId)throw Error('unexpected host-effect result');if(e.arg0!==1){s.pending=null;throw Error(e.text||'host effect failed');}s.pending=null;if(p.k==='pre-root')return preRoot(s,e);if(p.k==='pre-manifest')return preManifest(s,e,p);if(p.k==='pre-abi')return preAbiDone(s,e,p);if(p.k==='pre-assets')return preAssetDone(s,e,p);throw Error('unknown continuation '+p.k);}
 function main(j){const i=JSON.parse(j),s=load(i),e=i.event||{};try{if(e.kind===T&&e.targetId===ID.project){s.projectDraft=String(e.text||'');return out(s);}if(e.kind===A)return action(s,e.targetId);if(e.kind===H)return effect(s,e);return out(s);}catch(x){return fail(s,x);}}
@@ -265,14 +265,173 @@ function verifyFinish(s,e){
   s.phase='verified';s.status='Verified · hosted APK v2 digest + RSA signature PASS';s.pending=null;log(s,s.status);return out(s);
 }
 
+
+function safeRelPath(x){
+  x=String(x||'');
+  if(!x||x[0]==='/'||x.indexOf('\\')>=0)return false;
+  const p=x.split('/');
+  for(const q of p)if(!q||q==='.'||q==='..')return false;
+  return true;
+}
+function hexBytes(b){let s='';for(const x of b)s+=(x<16?'0':'')+(x&255).toString(16);return s;}
+function jsonBytes(e,label){const b=dec(e.bytesBase64||'');if(!b.length)throw Error(label+' is empty');return JSON.parse(text(b));}
+function compileStart(s){
+  if(s.target!=='arm32')throw Error('current hosted editor preparation proof supports arm32 only');
+  invalidate(s);
+  const run=Date.now().toString(36)+'-'+s.requestId;
+  const base='build/riftbuild/hosted-'+run;
+  s.compile={
+    run:run,complete:false,recipe:null,manifest:null,
+    classesRel:base+'-classes',dexRel:base+'-dex',preparedRel:base+'-prepared',
+    preparedRoot:join(s.project,base+'-prepared'),
+    queue:[],walk:[],copy:null,stagedFiles:0,stagedBytes:0
+  };
+  s.phase='compiling';s.status='Compile: reading hosted project recipe';log(s,s.status);
+  return req(s,'fs.read','readText',join(s.project,'rift-hosted.json'),[],{k:'compile-recipe'});
+}
+function compileRecipeDone(s,e){
+  const r=jsonBytes(e,'rift-hosted.json');
+  if(r.schema!=='riftbuild-hosted-project/1')throw Error('unsupported hosted project recipe');
+  if(!safeRelPath(r.compileManifest))throw Error('invalid hosted compile manifest path');
+  const p=r.prepared||{},m=p.manifest||{};
+  if(!safeRelPath(m.source)||!/^[0-9a-f]{64}$/.test(String(m.sha256||'')))throw Error('invalid hosted manifest seed');
+  if(!safeRelPath(p.assetsDir))throw Error('invalid hosted assets directory');
+  const libs=Array.isArray(p.nativeLibs)?p.nativeLibs:[];
+  if(libs.length>16)throw Error('hosted native library count exceeds limit');
+  for(const x of libs){
+    if(!safeRelPath(x.source)||!safeZip(String(x.target||''))||String(x.target||'').indexOf('lib/')!==0)throw Error('invalid hosted native library mapping');
+    if(!/^[0-9a-f]{64}$/.test(String(x.sha256||'')))throw Error('invalid hosted native library hash');
+    if(!Array.isArray(x.targets)||!x.targets.length)throw Error('hosted native library targets missing');
+  }
+  s.compile.recipe={compileManifest:r.compileManifest,prepared:{manifest:m,assetsDir:p.assetsDir,nativeLibs:libs}};
+  s.status='Compile: reading Kotlin project manifest';
+  return req(s,'fs.read','readText',join(s.project,r.compileManifest),[],{k:'compile-manifest'});
+}
+function compileManifestDone(s,e){
+  const m=jsonBytes(e,'Kotlin project manifest');
+  if(m.schema!=='riftbuild-kotlin-project/1')throw Error('unsupported Kotlin project manifest');
+  const compiler=String(m.compiler||'kotlin-android'),module=String(m.module||'rift-kotlin');
+  const minSdk=Number(m.minSdk||26),jvmTarget=String(m.jvmTarget||'1.8'),sources=m.sources;
+  if(!/^[A-Za-z0-9._+-]{1,80}$/.test(compiler)||!/^[A-Za-z0-9._+-]{1,80}$/.test(module))throw Error('invalid hosted compiler/module');
+  if(!Number.isInteger(minSdk)||minSdk<26||minSdk>36)throw Error('hosted minSdk out of bounds');
+  if(['1.8','11','17'].indexOf(jvmTarget)<0)throw Error('unsupported hosted JVM target');
+  if(!Array.isArray(sources)||sources.length<1||sources.length>64)throw Error('hosted Kotlin source count out of bounds');
+  for(const x of sources)if(!safeRelPath(x)||!String(x).endsWith('.kt'))throw Error('invalid hosted Kotlin source path');
+  s.compile.manifest={compiler:compiler,module:module,minSdk:minSdk,jvmTarget:jvmTarget,sources:sources.slice()};
+  s.status='Compile: resolving managed JVM toolchain';
+  return req(s,'build.local','toolchainStatus','',[],{k:'compile-toolchain'});
+}
+function compileToolchainDone(s,e){
+  const t=JSON.parse(e.text||'{}');
+  if(t.schema!=='riftbuild-kotlin-toolchain-status/2'||t.ready!==true)throw Error('managed JVM toolchain is not ready');
+  const aj=t.androidJar&&t.androidJar.path,ks=t.kotlinStdlib&&t.kotlinStdlib.path;
+  if(!aj||!ks)throw Error('managed JVM toolchain paths missing');
+  const m=s.compile.manifest;
+  const q={
+    schema:'riftbuild-compiler-json/1',language:'kotlin',sources:m.sources,
+    outputDir:s.compile.classesRel,classpath:[aj,ks],
+    options:{moduleName:m.module,jvmTarget:m.jvmTarget,minSdk:m.minSdk,noJdk:true,noStdlib:true,noReflect:true}
+  };
+  s.status='Compile: running registered '+m.compiler;
+  return req(s,'build.local','compilerRun',JSON.stringify({project:s.project,compilerId:m.compiler,request:q}),[],{k:'compile-run'});
+}
+function compileRunDone(s,e){
+  const r=JSON.parse(e.text||'{}');
+  if(r.state!=='success'||!r.response||r.response.state!=='success')throw Error('managed compiler did not report success');
+  s.compile.compilerReceipt={engine:r.engine||'',compilerId:r.compilerId||s.compile.manifest.compiler};
+  s.status='Compile: converting JVM classes to DEX';
+  return req(s,'build.local','jvmDex',JSON.stringify({
+    project:s.project,classesDir:s.compile.classesRel,outputDir:s.compile.dexRel,minSdk:s.compile.manifest.minSdk
+  }),[],{k:'compile-dex'});
+}
+function compileDexDone(s,e){
+  const r=JSON.parse(e.text||'{}');
+  if(r.schema!=='rift-jvm-dex/1'||r.state!=='dexed'||!Array.isArray(r.dexFiles)||!r.dexFiles.length)throw Error('JVM DEX conversion failed');
+  const q=s.compile.queue,recipe=s.compile.recipe.prepared;
+  q.push({src:join(s.project,recipe.manifest.source),dst:join(s.compile.preparedRoot,'AndroidManifest.xml'),sha:String(recipe.manifest.sha256)});
+  for(const d of r.dexFiles){
+    const name=String(d.name||'');
+    if(!/^classes(?:[2-9][0-9]*)?\.dex$/.test(name))throw Error('unsafe hosted DEX output');
+    q.push({src:join(s.project,s.compile.dexRel+'/'+name),dst:join(s.compile.preparedRoot,name),sha:null});
+  }
+  let selected=0;
+  for(const x of recipe.nativeLibs){
+    if(x.targets.indexOf(s.target)<0)continue;
+    q.push({src:join(s.project,x.source),dst:join(s.compile.preparedRoot,x.target),sha:String(x.sha256)});
+    selected++;
+  }
+  if(recipe.nativeLibs.length&&!selected)throw Error('hosted recipe has no native libraries for '+s.target);
+  s.compile.walk=[{src:join(s.project,recipe.assetsDir),rel:''}];
+  s.compile.dexFiles=r.dexFiles.map(x=>String(x.name||''));
+  s.status='Compile: materializing fresh prepared tree';
+  return stageNext(s);
+}
+function stageNext(s){
+  const c=s.compile;
+  if(c.queue.length){
+    const x=c.queue.shift();
+    c.copy={src:x.src,dst:x.dst,expected:x.sha||null,size:0,offset:0,sha:shNew()};
+    return req(s,'fs.read','stat',x.src,[],{k:'stage-stat'});
+  }
+  if(c.walk.length){
+    const x=c.walk.shift();
+    return req(s,'fs.read','list',x.src,[],{k:'stage-list',src:x.src,rel:x.rel});
+  }
+  c.complete=true;c.copy=null;s.phase='compiled';
+  s.status='Compiled + prepared · '+c.stagedFiles+' files · '+c.stagedBytes+' bytes';
+  s.pending=null;log(s,s.status);return out(s);
+}
+function stageListDone(s,e,p){
+  const a=rows(e);
+  for(const r of a){
+    const name=String(r.name||''),rel=p.rel?p.rel+'/'+name:name;
+    if(!safeZip(rel))throw Error('unsafe hosted asset path: '+rel);
+    if(r.kind==='directory')s.compile.walk.push({src:r.path,rel:rel});
+    else if(r.kind==='file')s.compile.queue.push({src:r.path,dst:join(s.compile.preparedRoot,'assets/'+rel),sha:null});
+    else throw Error('unknown hosted asset type');
+    if(s.compile.queue.length+s.compile.walk.length+s.compile.stagedFiles>LIM.entries)throw Error('hosted preparation entry-count limit exceeded');
+  }
+  return stageNext(s);
+}
+function stageStatDone(s,e){
+  const c=s.compile.copy,m=JSON.parse(e.text||'{}'),size=Number(m.size||0);
+  if(!Number.isSafeInteger(size)||size<0||size>LIM.apk)throw Error('hosted preparation source size invalid');
+  c.size=size;
+  if(size===0)return wr(s,c.dst,0,[],true,{k:'stage-write',len:0});
+  const len=Math.min(LIM.io,size);
+  return rd(s,c.src,0,len,{k:'stage-read',len:len});
+}
+function stageReadDone(s,e,p){
+  const c=s.compile.copy,b=dec(e.bytesBase64||'');
+  if(b.length!==p.len)throw Error('hosted preparation read length drift');
+  shAdd(c.sha,b);
+  return wr(s,c.dst,c.offset,b,c.offset===0,{k:'stage-write',len:b.length});
+}
+function stageWriteDone(s,p){
+  const c=s.compile.copy;
+  c.offset+=p.len;
+  if(c.offset<c.size){
+    const len=Math.min(LIM.io,c.size-c.offset);
+    return rd(s,c.src,c.offset,len,{k:'stage-read',len:len});
+  }
+  if(c.offset!==c.size)throw Error('hosted preparation write size drift');
+  if(c.expected&&hexBytes(shEnd(c.sha))!==c.expected)throw Error('hosted preparation pinned hash mismatch: '+c.src);
+  s.compile.stagedFiles++;s.compile.stagedBytes+=c.size;
+  if(s.compile.stagedBytes>LIM.apk)throw Error('hosted prepared payload exceeds proof limit');
+  s.compile.copy=null;
+  return stageNext(s);
+}
+
 function action(s,id){
   if(id===ID.setProject){const v=String(s.projectDraft||'').trim();if(!v)throw Error('project path is empty');s.projectDraft=v;if(v!==s.project){s.project=v;invalidate(s);log(s,'Project set');}return out(s);}
   if(id===ID.a32||id===ID.a64||id===ID.uni){s.target=id===ID.a32?'arm32':id===ID.a64?'arm64':'universal';invalidate(s,'Target changed to '+s.target);return out(s);}
-  if(id===ID.pre)return preflight(s);if(id===ID.pack)return packStart(s);if(id===ID.sign)return signStart(s);if(id===ID.verify)return verifyStart(s);
+  if(id===ID.compile)return compileStart(s);if(id===ID.pre)return preflight(s);if(id===ID.pack)return packStart(s);if(id===ID.sign)return signStart(s);if(id===ID.verify)return verifyStart(s);
   if(id===ID.reset){const p=s.project,t=s.target;s=fresh();s.project=p;s.projectDraft=p;s.target=t;return out(s);}return out(s);
 }
 function effect(s,e){
   const p=s.pending;if(!p||p.requestId!==e.targetId)throw Error('unexpected host-effect result');if(e.arg0!==1){s.pending=null;throw Error(e.text||'host effect failed');}s.pending=null;
+  if(p.k==='compile-recipe')return compileRecipeDone(s,e);if(p.k==='compile-manifest')return compileManifestDone(s,e);if(p.k==='compile-toolchain')return compileToolchainDone(s,e);if(p.k==='compile-run')return compileRunDone(s,e);if(p.k==='compile-dex')return compileDexDone(s,e);
+  if(p.k==='stage-list')return stageListDone(s,e,p);if(p.k==='stage-stat')return stageStatDone(s,e);if(p.k==='stage-read')return stageReadDone(s,e,p);if(p.k==='stage-write')return stageWriteDone(s,p);
   if(p.k==='pre-root')return preRoot(s,e);if(p.k==='pre-manifest')return preManifest(s,e,p);if(p.k==='pre-abi')return preAbiDone(s,e,p);if(p.k==='pre-assets')return preAssetDone(s,e,p);
   if(p.k==='pack-mkdir')return packMkdir(s);if(p.k==='pack-init')return packEntry(s);if(p.k==='pack-head')return packHead(s,p);if(p.k==='pack-read')return packReadDone(s,e,p);if(p.k==='pack-write')return packWriteDone(s,p);if(p.k==='pack-desc')return packDescDone(s,p);if(p.k==='pack-central')return packCentralDone(s,p);if(p.k==='pack-eocd')return packFinish(s,p);
   if(p.k==='digest-read')return digestReadDone(s,e,p);if(p.k==='sign-stat')return signStat(s,e);if(p.k==='sign-eocd')return signEocd(s,e);if(p.k==='sign-describe')return signDescribe(s,e);if(p.k==='sign-rsa')return signRsa(s,e);if(p.k==='sign-init')return signInit(s);if(p.k==='sign-copy-read')return signCopyRead(s,e,p);if(p.k==='sign-copy-write')return signCopyWrite(s,p);if(p.k==='sign-block')return signBlockDone(s,p);if(p.k==='sign-final-eocd')return signFinish(s,p);

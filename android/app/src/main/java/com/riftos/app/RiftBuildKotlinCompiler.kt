@@ -207,6 +207,94 @@ class RiftBuildKotlinCompiler(
             .put("messages", response.optString("messages", ""))
     }
 
+    fun dexJvmClasses(
+        projectRoot: File,
+        classesRelative: String,
+        outputRelative: String,
+        minSdk: Int
+    ): JSONObject {
+        val project = checkedProject(projectRoot)
+        require(minSdk in 26..36) { "Kotlin minSdk is out of bounds" }
+        require(
+            classesRelative.startsWith("build/riftbuild/") &&
+                !classesRelative.contains("\\")
+        ) {
+            "JVM classes directory must stay under build/riftbuild"
+        }
+        require(
+            outputRelative.startsWith("build/riftbuild/") &&
+                !outputRelative.contains("\\")
+        ) {
+            "DEX output directory must stay under build/riftbuild"
+        }
+
+        val classesDir = File(project, classesRelative).canonicalFile
+        val outputDir = File(project, outputRelative).canonicalFile
+        require(confinedTo(project, classesDir) && classesDir.isDirectory) {
+            "JVM classes directory is missing"
+        }
+        require(confinedTo(project, outputDir)) {
+            "DEX output directory escaped project"
+        }
+        resetDirectory(outputDir)
+
+        val androidJar = materializeAsset("android.jar")
+        val stdlibJar = materializeAsset("kotlin-stdlib.jar")
+        val classFiles = classesDir.walkTopDown()
+            .filter { it.isFile && it.extension == "class" }
+            .toList()
+        require(classFiles.isNotEmpty()) {
+            "JVM classes directory produced no class files"
+        }
+
+        RiftDeadline.check("RAPP JVM D8 preparation")
+        val d8 = D8Command.builder()
+            .setMinApiLevel(minSdk)
+            .setOutput(outputDir.toPath(), OutputMode.DexIndexed)
+        for (file in classFiles) d8.addProgramFiles(file.toPath())
+        d8.addProgramFiles(stdlibJar.toPath())
+        d8.addLibraryFiles(androidJar.toPath())
+        D8.run(d8.build())
+        RiftDeadline.check("RAPP JVM D8 completion")
+
+        val dexFiles = outputDir.listFiles()
+            ?.filter { it.isFile && DEX_ENTRY.matches(it.name) }
+            ?.sortedBy { dexIndex(it.name) }
+            .orEmpty()
+        require(dexFiles.isNotEmpty() && dexFiles.first().name == "classes.dex") {
+            "D8 produced no indexed DEX output"
+        }
+
+        val dex = JSONArray()
+        for (file in dexFiles) {
+            val header = file.inputStream().use { input ->
+                ByteArray(8).also { bytes ->
+                    val count = input.read(bytes)
+                    require(count == 8) { "D8 output header is truncated: ${file.name}" }
+                }
+            }
+            require(
+                header[0] == 'd'.code.toByte() &&
+                    header[1] == 'e'.code.toByte() &&
+                    header[2] == 'x'.code.toByte() &&
+                    header[3] == '\n'.code.toByte() &&
+                    header[7] == 0.toByte()
+            ) {
+                "D8 output has invalid DEX magic: ${file.name}"
+            }
+            dex.put(fileInfo(file).put("name", file.name))
+        }
+
+        return JSONObject()
+            .put("schema", "rift-jvm-dex/1")
+            .put("state", "dexed")
+            .put("classesDir", classesRelative)
+            .put("outputDir", outputRelative)
+            .put("minSdk", minSdk)
+            .put("classFiles", classFiles.size)
+            .put("dexFiles", dex)
+    }
+
     private fun materializeAsset(name: String): File {
         require(name in setOf("android.jar", "kotlin-stdlib.jar"))
         val target = File(toolchainRoot, name).canonicalFile
