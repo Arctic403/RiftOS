@@ -26,7 +26,9 @@ This inventory separates live packaged authority from retained reference/compati
 | Surface | Owner | Purpose |
 | --- | --- | --- |
 
-C0.2: Embedded Codynex/Rift++ editor implementations and their JNI bridges have been removed from the RiftOS APK source. The editor implementations and compile/preflight/pack/sign workflows remain project-owned; they are not OS public APIs. Generic `RiftAppAbi`, `RiftRappHost`, JSON RAPP adapter, signing capability, filesystem, native-buffer and JVM/DEX execution services remain platform-owned. Signed APK and live-device promotion of this change are pending.
+| Generic external runtime-provider IPC (C0.2.5 gate A) | `RiftExternalRuntimeProviders.kt`, `RiftRappHost.kt`, `RiftBuildPlatformTools.kt` | Versioned, signer-pinned explicit Android Binder service discovery and bounded runtime execution, with `riftbuild runtime-status`. The independent QuickJS provider APK/registration and removing QuickJS from RiftOS are NOT complete; no external-runtime installed-device promotion has occurred. |
+
+C0.2 mirrored Codynex/Rift++ editor cleanup is reported device-live by the user (2026-10-08). RiftOS owns generic RAPP hosting, capability broker, filesystem, native-buffer/JVM-D8 execution, APK identity verification and Android installation services, while the standalone RiftBuild Hosted RAPP owns Compile → Preflight → Pack → Sign → Verify orchestration. C0.2.5 preserves compatibility until its external provider is device-proven.
 
 ## Live RiftBrowser page surfaces
 

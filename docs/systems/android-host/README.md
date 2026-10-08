@@ -55,6 +55,8 @@ The manifest currently declares:
 
 The source audit found no direct `Vibrator`/vibration call and no runtime `requestPermissions`/direct app notification-posting path in RiftOS Kotlin. These permissions are therefore recorded as **declared manifest permissions**, not evidence of an active host feature.
 
+C0.2.5 adds a generic Android package-visibility query action `com.riftos.runtime.EXECUTE_V1` for independently installed runtime-provider services. This action is not a package name or a permission grant. The OS validates each provider's exact registered package, exported service, current signing certificate SHA-256, versioned Binder protocol, bounded request/response and call timeouts before dispatch. Registry details: [RiftBuild runtime providers](../riftbuild/RUNTIME_PROVIDERS.md). Standalone QuickJS remains unpromoted until a separate signed provider APK passes device proof.
+
 Package visibility queries are declared for:
 - `com.vortex3d.app`;
 - `com.riftllm.app`;

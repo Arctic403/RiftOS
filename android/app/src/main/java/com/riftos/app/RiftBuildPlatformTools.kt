@@ -24,6 +24,7 @@ class RiftBuildPlatformTools(context: Context) {
     }
     private val verifier = RiftApkV2Verifier()
     private val installer = RiftBuildInstaller(appContext)
+    private val runtimeProviders = RiftExternalRuntimeProviders(appContext)
 
     fun executeShell(args: MutableList<String>, cwd: String): CommandResult {
         val sub = args.removeFirstOrNull()?.lowercase() ?: "help"
@@ -33,7 +34,7 @@ class RiftBuildPlatformTools(context: Context) {
                 .put(
                     "usage",
                     "riftbuild compiler-status <project> | compiler-run <project> <compiler-id> <request.json> | " +
-                        "jvm-status | jvm-dex <project> <classes-dir> <output-dir> [minSdk] | " +
+                        "jvm-status | jvm-dex <project> <classes-dir> <output-dir> [minSdk] | runtime-status | " +
                         "pack-rapp <project> | install-rapp <artifact.rapp> | launch-rapp <id> | rapp-list | " +
                         "verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof"
                 )
@@ -54,6 +55,7 @@ class RiftBuildPlatformTools(context: Context) {
             )
 
             "jvm-status" -> buildLocal.jvmToolchainStatus()
+            "runtime-status" -> runtimeProviders.status()
 
             "jvm-dex" -> buildLocal.dexJvmClasses(
                 args.firstOrNull()

@@ -1,5 +1,7 @@
 # RiftBuild platform boundary
 
+**C0.2.5 runtime-provider migration:** See [RUNTIME_PROVIDERS.md](RUNTIME_PROVIDERS.md) for the versioned package-external runtime ABI, signer-pinned Binder provider registry, staged fallback behavior, pending independent QuickJS provider APK, and manual device-promotion gates. QuickJS is **still embedded during gate A** and must not be removed before RiftBuild Hosted and other consumers are proven against the external provider.
+
 ## Verification status
 
 **VERIFIED AGAINST CURRENT SOURCE — 2026-10-07.**

@@ -225,6 +225,8 @@ For the current MCP relay, the final signed DEX must retain the passive push-dia
 
 The final DEX smoke also rejects retired native migration descriptors (`RiftShellBridge`, `RiftSystemDump`, `AndroidWebViewBrowserEngine`, `RiftNativeAppHost`, `RiftPreviewActivity`, `RiftRendererCrashGuard`, `RiftNativeDispatcher`, `RiftTransferManifest`) so stale build-cache output cannot silently reintroduce removed native classes.
 
+C0.2.5 adds the generic `RiftExternalRuntimeProviders.kt` source to the exact Kotlin snapshot. Source + Builder must verify Android package-visibility action `com.riftos.runtime.EXECUTE_V1`, signer-pinned provider registry, bounded Binder call, and DEX-visible registry/IPC/status schemas. The provider APK and QuickJS deletion remain future device gates; `quickjs-kt`, existing shell QuickJS consumers and the compatibility fallback are deliberately retained until migration proof.
+
 Gradle enforces an exact RiftOS-owned Kotlin-source snapshot and a generic native CMake source snapshot. C0.2 permanently removes mirrored Codynex/Rift++ editor Kotlin payloads, editor JNI source/targets, their source SHA locks, and the legacy Rift++ RPA2 adapter tied to the editor UI codec. Builder checks now forbid those sources/DEX classes/JNI libs and retain required generic RiftOS compiler, RAPP, signing and MCP proofs; full signed-APK/device verification is pending the user's manual build.
 
 ## Final APK asset verification

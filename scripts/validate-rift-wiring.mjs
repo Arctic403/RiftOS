@@ -181,6 +181,34 @@ if (!main.includes('add("mcp", "Rift MCP", "⇄")')) fail('Rift MCP launcher ent
 if (!main.includes('if (id == "mcp")') || !main.includes('startActivity(Intent(this, RiftMcpActivity::class.java))')) fail('Rift MCP launcher does not open the existing RiftMcpActivity');
 if (!desktop.includes('LauncherApp("mcp", "Rift MCP", "⇄")')) fail('Rift MCP is missing from the native desktop fallback launcher');
 
+// C0.2.5 generic external runtime-provider boundary. No project-specific
+// package identity or runtime engine enters the RAPP host.
+const runtimeProviders = read(`${kotlinDir}/RiftExternalRuntimeProviders.kt`);
+const rappHost = read(`${kotlinDir}/RiftRappHost.kt`);
+const platformBuild = read(`${kotlinDir}/RiftBuildPlatformTools.kt`);
+for (const required of [
+  'riftos-runtime-providers/1', 'riftos-runtime-exec/1',
+  'com.riftos.runtime.EXECUTE_V1', 'riftos.runtime.provider/1',
+  'signerSha256', 'GET_SIGNING_CERTIFICATES', 'verifyInstalled(',
+  'bindService(', 'TimeUnit.MILLISECONDS', 'outputCapacity.coerceAtMost(MAX_RETURN_BYTES)',
+  '?: return fallback()', 'registry.json',
+]) if (!runtimeProviders.includes(required)) fail(`runtime-provider boundary missing: ${required}`);
+for (const required of [
+  'RiftExternalRuntimeProviders(activity)', 'externalRuntimeProviders.execute(',
+]) if (!rappHost.includes(required)) fail(`RAPP host runtime dispatch missing: ${required}`);
+if (!manifest.includes('<action android:name="com.riftos.runtime.EXECUTE_V1" />')) {
+  fail('generic external Android runtime provider visibility action missing');
+}
+if (!gradle.includes('"src/main/java/com/riftos/app/RiftExternalRuntimeProviders.kt"')) {
+  fail('external runtime provider is not Gradle-mandatory');
+}
+for (const required of ['"runtime-status" -> runtimeProviders.status()', 'RiftExternalRuntimeProviders(appContext)']) {
+  if (!platformBuild.includes(required)) fail(`generic runtime status command missing: ${required}`);
+}
+for (const retiredPkg of ['com.riftpp.editor', 'com.codynex.editor']) {
+  if (runtimeProviders.includes(retiredPkg)) fail(`provider registry hardcodes retired project identity: ${retiredPkg}`);
+}
+
 // C0.2 removes mirrored editor implementations and their editor-only native ABI.
 for (const retiredEditorRoot of [
   'android/app/src/main/java/com/codynex',

@@ -124,6 +124,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftRappRiftppGenericAdapter.kt",
         "src/main/java/com/riftos/app/RiftRappJsonAdapter.kt",
         "src/main/java/com/riftos/app/RiftRappQuickJsExecutor.kt",
+        "src/main/java/com/riftos/app/RiftExternalRuntimeProviders.kt",
         "src/main/java/com/riftos/app/RiftRappCapabilityBroker.kt",
         "src/main/java/com/riftos/app/RiftRappAbsoluteView.kt",
         "src/main/java/com/riftos/app/RiftRappHost.kt",

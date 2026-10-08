@@ -94,6 +94,8 @@ class RiftRappHost(
         )
     private val quickJsExecutor =
         RiftRappQuickJsExecutor()
+    private val externalRuntimeProviders =
+        RiftExternalRuntimeProviders(activity)
     private val eventExecutor =
         Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "rift-rapp-event").apply {
@@ -489,7 +491,14 @@ class RiftRappHost(
         when (
             session.adapter.executorKind
         ) {
-            RiftAppExecutionKind.NATIVE_BUFFER -> {
+            RiftAppExecutionKind.NATIVE_BUFFER ->
+                externalRuntimeProviders.execute(
+                    session.adapter.executorKind,
+                    session.payload.runtime,
+                    envelope,
+                    OUTPUT_BYTES
+                ) {
+
                 val result =
                     RiftNativeBufferCompilerService.compile(
                         activity,
@@ -537,14 +546,20 @@ class RiftRappHost(
                     ?: error(
                         "RAPP runtime succeeded without output"
                     )
-            }
-
+                }
             RiftAppExecutionKind.QUICKJS ->
-                quickJsExecutor.execute(
+                externalRuntimeProviders.execute(
+                    session.adapter.executorKind,
                     session.payload.runtime,
                     envelope,
                     OUTPUT_BYTES
-                )
+                ) {
+                    quickJsExecutor.execute(
+                        session.payload.runtime,
+                        envelope,
+                        OUTPUT_BYTES
+                    )
+                }
 
             else ->
                 error(
