@@ -452,6 +452,46 @@ if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreAppLifecycle.kt"')) 
   fail('C1.2-C1 mandatory lifecycle Kotlin source missing');
 }
 
+// C1.2-D1: an alternate read-only shell renderer attaches to the same
+// immutable Core surfaces concurrently with the existing graphical shell.
+const alternateShell = read(`${kotlinDir}/RiftAlternateShellClient.kt`);
+for (const marker of [
+  'riftos.shell.client.terminal/1',
+  'class RiftAlternateShellClient(private val surfaces: RiftCoreAppSurfaces)',
+  'fun attach(id: String): JSONObject',
+  'fun render(id: String): JSONObject',
+  'fun detach(id: String): JSONObject',
+  'fun status(): JSONObject',
+  'surfaces.subscribe { change -> onChange(change) }',
+  'surfaces.snapshot(id)',
+  'surfacePresent',
+  'lastOperation',
+  'renderedText',
+  'RiftAppAbi.NodeKind.TEXT_INPUT',
+  'RiftAppAbi.NodeKind.ACTION',
+  'subscription?.let(surfaces::unsubscribe)'
+]) if (!alternateShell.includes(marker)) fail(`C1.2-D1 alternate shell renderer missing: ${marker}`);
+for (const forbidden of [
+  'private val desktop:', 'private val activity:', '.offerEvent(',
+  '.requestFocusFromShell(', 'sessions.attach(', '.executeChained('
+]) if (alternateShell.includes(forbidden)) {
+  fail(`C1.2-D1 alternate shell cannot own graphical execution: ${forbidden}`);
+}
+if (/import android\.(view|app)\./.test(alternateShell)) {
+  fail('C1.2-D1 alternate shell renderer cannot require Android Activity/View');
+}
+for (const marker of [
+  'RiftAlternateShellClient(RiftCoreRuntime.surfaces(appContext))',
+  'alternateShellClient.close()',
+  '"alt-list" -> alternateShellClient.status()',
+  'alternateShellClient.attach(args[1])',
+  'alternateShellClient.render(args[1])',
+  'alternateShellClient.detach(args[1])'
+]) if (!nativeShell.includes(marker)) fail(`C1.2-D1 alternate shell command missing: ${marker}`);
+if (!gradle.includes('"src/main/java/com/riftos/app/RiftAlternateShellClient.kt"')) {
+  fail('C1.2-D1 alternate shell mandatory Kotlin source missing');
+}
+
 // C1.2-B2-B2: Core lease authorization gates admission AND queued delivery.
 // Input tickets capture the original focus revision so a refocus cannot
 // revive an input that was pending while another window owned focus.

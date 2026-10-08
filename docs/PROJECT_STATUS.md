@@ -16,6 +16,12 @@ From `android/app/build.gradle.kts`:
 - version `0.11.11-relay-client`;
 - release minification disabled.
 
+## 2026-10-08 — C1.2-C2 device PASS; D1 alternate read-only shell client SOURCE
+
+Live RiftOS `71ff8bb5`, user Builder #648/`37845327864`, Core PID 17280: disposable `c12b2a-input-probe-20261008` Core-booted to running/session generation 1, surface revision 1; selecting its native launcher item successfully adopted the same generation into graphical presentation, cleared Core-only registry, preserved existing session and displayed READY. Surface revision advanced on attach, potentially due to normal resize events; no direct BOOT-event trace claimed. Real graphical button/text updated persisted state `actions:1`, `ADOPTED_C2`. Titlebar close removed Core session/surface and revoked focus; uninstall cleaned disposable, three original RAPPs unchanged and Core PID survived. **C2 normal-path device PASS**.
+
+New **C1.2-D1 source-only** `RiftAlternateShellClient` is a second, bounded, read-only terminal renderer of the same immutable Core app frames. It subscribes independently to change notifications and renders full generic typed node data via `core alt-list|alt-attach <id>|alt-render <id>|alt-detach <id>`. No RAPP session, input, focus, Activity or graphical window authority. Renderer status reports `shellProcessIndependent=false`. Builder and signed APK checks enforce presence. User-manual Builder and dual-client live tests pending; C1.2-D's separate replaceable *graphical* shell and C1.3 process/IPC crash recovery remain unproven.
+
 ## 2026-10-08 — C1.2-C1 Core-only BOOT device PASS; C2 renderer handoff source
 
 User manually installed RiftOS source `2f701e8a`, Builder run #644/`37835000839`, Core PID 9446. Starting from 0 Core apps/sessions/surfaces with 3 original RAPPs, used only disposable `c12b2a-input-probe-20261008`. `core app-start` returned starting then running, with 1 attached session, one five-node Core surface revision 1, no test RAPP window (Local Agent tree showed launcher only). `core app-stop` returned stopped=true and removed record/session/surface; disposable uninstall succeeded, final 0 Core apps/sessions/surfaces/queued events and original 3 intact. **C1.2-C1 Core-only BOOT/stop device PASS**.
