@@ -366,6 +366,24 @@ if (rappHost.includes('EventOutcome(frame = result.frame')) {
   fail('C1.2-B1 RiftShell still renders raw Core executor callback frame');
 }
 
+// C1.2-B2-A: Core owns generic input-kind and target authorization.
+// The graphical shell may request an input event, never forge effect-result events.
+for (const required of [
+  'private fun authorizeInputTarget(',
+  'RiftAppAbi.EventKind.HOST_EFFECT_RESULT',
+  'attachment.record.adapter.supportsEventKind(event.kind)',
+  'RiftAppAbi.EventKind.ACTION -> RiftAppAbi.NodeKind.ACTION',
+  'RiftAppAbi.EventKind.TEXT_INPUT -> RiftAppAbi.NodeKind.TEXT_INPUT',
+  'surface.attachmentGeneration == attachment.token',
+  'it.id == event.targetId',
+  'authorizeInputTarget(attachment, event)'
+]) if (!coreSessions.includes(required)) fail(`C1.2-B2-A Core input authorization missing: ${required}`);
+for (const required of [
+  'runCatching {',
+  'coreSessions.offerEvent(session.coreAttachment, event)',
+  'Core rejected application input'
+]) if (!rappHost.includes(required)) fail(`C1.2-B2-A shell input rejection handling missing: ${required}`);
+
 // C1.1-P: package manager is Core authority; graphical Installed Apps is only a client.
 const corePackageEvents = read(`${kotlinDir}/RiftCorePackageEvents.kt`);
 const corePackageGrants = read(`${kotlinDir}/RiftCorePackageGrants.kt`);

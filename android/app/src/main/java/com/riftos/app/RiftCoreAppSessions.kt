@@ -246,13 +246,47 @@ class RiftCoreAppSessions(private val surfaces: RiftCoreAppSurfaces) {
     }
 
     /**
-     * C1.1-B2-A: one Core-owned bounded FIFO per installed RAPP session.
-     * Only the current UI attachment may submit/complete events.
-     * Callbacks remain with the disposable UI host, never in Core.
+     * C1.2-B2-A: input targets are validated against Core's current immutable
+     * surface and the current executable generation, not shell View tags.
+     * Pointer canvas input and global keyboard input may target id=0; named
+     * ACTION/TEXT_INPUT events must target their matching published node kind.
+     * This is NOT focus-ownership or headless execution proof.
+     */
+    private fun authorizeInputTarget(attachment: Attachment, event: RiftAppAbi.Event) {
+        require(event.kind != RiftAppAbi.EventKind.HOST_EFFECT_RESULT) {
+            "Host effect result events are Core-internal"
+        }
+        require(attachment.record.adapter.supportsEventKind(event.kind)) {
+            "App runtime adapter does not accept requested event kind"
+        }
+        val expected = when (event.kind) {
+            RiftAppAbi.EventKind.ACTION -> RiftAppAbi.NodeKind.ACTION
+            RiftAppAbi.EventKind.TEXT_INPUT -> RiftAppAbi.NodeKind.TEXT_INPUT
+            else -> null
+        }
+        val isNamedKeyboard = (event.kind == RiftAppAbi.EventKind.KEY_DOWN ||
+            event.kind == RiftAppAbi.EventKind.KEY_UP) && event.targetId != 0
+        if (expected == null && !isNamedKeyboard) return
+        require(event.targetId > 0) { "RAPP named input target is missing" }
+        val surface = surfaces.snapshot(attachment.record.id)
+        require(surface != null && surface.attachmentGeneration == attachment.token) {
+            "RAPP Core input surface is stale or missing"
+        }
+        require(surface.frame.nodes.any {
+            it.id == event.targetId && (expected == null || it.kind == expected)
+        }) {
+            "RAPP Core input target is absent or has the wrong kind"
+        }
+    }
+
+    /**
+     * Core-owned bounded FIFO: graphical shell submits an input request, but
+     * the Core session registry authorizes its kind/target before queueing.
      */
     @Synchronized
     fun offerEvent(attachment: Attachment, event: RiftAppAbi.Event): OfferedEvent {
         require(isAttached(attachment)) { "RAPP Core event attachment is stale" }
+        authorizeInputTarget(attachment, event)
         return attachment.record.offer(event)
     }
 

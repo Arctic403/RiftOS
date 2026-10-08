@@ -16,6 +16,12 @@ From `android/app/build.gradle.kts`:
 - version `0.11.11-relay-client`;
 - release minification disabled.
 
+## 2026-10-08 — C1.2-B1 live Core-snapshot GUI PASS; C1.2-B2-A source typed input gate
+
+User-built RiftOS `9cf4b46c`, Builder run 638/`37793993504`, Core PID 20652, passed initial and updated graphical UI rendering from Core surface snapshot: disposable JSON RAPP frame revision 2 (79 bytes), native `fs.read` Cancel event rendered denied token 43 while revision became 3 (157 bytes) and state persisted. Core attached session stayed valid; disposable app uninstall completed and Core surfaces/sessions returned to 0, original three RAPPs preserved. **B1 device-gated complete**.
+
+Next **B2-A source candidate:** Core `offerEvent` now checks ACTION/TEXT_INPUT target node kind against current generation-matched Core frame; nonzero keyboard targets must exist; adapter event kind must be supported, and GUI cannot submit internal HOST_EFFECT_RESULT. Generic pointer/global key input target 0 remains compatible. `RiftRappHost` handles rejected Core events as callback errors rather than Android UI exceptions. Source/Builder contract updates enforce boundary. Not device-built yet. Full Core focus/input ownership and independent shell-less execution remain future gates.
+
 ## 2026-10-08 — C1.2-A surface device PASS; C1.2-B1 shell snapshot rendering source
 
 User's installed run 637 (`37788211066`), source `0dc4c277`, Core PID 11301 passed real `core surfaces` proof: 0→1→0 on disposable RAPP install/launch/update, relaunch 1, uninstall 0; UI event advanced revision 3→6 and refreshed 79→157 bytes. New launch after package replacement had revision 9; after uninstall zero Core sessions and original three apps remain. C1.2-A device gate is complete. The next source-only B1 changes generic `RiftRappHost` to render a generation-matched immutable Core surface snapshot rather than the raw event callback frame. Does not move input/focus, change app APIs, provide independent headless execution or constitute a separate replaceable RiftShell. Next user-triggered Builder + disposable app graphical/device proof required.

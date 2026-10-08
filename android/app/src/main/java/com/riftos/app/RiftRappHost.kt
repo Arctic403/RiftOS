@@ -233,7 +233,12 @@ class RiftRappHost(
             !coreSessions.isAttached(session.coreAttachment)
         ) return
 
-        val offered = coreSessions.offerEvent(session.coreAttachment, event)
+        val offered = runCatching {
+            coreSessions.offerEvent(session.coreAttachment, event)
+        }.getOrElse { error ->
+            complete(EventOutcome(error = error.message ?: "Core rejected application input"))
+            return
+        }
         session.pendingUiCompletions[offered.ticket.id] = complete
         if (offered.startNow) dispatchCoreEvent(session, offered.ticket)
     }

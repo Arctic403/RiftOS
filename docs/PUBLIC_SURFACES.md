@@ -21,6 +21,12 @@ This inventory separates live packaged authority from retained reference/compati
 | Vortex bridge/agents | `RiftVortexBridgeClient.kt`, `RiftVortexLocalAgent.kt` | Fixed local Binder/accessibility development surfaces. |
 | RiftLLM Dev/training service | `RiftLlmDevClient.kt`, `RiftTrainDataTaskRunner.kt`, `RiftNativeShellServices.kt` | Fixed bounded standalone RiftLLM API/training commands, including fixed frozen-B2 priming, no-argument RiftPack qualification start/status, and fixed no-argument real process-death recovery start/status. |
 
+## C1.2-B2-A — Core authorization of typed app input events (source-only)
+
+The in-process shell can submit generic `RiftAppAbi.Event` requests through `RiftCoreAppSessions.offerEvent`, but Core validates that the named `ACTION` or `TEXT_INPUT` target exists with the correct node kind in `RiftCoreAppSurfaces` for the current session attachment generation. Named keyboard events require a current node ID; untargeted keyboard/canvas pointer events remain supported. No shell may enqueue a forged `HOST_EFFECT_RESULT` event, and only supported runtime-adapter event kinds pass. Invalid input is returned as a generic error through the disposable shell callback; it is not granted permission through a View tag.
+
+This is a Core input *target* authorization gate, not yet Core-owned focus arbitration, independent app launch, shell-less execution or the process-separated shell. The C1.2-B1 Core-snapshot GUI path was proven on an installed RAPP in run 638; B2-A requires the next user-triggered Builder/device test.
+
 ## C1.2-B1 — Generic graphical client consuming Core snapshots (source-only)
 
 The current RiftShell `RiftRappHost` reads the final `RiftCoreAppSurfaces.snapshot(appId)` as the authoritative frame and checks `attachmentGeneration == coreAttachment.token` before drawing. The raw `RiftCoreAppExecutor.Outcome.frame` is no longer passed directly into the UI renderer. An absent or stale surface returns a bounded presentation error rather than rendering a previous application generation. Core retains the only frame authority, and this graphical client has no access to mutation methods on the frame object. Prior C1.2-A core surface register/revision/remove behavior was user-device-proven with a disposable app on run 637. B1 requires a new manual Builder and installed-device UI regression. This is neither Core-owned input/focus nor a shell-less/alternate-shell client proof.
