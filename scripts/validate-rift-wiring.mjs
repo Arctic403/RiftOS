@@ -46,8 +46,11 @@ for (const required of [
   'android:exported="false"',
   'android.intent.action.PACKAGE_FIRST_LAUNCH',
 ]) if (!manifest.includes(required)) fail(`Android RiftBuild install contract is missing ${required}`);
-if (!manifest.includes('<package android:name="com.riftpp.editor" />')) {
-  fail('Rift++ editor bridge package visibility is missing');
+// C0.2: RiftOS no longer predeclares either project editor as a package dependency.
+for (const editorPackage of ["com.riftpp.editor", "com.codynex.editor"]) {
+  if (manifest.includes(`<package android:name="${editorPackage}" />`)) {
+    fail(`project editor package visibility resurfaced in RiftOS: ${editorPackage}`);
+  }
 }
 for (const forbidden of [
   '<package android:name="com.riftpp.editor.nativev1" />',
@@ -178,6 +181,22 @@ if (!main.includes('add("mcp", "Rift MCP", "⇄")')) fail('Rift MCP launcher ent
 if (!main.includes('if (id == "mcp")') || !main.includes('startActivity(Intent(this, RiftMcpActivity::class.java))')) fail('Rift MCP launcher does not open the existing RiftMcpActivity');
 if (!desktop.includes('LauncherApp("mcp", "Rift MCP", "⇄")')) fail('Rift MCP is missing from the native desktop fallback launcher');
 
+// C0.2 removes mirrored editor implementations and their editor-only native ABI.
+for (const retiredEditorRoot of [
+  'android/app/src/main/java/com/codynex',
+  'android/app/src/main/java/com/riftpp',
+  'android/app/src/main/cpp/editor',
+  `${kotlinDir}/RiftRappRiftppAdapter.kt`,
+]) {
+  if (exists(retiredEditorRoot)) fail(`project editor source returned: ${retiredEditorRoot}`);
+}
+for (const staleEditorGate of [
+  'verifyCodynexEditorPayload', 'verifyRiftppEditorPayload',
+  'src/main/cpp/editor/', 'src/main/java/com/codynex/', 'src/main/java/com/riftpp/',
+  'RiftRappRiftppAdapter.kt',
+]) {
+  if (gradle.includes(staleEditorGate)) fail(`obsolete editor build gate returned: ${staleEditorGate}`);
+}
 // C0.1: editor command proxies are third-party project code, not OS services.
 // An orphaned client must be removed, not exempted from manifest reachability.
 for (const legacyClient of ['RiftCodynexEditorBridgeClient.kt', 'RiftppEditorBridgeClient.kt']) {

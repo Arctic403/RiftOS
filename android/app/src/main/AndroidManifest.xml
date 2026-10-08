@@ -8,8 +8,6 @@
     <queries>
         <package android:name="com.vortex3d.app" />
         <package android:name="com.riftllm.app" />
-        <package android:name="com.codynex.editor" />
-        <package android:name="com.riftpp.editor" />
         <package android:name="com.samsung.android.honeyboard" />
     </queries>
 

@@ -13,7 +13,6 @@ const toolHost = read(k + 'RiftToolHost.kt');
 const managedJvmTool = read(k + 'RiftManagedJvmToolService.kt');
 const runtime = read(k + 'RiftMcpRuntime.kt');
 const headless = read(k + 'RiftHeadlessJsRuntime.kt');
-const vmBridge = read('android/app/src/main/java/com/codynex/editorapp/CodynexRuntimeBridge.kt');
 const main = read(k + 'MainActivity.kt');
 const browserBridge = read(k + 'RiftBrowserMcpAppBridge.kt');
 const gradle = read('android/app/build.gradle.kts');
@@ -57,7 +56,9 @@ assert.doesNotMatch(headless, /private const val (?:POLYFILLS|RIFTPP_COMMAND_ENT
 assert.match(headless, /src\/riftpp-core\.js/);
 assert.match(headless, /src\/riftvm\.js/);
 assert.doesNotMatch(headless, /CODYNEX_C0_|compileCodynexC0|c0_reference\.js|codynex-c0-ref/);
-assert.match(vmBridge, /System\.loadLibrary\("codynex_editor_vm"\)/);
+assert.equal(fs.existsSync("android/app/src/main/java/com/codynex"), false, "mirrored Codynex Kotlin payload must not ship in RiftOS");
+assert.equal(fs.existsSync("android/app/src/main/java/com/riftpp"), false, "mirrored Rift++ Kotlin payload must not ship in RiftOS");
+assert.equal(fs.existsSync("android/app/src/main/cpp/editor"), false, "project editor JNI sources must not ship in RiftOS");
 assert.equal(hasWebKitDependency(headless), false);
 assert.doesNotMatch(headless, /ProcessBuilder|Runtime\.getRuntime|Socket\(/);
 assert.doesNotMatch(browserBridge, /RiftShellBridge|rift_shell_result|RiftShellMcpNative/);
@@ -69,5 +70,5 @@ assert.doesNotMatch(gradle, /include\("index\.html"\)|include\("styles\.css"\)|i
 console.log('ok - RiftShell is process-owned Android-native with no renderer fallback');
 console.log('ok - Rift++ Core runs through bounded headless QuickJS');
 console.log('ok - retired RiftOS Codynex C0 compiler/host authority remains absent');
-console.log('ok - Codynex native preview bridge remains explicit');
+console.log('ok - mirrored editor and editor JNI payloads remain external to RiftOS');
 console.log('ok - Chromium authority remains RiftBrowser-only');

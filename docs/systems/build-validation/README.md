@@ -225,7 +225,7 @@ For the current MCP relay, the final signed DEX must retain the passive push-dia
 
 The final DEX smoke also rejects retired native migration descriptors (`RiftShellBridge`, `RiftSystemDump`, `AndroidWebViewBrowserEngine`, `RiftNativeAppHost`, `RiftPreviewActivity`, `RiftRendererCrashGuard`, `RiftNativeDispatcher`, `RiftTransferManifest`) so stale build-cache output cannot silently reintroduce removed native classes.
 
-Gradle enforces an exact current Kotlin-source snapshot, including the generic RiftBuild owners and temporarily mirrored editor payloads. C0.1 removed orphaned `RiftCodynexEditorBridgeClient.kt` and `RiftppEditorBridgeClient.kt` from both source and the snapshot; Builder now rejects their return. The mirrored editors are separate C0.2 cleanup targets.
+Gradle enforces an exact RiftOS-owned Kotlin-source snapshot and a generic native CMake source snapshot. C0.2 permanently removes mirrored Codynex/Rift++ editor Kotlin payloads, editor JNI source/targets, their source SHA locks, and the legacy Rift++ RPA2 adapter tied to the editor UI codec. Builder checks now forbid those sources/DEX classes/JNI libs and retain required generic RiftOS compiler, RAPP, signing and MCP proofs; full signed-APK/device verification is pending the user's manual build.
 
 ## Final APK asset verification
 

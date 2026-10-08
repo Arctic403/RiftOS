@@ -58,11 +58,9 @@ The source audit found no direct `Vibrator`/vibration call and no runtime `reque
 Package visibility queries are declared for:
 - `com.vortex3d.app`;
 - `com.riftllm.app`;
-- `com.codynex.editor`;
-- `com.riftpp.editor`;
 - `com.samsung.android.honeyboard`.
 
-These are package-visibility declarations inherited from Vortex/RiftLLM/Codynex/Rift++ editor and keyboard integration lanes. C0.1 removed the two editor-specific shell Binder clients; editor package visibility can be reconsidered when mirrored payloads are removed in C0.2. Generic RiftBuild install/launch derives package identity from the verified APK and binds launch to install status. Visibility does not itself grant launch, Binder, install or diagnostic authority.
+These are package-visibility declarations for still-present Vortex/RiftLLM/keyboard integration lanes. C0.2 removed fixed Codynex and Rift++ editor package queries together with the mirrored editor source/JNI payloads. Generic RiftBuild install/launch derives package identity from the verified APK and binds launch to install status. Visibility alone does not grant Android launch, Binder, install or diagnostic authority.
 
 Application flags:
 - `android:allowBackup="true"`;

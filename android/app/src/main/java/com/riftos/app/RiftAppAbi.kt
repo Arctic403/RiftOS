@@ -262,7 +262,6 @@ interface RiftAppRuntimeAdapter {
 object RiftAppAdapters {
     private val adapters: Map<String, RiftAppRuntimeAdapter> by lazy {
         listOf(
-            RiftRappRiftppAdapter,
             RiftRappRiftppWs15Adapter,
             RiftRappRiftppGenericAdapter,
             RiftRappJsonAdapter
