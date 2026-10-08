@@ -404,7 +404,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "write <file> <text>  touch <file>  mkdir <dir>  cp|mv <from> <to> [--force]  rm <path>\n" +
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
                     "workspace [cd|info|ls|status|push]\n" +
-                    "core status   [RIFTOS CORE / HEADLESS PLATFORM]\n" +
+                    "core status|sessions   [RIFTOS CORE / HEADLESS PLATFORM]\n" +
                     "riftbuild compiler-status|compiler-run|jvm-status|jvm-dex|runtime-status|pack-rapp|install-rapp|launch-rapp|rapp-list|verify|install-proof|install-status|launch-proof   [GENERIC / BOUNDED]\n" +
                     "riftcrash help|status|start|capture|latest|reset [package]   [LOCALHOST DIAGNOSTIC BRIDGE]\n" +
                     "qjs help|version|eval|run   [BOUNDED HEADLESS QUICKJS / READ-ONLY RIFTFS]\n" +
@@ -501,10 +501,12 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "riftos-agent" -> services.riftOsAgent(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
             "riftllm-agent" -> services.riftLlm(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
             "core" -> {
-                require(args.size == 1 && args[0].equals("status", ignoreCase = true)) {
-                    "usage: core status"
+                require(args.size == 1) { "usage: core status|sessions" }
+                val state = when (args.single().lowercase()) {
+                    "status" -> RiftCoreRuntime.status(appContext)
+                    "sessions" -> RiftCoreRuntime.sessions(appContext).list()
+                    else -> error("usage: core status|sessions")
                 }
-                val state = RiftCoreRuntime.status(appContext)
                 ShellOutcome(state.toString(2), cwd, state)
             }
             "riftbuild" -> {

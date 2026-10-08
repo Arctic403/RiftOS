@@ -16,6 +16,10 @@ From `android/app/build.gradle.kts`:
 - version `0.11.11-relay-client`;
 - release minification disabled.
 
+## 2026-10-08 — C1.0 green/device-live; C1.1-A Core session registry source pending
+
+User confirmed C1.0 on RiftOS fd64c612 green and installed. Live `core status` succeeded with 5 RAPPs and independent Core initialization; `riftbuild runtime-status` succeeded with 0 external providers. Now C1.1-A introduces a Core-owned `RiftCoreAppSessions` registry (identity, bounded opaque state, event sequence, attach-generation tokens), read-only `core sessions`, RAPP host detach-on-Activity-destroy and close-on-window-close. Event queues, effects and presentation remain Activity-owned, so `appExecutionIndependentOfDesktop=false` and `headlessExecution=false` are intentional. This change requires the next **user-manual** Builder and real-device proof before promotion; full C1.1-B headless execution and generic UI surface transport remain pending. See `docs/systems/core-shell/README.md`.
+
 ## 2026-10-08 — Core / Shell separation gate C1.0 (source pending manual Builder)
 
 The user has confirmed C0.2.5 build green and current RiftOS installed/device-live. This is the baseline for the next architectural gate. C1.0 now adds an Android Application bootstrap and process-owned `RiftCoreRuntime` to centralize the RAPP installation manager, external runtime registry and generic RiftBuild platform services outside Activity-owned desktop objects. `RiftNativeShell` delegates build commands and `core status` to Core; RAPP host presents UI but retrieves packages/runtimes from Core. No change to QuickJS embedding or RAPP compatibility at this stage. **Do not report full shell independence yet:** app execution sessions and window management remain Activity-owned, Core is still in the same Android process, and no replaceable RiftShell package has shipped. Next: user-manual Builder green + `core status` device proof, then C1.1 sessions and C1.2 surface API. Canonical ownership: `docs/systems/core-shell/README.md`.

@@ -62,19 +62,20 @@ class RiftRappHost(
 
     private data class Session(
         val payload: RiftAppAbi.RuntimePayload,
-        val adapter: RiftAppRuntimeAdapter
+        val adapter: RiftAppRuntimeAdapter,
+        val coreAttachment: RiftCoreAppSessions.Attachment
     ) {
         val id: String get() = payload.id
         val name: String get() = payload.name
 
-        var program: ByteArray =
-            payload.program.copyOf()
-        var eventSequence: Int =
-            1
-        var eventBusy: Boolean =
-            false
-        val pendingEvents =
-            ArrayDeque<PendingEvent>()
+        // Identity, program bytes and sequence live in Core; only outstanding
+        // UI/event callbacks belong to this disposable desktop attachment.
+        var program: ByteArray
+            get() = coreAttachment.record.programSnapshot()
+            set(value) { coreAttachment.record.commitState(value) }
+
+        var eventBusy: Boolean = false
+        val pendingEvents = ArrayDeque<PendingEvent>()
     }
 
     private data class EventOutcome(
@@ -87,6 +88,7 @@ class RiftRappHost(
     private val manager by lazy(LazyThreadSafetyMode.NONE) {
         RiftCoreRuntime.packages(activity.applicationContext)
     }
+    private val coreSessions = RiftCoreRuntime.sessions(activity.applicationContext)
     private val capabilityBroker =
         RiftRappCapabilityBroker(
             activity,
@@ -137,8 +139,9 @@ class RiftRappHost(
     fun onDesktopClosed(
         id: String
     ): Boolean {
-        val removed = sessions.remove(id) != null
-        return removed || manager.handlesInstalled(id)
+        val session = sessions.remove(id)
+        if (session != null) coreSessions.close(session.coreAttachment)
+        return session != null || manager.handlesInstalled(id)
     }
 
     fun onResume() {
@@ -181,6 +184,8 @@ class RiftRappHost(
     }
 
     fun destroy() {
+        // Activity loss detaches only UI; Core session identities/state remain.
+        sessions.values.forEach { coreSessions.detach(it.coreAttachment) }
         sessions.clear()
         capabilityBroker.destroy()
         eventExecutor.shutdownNow()
@@ -206,21 +211,18 @@ class RiftRappHost(
             "RiftOS app presentation does not match adapter"
         }
 
-        val session =
-            Session(
-                payload =
-                    RiftAppAbi.RuntimePayload(
-                        id = app.id,
-                        name = app.name,
-                        abi = app.abi,
-                        adapter = app.adapter,
-                        presentation = app.presentation,
-                        permissions = app.permissions,
-                        program = app.program,
-                        runtime = app.runtime
-                    ),
-                adapter = adapter
-            )
+        val payload = RiftAppAbi.RuntimePayload(
+            id = app.id,
+            name = app.name,
+            abi = app.abi,
+            adapter = app.adapter,
+            presentation = app.presentation,
+            permissions = app.permissions,
+            program = app.program,
+            runtime = app.runtime
+        )
+        val attachment = coreSessions.attach(payload, adapter)
+        val session = Session(payload, adapter, attachment)
         sessions[id] = session
 
         desktop.handle(
@@ -389,13 +391,16 @@ class RiftRappHost(
                 )
             },
             work = {
+                require(coreSessions.isAttached(session.coreAttachment)) {
+                    "RAPP Core session has no attached event client"
+                }
                 val eventPayload =
                     session.payload.copy(
                         program =
                             session.program.copyOf()
                     )
                 val sequence =
-                    session.eventSequence++
+                    session.coreAttachment.record.nextEventSequence()
 
                 val envelope =
                     session.adapter.encodeEvent(
@@ -419,6 +424,9 @@ class RiftRappHost(
                 decoded.nextProgram
                     ?.let {
                         nextProgram ->
+                        require(coreSessions.isAttached(session.coreAttachment)) {
+                            "Detached desktop cannot commit RAPP Core session state"
+                        }
                         require(
                             nextProgram.size in
                                 1..MAX_SESSION_PROGRAM_BYTES

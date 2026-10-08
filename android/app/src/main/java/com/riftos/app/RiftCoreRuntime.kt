@@ -26,6 +26,7 @@ object RiftCoreRuntime {
     @Volatile private var installedPackages: RiftRappManager? = null
     @Volatile private var runtimeRegistry: RiftExternalRuntimeProviders? = null
     @Volatile private var buildPlatform: RiftBuildPlatformTools? = null
+    @Volatile private var appSessions: RiftCoreAppSessions? = null
 
     fun initialize(context: Context) {
         if (application != null) return
@@ -67,6 +68,14 @@ object RiftCoreRuntime {
         }
     }
 
+    fun sessions(context: Context): RiftCoreAppSessions {
+        initialize(context)
+        appSessions?.let { return it }
+        return synchronized(this) {
+            appSessions ?: RiftCoreAppSessions().also { appSessions = it }
+        }
+    }
+
     /** Read-only Core health probe; never opens an Activity or a shell window. */
     fun status(context: Context): JSONObject {
         initialize(context)
@@ -80,6 +89,7 @@ object RiftCoreRuntime {
             .put("installedRappCount", packages(context).listInstalled().length())
             .put("runtimeProviderCount", providers.optInt("registered"))
             .put("runtimeProviderState", providers.optString("state"))
+            .put("appSessions", sessions(context).summary())
             .put("desktopRequired", false)
             .put("shellRequired", false)
             .put("appExecutionIndependentOfDesktop", false)

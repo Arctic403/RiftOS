@@ -223,6 +223,37 @@ if (!rappHost.includes('RiftCoreRuntime.packages(activity.applicationContext)') 
   fail('RAPP package ownership has not moved into RiftOS Core');
 }
 
+// C1.1-A: Core owns RAPP identity/opaque program state independently of UI.
+const coreSessions = read(`${kotlinDir}/RiftCoreAppSessions.kt`);
+for (const required of [
+  'class RiftCoreAppSessions', 'riftos.core.sessions/1',
+  'fun attach(', 'fun detach(attachment: Attachment)',
+  'fun close(attachment: Attachment)', 'fun isAttached(attachment: Attachment)',
+  'fun programSnapshot()', 'fun commitState(value: ByteArray)',
+  'fun nextEventSequence()', 'fun list(): JSONObject',
+  '"headlessExecution", false', '"appExecutionIndependentOfDesktop", false',
+]) if (!coreSessions.includes(required)) fail(`Core RAPP session contract missing: ${required}`);
+if (/\\b(?:Activity|View|RiftNativeDesktop|RiftNativeShell|RiftRappHost)\\b/.test(
+  stripCodeComments(coreSessions)
+)) fail('Core session registry must not depend on desktop/UI implementation classes');
+for (const required of [
+  'RiftCoreRuntime.sessions(activity.applicationContext)',
+  'coreSessions.attach(payload, adapter)',
+  'coreSessions.detach(it.coreAttachment)',
+  'coreSessions.close(session.coreAttachment)',
+  'session.coreAttachment.record.nextEventSequence()',
+]) if (!rappHost.includes(required)) fail(`RAPP desktop attachment migration missing: ${required}`);
+if (!coreRuntime.includes('fun sessions(context: Context): RiftCoreAppSessions') ||
+    !coreRuntime.includes('sessions(context).summary()')) {
+  fail('RiftOS Core must own and report RAPP sessions');
+}
+if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreAppSessions.kt"')) {
+  fail('Core session registry must be Gradle-mandatory');
+}
+if (!nativeShell.includes('RiftCoreRuntime.sessions(appContext).list()')) {
+  fail('Read-only core sessions command missing');
+}
+
 // C0.2.5 generic external runtime-provider boundary. No project-specific
 // package identity or runtime engine enters the RAPP host.
 const runtimeProviders = read(`${kotlinDir}/RiftExternalRuntimeProviders.kt`);
