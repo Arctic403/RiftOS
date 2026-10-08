@@ -236,7 +236,17 @@ class RiftRappHost(
         val offered = runCatching {
             coreSessions.offerEvent(session.coreAttachment, event)
         }.getOrElse { error ->
-            complete(EventOutcome(error = error.message ?: "Core rejected application input"))
+            // Rejection never replaces an otherwise healthy window with an
+            // error screen. Restore the last authoritative Core snapshot.
+            val surface = coreSurfaces.snapshot(session.id)?.takeIf {
+                it.attachmentGeneration == session.coreAttachment.token
+            }
+            complete(
+                EventOutcome(
+                    frame = surface?.frame,
+                    error = error.message ?: "Core rejected application input"
+                )
+            )
             return
         }
         session.pendingUiCompletions[offered.ticket.id] = complete
@@ -251,6 +261,29 @@ class RiftRappHost(
             sessions[session.id] !== session ||
             !coreSessions.isAttached(session.coreAttachment)
         ) return
+
+        // A queued input ticket may outlive the focus lease that authorized
+        // its admission. Core must check again just before dispatch.
+        val denial = runCatching {
+            coreSessions.authorizeQueuedEventDispatch(session.coreAttachment, ticket)
+        }.exceptionOrNull()
+        if (denial != null) {
+            try {
+                val surface = coreSurfaces.snapshot(session.id)?.takeIf {
+                    it.attachmentGeneration == session.coreAttachment.token
+                }
+                session.pendingUiCompletions.remove(ticket.id)?.invoke(
+                    EventOutcome(
+                        frame = surface?.frame,
+                        error = denial.message ?: "Core rejected queued application input"
+                    )
+                )
+            } finally {
+                val next = coreSessions.finishEvent(session.coreAttachment, ticket)
+                if (next != null) dispatchCoreEvent(session, next)
+            }
+            return
+        }
 
         runEventStep(session, ticket.event) { outcome ->
             if (

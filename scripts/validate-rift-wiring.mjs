@@ -372,7 +372,7 @@ const desktopFocusClient = read(`${kotlinDir}/RiftNativeDesktop.kt`);
 const activityFocusClient = read(`${kotlinDir}/MainActivity.kt`);
 for (const marker of [
   'riftos.core.input-focus/1', 'data class Lease(',
-  'requestVerified(', 'fun revoke(', 'focusEnforcedForInput", false'
+  'requestVerified(', 'fun revoke(', 'focusEnforcedForInput", true'
 ]) if (!coreInputFocus.includes(marker)) fail(`C1.2-B2-B1 Core focus lease missing: ${marker}`);
 if (/import android\.(app|view)\./.test(coreInputFocus) ||
     coreInputFocus.includes('RiftNativeDesktop')) {
@@ -395,6 +395,31 @@ if (!activityFocusClient.includes('requestFocusFromShell(id)') ||
     !coreRuntime.includes('.put("inputFocus", sessions(context).focusStatus())')) {
   fail('C1.2-B2-B1 Core focus wiring, diagnostic or exact mandatory source missing');
 }
+
+// C1.2-B2-B2: Core lease authorization gates admission AND queued delivery.
+// Input tickets capture the original focus revision so a refocus cannot
+// revive an input that was pending while another window owned focus.
+for (const marker of [
+  'fun requireCurrentLease(appId: String, attachmentGeneration: Long)',
+  'RAPP Core focused input requires current focus lease',
+  'focusEnforcedForInput", true'
+]) if (!coreInputFocus.includes(marker)) fail(`C1.2-B2-B2 enforced focus lease missing: ${marker}`);
+for (const marker of [
+  'val admittedFocusRevision: Long? = null',
+  'private fun isFocusedInput(kind: Int): Boolean',
+  'RiftAppAbi.EventKind.POINTER_DOWN',
+  'RiftAppAbi.EventKind.KEY_DOWN',
+  'inputFocus.requireCurrentLease(attachment.record.id, attachment.token)',
+  'fun authorizeQueuedEventDispatch(attachment: Attachment, ticket: EventTicket)',
+  'ticket.admittedFocusRevision == inputFocus.current()?.revision',
+  'return attachment.record.offer(event, focusRevision)'
+]) if (!coreSessions.includes(marker)) fail(`C1.2-B2-B2 focused input ticket authority missing: ${marker}`);
+for (const marker of [
+  'coreSessions.authorizeQueuedEventDispatch(session.coreAttachment, ticket)',
+  'val denial = runCatching {',
+  'session.pendingUiCompletions.remove(ticket.id)?.invoke(',
+  'coreSurfaces.snapshot(session.id)?.takeIf {'
+]) if (!rappHost.includes(marker)) fail(`C1.2-B2-B2 queued input settlement missing: ${marker}`);
 
 // C1.2-B2-A: Core owns generic input-kind and target authorization.
 // The graphical shell may request an input event, never forge effect-result events.

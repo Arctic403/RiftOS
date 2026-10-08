@@ -16,6 +16,12 @@ From `android/app/build.gradle.kts`:
 - version `0.11.11-relay-client`;
 - release minification disabled.
 
+## 2026-10-08 — C1.2-B2-B1 focus lease device PASS; C1.2-B2-B2 enforcement source
+
+User's live RiftOS source `c06365cc` manual Builder #641, PID 25141, passed disposable RAPP focus lifecycle: `core focus` revision 0/no lease, probe launch revision 1/generation 1, native Files focus revision 2/none, taskbar refocus revision 3/same generation, probe uninstall revision 4/none. All three real installed RAPPs untouched and final Core sessions/surfaces/queued events zero. **B2-B1 device PASS**.
+
+Next source checkpoint B2-B2: `RiftCoreAppSessions` checks a matching current Core focus lease for ACTION, pointer, key and text input events at initial enqueue, stamps focused tickets with the lease revision, and rechecks the live lease and admitted revision before any queued event executes. BOOT/lifecycle/resize remain ungated. The graphical host safely settles refused events using the existing generation-verified Core snapshot instead of replacing the UI with an error. Input focus status is now enforced=true only in this new source; new user-manual Builder and device proof are mandatory. No shell-independent execution or separate shell process claim.
+
 ## 2026-10-08 — C1.2-B2-A device PASS; B2-B1 Core focus lease source-only
 
 User-installed RiftOS `e13c5bfe`, manual Builder #639 (`37797584074`), Core PID 25370 passed disposable generic input RAPP `c12b2a-input-probe-20261008`: ACTION node 10 accepted/count 1, editable TEXT_INPUT node 20 accepted `B2A_TEST`, repeat ACTION count 2 preserved typed text, surface revisions 2→3→6→7, and exact state persisted. Uninstall removed the session/surface, restoring original three RAPPs and zero events. Valid input **device gate PASS**; deliberately malformed/fabricated target input is not device-injected yet.

@@ -7,7 +7,8 @@ import org.json.JSONObject
  *
  * A replaceable shell reports its preferred foreground window; only the Core
  * session registry may mint or revoke the matching installed-app lease.
- * This is an in-process candidate, NOT input enforcement or C1.3 IPC proof.
+ * C1.2-B2-B2 enforces focused-input admission and ticket delivery in Core.
+ * This remains in-process and is NOT C1.3 independent-shell IPC proof.
  */
 class RiftCoreInputFocus {
     companion object {
@@ -41,6 +42,16 @@ class RiftCoreInputFocus {
         if (current?.appId == appId) requestVerified(null, null)
     }
 
+    /** Reject input unless this exact attached application generation owns focus. */
+    @Synchronized
+    fun requireCurrentLease(appId: String, attachmentGeneration: Long) {
+        val lease = current
+        require(lease != null && lease.appId == appId &&
+            lease.attachmentGeneration == attachmentGeneration) {
+            "RAPP Core focused input requires current focus lease"
+        }
+    }
+
     @Synchronized
     fun current(): Lease? = current?.copy()
 
@@ -53,7 +64,7 @@ class RiftCoreInputFocus {
             .put("revision", nextRevision)
             .put("focusedAppId", lease?.appId ?: JSONObject.NULL)
             .put("attachmentGeneration", lease?.attachmentGeneration ?: JSONObject.NULL)
-            .put("focusEnforcedForInput", false)
+            .put("focusEnforcedForInput", true)
             .put("shellClientProtocol", "in-process")
     }
 }

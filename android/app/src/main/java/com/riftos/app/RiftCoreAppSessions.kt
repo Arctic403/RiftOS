@@ -24,7 +24,11 @@ class RiftCoreAppSessions(private val surfaces: RiftCoreAppSurfaces) {
         private const val REPORT_SCHEMA = "riftos.core.sessions/1"
     }
 
-    data class EventTicket(val id: Long, val event: RiftAppAbi.Event)
+    data class EventTicket(
+        val id: Long,
+        val event: RiftAppAbi.Event,
+        val admittedFocusRevision: Long? = null
+    )
     data class OfferedEvent(val ticket: EventTicket, val startNow: Boolean)
 
     class Record internal constructor(
@@ -53,13 +57,13 @@ class RiftCoreAppSessions(private val surfaces: RiftCoreAppSurfaces) {
             event.text.toByteArray(Charsets.UTF_8).size + event.bytes.size
 
         // Core owns event ordering; never retain UI callbacks or Views here.
-        internal fun offer(event: RiftAppAbi.Event): OfferedEvent {
+        internal fun offer(event: RiftAppAbi.Event, admittedFocusRevision: Long?): OfferedEvent {
             require(nextTicketId < Long.MAX_VALUE) {
                 "RAPP Core event ticket sequence exhausted"
             }
             val copied = event.copy(bytes = event.bytes.copyOf())
             if (runningEvent == null) {
-                val ticket = EventTicket(nextTicketId++, copied)
+                val ticket = EventTicket(nextTicketId++, copied, admittedFocusRevision)
                 runningEvent = ticket.id
                 return OfferedEvent(ticket, true)
             }
@@ -70,7 +74,7 @@ class RiftCoreAppSessions(private val surfaces: RiftCoreAppSurfaces) {
             require(bytes <= MAX_PENDING_EVENT_BYTES - pendingBytes) {
                 "RAPP Core pending event bytes exceeded bound"
             }
-            val ticket = EventTicket(nextTicketId++, copied)
+            val ticket = EventTicket(nextTicketId++, copied, admittedFocusRevision)
             waitingEvents.addLast(ticket)
             pendingBytes += bytes
             return OfferedEvent(ticket, false)
@@ -270,7 +274,8 @@ class RiftCoreAppSessions(private val surfaces: RiftCoreAppSurfaces) {
      * surface and the current executable generation, not shell View tags.
      * Pointer canvas input and global keyboard input may target id=0; named
      * ACTION/TEXT_INPUT events must target their matching published node kind.
-     * This is NOT focus-ownership or headless execution proof.
+     * Core separately checks the current focus lease for user input.
+     * This is NOT headless execution or separate-shell process proof.
      */
     private fun authorizeInputTarget(attachment: Attachment, event: RiftAppAbi.Event) {
         require(event.kind != RiftAppAbi.EventKind.HOST_EFFECT_RESULT) {
@@ -299,6 +304,38 @@ class RiftCoreAppSessions(private val surfaces: RiftCoreAppSurfaces) {
         }
     }
 
+    /** Focus is required only for real user input, never boot/resize/lifecycle. */
+    private fun isFocusedInput(kind: Int): Boolean = when (kind) {
+        RiftAppAbi.EventKind.ACTION,
+        RiftAppAbi.EventKind.POINTER_DOWN,
+        RiftAppAbi.EventKind.POINTER_UP,
+        RiftAppAbi.EventKind.POINTER_MOVE,
+        RiftAppAbi.EventKind.KEY_DOWN,
+        RiftAppAbi.EventKind.KEY_UP,
+        RiftAppAbi.EventKind.TEXT_INPUT -> true
+        else -> false
+    }
+
+    private fun authorizeInputFocus(attachment: Attachment, event: RiftAppAbi.Event) {
+        if (isFocusedInput(event.kind)) {
+            inputFocus.requireCurrentLease(attachment.record.id, attachment.token)
+        }
+    }
+
+    /** Called again as a queued event is dispatched, after any focus switch. */
+    @Synchronized
+    fun authorizeQueuedEventDispatch(attachment: Attachment, ticket: EventTicket) {
+        require(isAttached(attachment)) { "RAPP Core event attachment is stale" }
+        val event = ticket.event
+        authorizeInputTarget(attachment, event)
+        authorizeInputFocus(attachment, event)
+        if (isFocusedInput(event.kind)) {
+            require(ticket.admittedFocusRevision == inputFocus.current()?.revision) {
+                "RAPP Core queued input belongs to an expired focus lease"
+            }
+        }
+    }
+
     /**
      * Core-owned bounded FIFO: graphical shell submits an input request, but
      * the Core session registry authorizes its kind/target before queueing.
@@ -307,7 +344,11 @@ class RiftCoreAppSessions(private val surfaces: RiftCoreAppSurfaces) {
     fun offerEvent(attachment: Attachment, event: RiftAppAbi.Event): OfferedEvent {
         require(isAttached(attachment)) { "RAPP Core event attachment is stale" }
         authorizeInputTarget(attachment, event)
-        return attachment.record.offer(event)
+        authorizeInputFocus(attachment, event)
+        val focusRevision = if (isFocusedInput(event.kind)) {
+            inputFocus.current()?.revision
+        } else null
+        return attachment.record.offer(event, focusRevision)
     }
 
     @Synchronized
