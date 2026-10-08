@@ -225,6 +225,7 @@ if (!rappHost.includes('RiftCoreRuntime.packages(activity.applicationContext)') 
 
 // C1.1-A: Core owns RAPP identity/opaque program state independently of UI.
 const coreSessions = read(`${kotlinDir}/RiftCoreAppSessions.kt`);
+const coreExecutor = read(`${kotlinDir}/RiftCoreAppExecutor.kt`);
 for (const required of [
   'class RiftCoreAppSessions', 'riftos.core.sessions/1',
   'fun attach(', 'fun detach(attachment: Attachment)',
@@ -233,7 +234,7 @@ for (const required of [
   'fun nextEventSequence()', 'fun list(): JSONObject',
   '"headlessExecution", false', '"appExecutionIndependentOfDesktop", false',
 ]) if (!coreSessions.includes(required)) fail(`Core RAPP session contract missing: ${required}`);
-if (/\\b(?:Activity|View|RiftNativeDesktop|RiftNativeShell|RiftRappHost)\\b/.test(
+if (/\b(?:Activity|View|RiftNativeDesktop|RiftNativeShell|RiftRappHost)\b/.test(
   stripCodeComments(coreSessions)
 )) fail('Core session registry must not depend on desktop/UI implementation classes');
 for (const required of [
@@ -241,7 +242,7 @@ for (const required of [
   'coreSessions.attach(payload, adapter)',
   'coreSessions.detach(it.coreAttachment)',
   'coreSessions.close(session.coreAttachment)',
-  'session.coreAttachment.record.nextEventSequence()',
+  'coreExecutor.execute(',
 ]) if (!rappHost.includes(required)) fail(`RAPP desktop attachment migration missing: ${required}`);
 if (!coreRuntime.includes('fun sessions(context: Context): RiftCoreAppSessions') ||
     !coreRuntime.includes('sessions(context).summary()')) {
@@ -252,6 +253,35 @@ if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreAppSessions.kt"')) {
 }
 if (!nativeShell.includes('RiftCoreRuntime.sessions(appContext).list()')) {
   fail('Read-only core sessions command missing');
+}
+
+// C1.1-B1: interpreter execution, deadlines and persisted state belong to Core.
+for (const required of [
+  'class RiftCoreAppExecutor', 'RiftBoundedAsync.submit(',
+  'RiftNativeBufferCompilerService.compile(', 'RiftRappQuickJsExecutor()',
+  'adapter.encodeEvent(', 'adapter.decodeOutput(', 'sessions.commitFromExecution(',
+  'fun execute(', 'RiftCoreRuntime.runtimes(app)', 'sessions.matchesExecution('
+]) if (!coreExecutor.includes(required)) fail(`C1.1-B1 Core execution missing: ${required}`);
+if (/\b(?:Activity|View|RiftNativeDesktop|RiftNativeShell|RiftRappHost)\b/.test(
+  stripCodeComments(coreExecutor)
+)) fail('Core RAPP executor references UI/desktop types');
+for (const required of [
+  'RiftCoreRuntime.appExecutor(activity.applicationContext)',
+  'coreExecutor.execute('
+]) if (!rappHost.includes(required)) fail(`C1.1-B1 RAPP UI still owns execution: ${required}`);
+for (const forbidden of [
+  'RiftRappQuickJsExecutor()', 'RiftNativeBufferCompilerService.compile(',
+  'RiftBoundedAsync.submit(', 'Executors.newSingleThreadExecutor',
+  'session.coreAttachment.record.nextEventSequence()',
+]) if (rappHost.includes(forbidden)) fail(`C1.1-B1 desktop regained Core execution: ${forbidden}`);
+if (!coreRuntime.includes('fun appExecutor(context: Context): RiftCoreAppExecutor')) {
+  fail('C1.1-B1 Core executor service ownership missing');
+}
+if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreAppExecutor.kt"')) {
+  fail('C1.1-B1 Core executor missing from mandatory Kotlin snapshot');
+}
+if (!coreSessions.includes('fun commitFromExecution(')) {
+  fail('C1.1-B1 Core program commit must validate attachment generation');
 }
 
 // C0.2.5 generic external runtime-provider boundary. No project-specific
@@ -265,8 +295,11 @@ for (const required of [
   '?: return fallback()', 'registry.json',
 ]) if (!runtimeProviders.includes(required)) fail(`runtime-provider boundary missing: ${required}`);
 for (const required of [
-  'RiftCoreRuntime.runtimes(activity.applicationContext)', 'externalRuntimeProviders.execute(',
-]) if (!rappHost.includes(required)) fail(`RAPP host runtime dispatch missing: ${required}`);
+  'RiftCoreRuntime.appExecutor(activity.applicationContext)', 'coreExecutor.execute(',
+]) if (!rappHost.includes(required)) fail(`RAPP host Core execution delegation missing: ${required}`);
+for (const required of [
+  'RiftCoreRuntime.runtimes(app)', 'providers.execute(',
+]) if (!coreExecutor.includes(required)) fail(`Core runtime provider dispatch missing: ${required}`);
 if (!manifest.includes('<action android:name="com.riftos.runtime.EXECUTE_V1" />')) {
   fail('generic external Android runtime provider visibility action missing');
 }

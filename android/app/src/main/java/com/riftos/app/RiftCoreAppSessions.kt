@@ -125,6 +125,52 @@ class RiftCoreAppSessions {
         sessions[attachment.record.id] === attachment.record &&
             attachment.record.isAttached(attachment.token)
 
+    /**
+     * Bounded commit only for the current UI attachment. Persist before memory
+     * promotion; hold the registry lock across both so a late worker cannot
+     * commit state after the UI has detached/replaced its generation.
+     */
+    @Synchronized
+    fun commitFromExecution(
+        attachment: Attachment,
+        value: ByteArray,
+        persist: (ByteArray) -> Unit
+    ) {
+        require(isAttached(attachment)) {
+            "Detached RAPP event cannot commit Core state"
+        }
+        require(value.size in 1..MAX_PROGRAM_BYTES) {
+            "RAPP Core program state exceeds maximum size"
+        }
+        if (!value.contentEquals(attachment.record.programSnapshot())) {
+            val copy = value.copyOf()
+            persist(copy)
+            attachment.record.commitState(copy)
+        }
+    }
+
+    /** Core never trusts a UI client to supply an unrelated executable. */
+    @Synchronized
+    fun matchesExecution(
+        attachment: Attachment,
+        payload: RiftAppAbi.RuntimePayload,
+        adapter: RiftAppRuntimeAdapter
+    ): Boolean {
+        if (!isAttached(attachment)) return false
+        val record = attachment.record
+        return record.id == payload.id &&
+            record.name == payload.name &&
+            record.abi == payload.abi &&
+            record.adapterId == payload.adapter &&
+            record.adapterId == adapter.id &&
+            record.presentation == payload.presentation &&
+            record.permissions == payload.permissions &&
+            MessageDigest.isEqual(
+                record.runtimeDigest,
+                MessageDigest.getInstance("SHA-256").digest(payload.runtime)
+            )
+    }
+
     @Synchronized
     fun detach(attachment: Attachment) {
         if (sessions[attachment.record.id] === attachment.record) {
@@ -148,6 +194,8 @@ class RiftCoreAppSessions {
             .put("attached", attached)
             .put("detached", sessions.size - attached)
             .put("headlessExecution", false)
+            .put("eventExecutorOwner", "riftos-core")
+            .put("capabilityEffectsIndependentOfDesktop", false)
             .put("appExecutionIndependentOfDesktop", false)
     }
 

@@ -19,6 +19,18 @@ The generic runtime-provider IPC in `docs/systems/riftbuild/RUNTIME_PROVIDERS.md
 
 **Do not confuse names:** `RiftNativeShell` is the current process-owned **command executor**, not the eventual replaceable **RiftShell graphical desktop**. During migration its generic OS-facing commands become thin clients of Core and its UI-specific commands become shell UI calls or independent clients.
 
+## 2026-10-08 — C1.1-B1 Core event execution extraction (source; pending user-manual Builder)
+
+The user confirmed the C1.1-A APK green, installed and running. Live Rift MCP reads showed `core status` PID 22686, `riftos.core.sessions/1`, five installed RAPPs and an empty attached/detached session registry, plus `riftbuild runtime-status` reporting zero external providers and legacy fallback. This validates the registry and commands **while no RAPP was running**, not yet app attach/typing/relaunch/crash behavior.
+
+C1.1-B1 extracts generic **adapter event encoding/decoding, native-buffer/QuickJS runtime invocation via generic provider dispatch, bounded event execution watchdog and persisted program-state promotion** into `RiftCoreAppExecutor.kt`. It is obtained from `RiftCoreRuntime.appExecutor(context)` using only application context and Core services, not the desktop. `RiftRappHost` submits an attached session's event and receives frame/effect/error results for UI presentation. `RiftCoreAppSessions.commitFromExecution` checks attachment generation and persists state atomically before promoting it to memory, ensuring stale UI workers cannot overwrite a newly attached session. Core processes events through its own single bounded worker and watchdog threads even if an Activity is recreated; the desktop must not shut those workers down.
+
+**Still NOT headless RAPP execution:** event queue orchestration, user-facing host-effect/capability consent handling, UI callbacks and `RiftRappManager.launch` still depend on `RiftRappHost` in the Activity. Detached sessions remain suspended; `eventExecutorOwner="riftos-core"` is accurate but `capabilityEffectsIndependentOfDesktop=false`, `headlessExecution=false`, `appExecutionIndependentOfDesktop=false`, `separateCoreProcess=false`. This gate does not claim any process survival after shell death and is not a replacement shell package. Keep the existing runtime ABI, user-controlled Builder workflow and installed app handling unchanged.
+
+**B1 required device gate:** after user-manual Builder green and installation, check `core status`/`core sessions`, launch `rapp-notepad`, interact and verify persisted program state, close and relaunch, confirm RiftBuild Hosted host effects and compile flow still work, and test UI Activity recreation without changing Core PID or incorrectly committing a stale event. `riftbuild runtime-status`, MCP and Files should continue responding. Do not promote or start B2 until the device behavior is proven.
+
+**Next C1.1-B2:** move host event serialization/queues, capability-effect requests and user-approval synchronization to a versioned Core↔shell consent protocol, and make Core responsible for headless app lifecycle and process inventory. Then C1.2 generic window/surface protocol and C1.3 replaceable shell process/package.
+
 ## 2026-10-08 — C1.0 green/device-live; C1.1-A session-state migration pending manual Builder
 
 The user confirmed RiftOS C1.0 on `fd64c612` build-green and installed. A live `core status` read reported `riftos.core.status/1`, process ID 14909, 5 installed RAPPs, no external runtime provider and `appExecutionIndependentOfDesktop=false`; `riftbuild runtime-status` returned 0 providers with legacy fallback. Core package/runtime/build foundation is device-live.
@@ -64,6 +76,7 @@ This document owns the Core/Shell separation policy and phased C1 migration boun
 | `android/app/src/main/java/com/riftos/app/RiftCoreApplication.kt` | Android Application bootstrap; initializes Core without creating desktop UI |
 | `android/app/src/main/java/com/riftos/app/RiftCoreRuntime.kt` | Main-process Core service catalogue, generic package manager, runtime registry and build-platform owner |
 | `android/app/src/main/java/com/riftos/app/RiftCoreAppSessions.kt` | C1.1-A non-UI RAPP session identity, bounded opaque state, monotonic sequence, UI attach/detach token authority |
+| `android/app/src/main/java/com/riftos/app/RiftCoreAppExecutor.kt` | C1.1-B1 process-scoped bounded interpreter invocation, adapter encoding/decoding and persisted-state execution; not permission/GUI ownership |
 | `android/app/src/main/java/com/riftos/app/RiftRappManager.kt` | Generic installed RAPP packaging, verification, installation catalogue and state |
 | `android/app/src/main/java/com/riftos/app/RiftExternalRuntimeProviders.kt` | Signer-pinned runtime-provider registration lookup and bounded external execution IPC |
 | `android/app/src/main/java/com/riftos/app/RiftBuildPlatformTools.kt` | Core-owned generic compiler, verifier, install and package services; shell-facing commands are adapters only |

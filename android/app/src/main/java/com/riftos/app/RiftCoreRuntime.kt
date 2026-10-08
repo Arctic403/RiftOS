@@ -27,6 +27,7 @@ object RiftCoreRuntime {
     @Volatile private var runtimeRegistry: RiftExternalRuntimeProviders? = null
     @Volatile private var buildPlatform: RiftBuildPlatformTools? = null
     @Volatile private var appSessions: RiftCoreAppSessions? = null
+    @Volatile private var coreExecutor: RiftCoreAppExecutor? = null
 
     fun initialize(context: Context) {
         if (application != null) return
@@ -73,6 +74,16 @@ object RiftCoreRuntime {
         appSessions?.let { return it }
         return synchronized(this) {
             appSessions ?: RiftCoreAppSessions().also { appSessions = it }
+        }
+    }
+
+    fun appExecutor(context: Context): RiftCoreAppExecutor {
+        initialize(context)
+        coreExecutor?.let { return it }
+        return synchronized(this) {
+            coreExecutor ?: RiftCoreAppExecutor(requireApplication()).also {
+                coreExecutor = it
+            }
         }
     }
 

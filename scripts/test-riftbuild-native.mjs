@@ -16,6 +16,7 @@ const paths = {
   abi: 'android/app/src/main/java/com/riftos/app/RiftAppAbi.kt',
   broker: 'android/app/src/main/java/com/riftos/app/RiftRappCapabilityBroker.kt',
   host: 'android/app/src/main/java/com/riftos/app/RiftRappHost.kt',
+  coreExecutor: 'android/app/src/main/java/com/riftos/app/RiftCoreAppExecutor.kt',
   manager: 'android/app/src/main/java/com/riftos/app/RiftRappManager.kt',
   jsonAdapter: 'android/app/src/main/java/com/riftos/app/RiftRappJsonAdapter.kt',
   quickjs: 'android/app/src/main/java/com/riftos/app/RiftRappQuickJsExecutor.kt',
@@ -55,6 +56,7 @@ const nativeBuffer = read(paths.nativeBuffer);
 const abi = read(paths.abi);
 const broker = read(paths.broker);
 const host = read(paths.host);
+const coreExecutor = read(paths.coreExecutor);
 const manager = read(paths.manager);
 const jsonAdapter = read(paths.jsonAdapter);
 const quickjs = read(paths.quickjs);
@@ -195,9 +197,18 @@ for (const required of [
   'MAX_EFFECT_DEPTH = 1024',
   'ScrollView(activity)',
   '!field.hasFocus()',
-  'RiftRappQuickJsExecutor',
+  'coreExecutor.execute(',
   'HOST_EFFECT_RESULT',
 ]) assert.ok(host.includes(required), 'generic RAPP host contract missing: ' + required);
+for (const required of [
+  'RiftRappQuickJsExecutor()', 'RiftNativeBufferCompilerService.compile(',
+  'RiftBoundedAsync.submit(', 'sessions.commitFromExecution(',
+  'adapter.encodeEvent(', 'adapter.decodeOutput(',
+]) assert.ok(coreExecutor.includes(required), 'Core RAPP executor contract missing: ' + required);
+assert.doesNotMatch(
+  host, /RiftRappQuickJsExecutor\(|RiftBoundedAsync\.submit\(|RiftNativeBufferCompilerService\.compile\(/,
+  'UI host must not execute language runtimes directly'
+);
 assert.match(host, /\bisFillViewport\s*=\s*true\b/, 'generic RAPP host scroll view must fill viewport');
 assert.doesNotMatch(host, /Riftpp|RPE2|RUI2/, 'generic RAPP host must not own language protocol semantics');
 

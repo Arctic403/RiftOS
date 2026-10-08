@@ -16,6 +16,10 @@ From `android/app/build.gradle.kts`:
 - version `0.11.11-relay-client`;
 - release minification disabled.
 
+## 2026-10-08 — C1.1-A device-live; C1.1-B1 Core interpreter extraction source pending
+
+The user reports the C1.1-A build green, installed and live. Live Core diagnostics show `riftos.core.sessions/1`, zero current RAPP sessions, five installed applications and the generic runtime registry operational. C1.1-B1 now moves bounded RAPP event execution/encoding/decoding/runtime provider invocation, deadlines and persisted program-state commits to `RiftCoreAppExecutor` owned by `RiftCoreRuntime`. The Activity host still owns capability prompts, host-effect chaining, event queue orchestration and presentation. **Not headless yet**: `headlessExecution=false`, `capabilityEffectsIndependentOfDesktop=false`, `appExecutionIndependentOfDesktop=false`. Manual Builder + real signed APK/device proof is still required for B1; C1.1-B2 will move host effects and process lifecycle to Core.
+
 ## 2026-10-08 — C1.0 green/device-live; C1.1-A Core session registry source pending
 
 User confirmed C1.0 on RiftOS fd64c612 green and installed. Live `core status` succeeded with 5 RAPPs and independent Core initialization; `riftbuild runtime-status` succeeded with 0 external providers. Now C1.1-A introduces a Core-owned `RiftCoreAppSessions` registry (identity, bounded opaque state, event sequence, attach-generation tokens), read-only `core sessions`, RAPP host detach-on-Activity-destroy and close-on-window-close. Event queues, effects and presentation remain Activity-owned, so `appExecutionIndependentOfDesktop=false` and `headlessExecution=false` are intentional. This change requires the next **user-manual** Builder and real-device proof before promotion; full C1.1-B headless execution and generic UI surface transport remain pending. See `docs/systems/core-shell/README.md`.

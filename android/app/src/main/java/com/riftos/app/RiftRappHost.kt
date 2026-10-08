@@ -15,7 +15,6 @@ import android.widget.ScrollView
 import android.widget.TextView
 import org.json.JSONObject
 import java.lang.ref.WeakReference
-import java.util.concurrent.Executors
 
 /**
  * Generic RiftOS application host for installed .rapp programs.
@@ -29,9 +28,6 @@ class RiftRappHost(
     private val refreshLauncher: () -> Unit
 ) {
     companion object {
-        private const val OUTPUT_BYTES = 512 * 1024
-        private const val MAX_SESSION_PROGRAM_BYTES = 1024 * 1024
-        private const val EVENT_TIMEOUT_MS = 6500L
         // 1024 x 256 KiB binary host effects reaches the existing 256 MiB build ceiling
         // while keeping every hosted-app transaction finite.
         private const val MAX_EFFECT_DEPTH = 1024
@@ -68,12 +64,8 @@ class RiftRappHost(
         val id: String get() = payload.id
         val name: String get() = payload.name
 
-        // Identity, program bytes and sequence live in Core; only outstanding
-        // UI/event callbacks belong to this disposable desktop attachment.
-        var program: ByteArray
-            get() = coreAttachment.record.programSnapshot()
-            set(value) { coreAttachment.record.commitState(value) }
-
+        // Core owns the program bytes, event sequence and execution. Only
+        // UI/effect callbacks remain on this disposable host attachment.
         var eventBusy: Boolean = false
         val pendingEvents = ArrayDeque<PendingEvent>()
     }
@@ -94,22 +86,7 @@ class RiftRappHost(
             activity,
             desktop
         )
-    private val quickJsExecutor =
-        RiftRappQuickJsExecutor()
-    private val externalRuntimeProviders =
-        RiftCoreRuntime.runtimes(activity.applicationContext)
-    private val eventExecutor =
-        Executors.newSingleThreadExecutor { runnable ->
-            Thread(runnable, "rift-rapp-event").apply {
-                isDaemon = true
-            }
-        }
-    private val eventWatchdog =
-        Executors.newSingleThreadScheduledExecutor { runnable ->
-            Thread(runnable, "rift-rapp-watchdog").apply {
-                isDaemon = true
-            }
-        }
+    private val coreExecutor = RiftCoreRuntime.appExecutor(activity.applicationContext)
     private val sessions =
         LinkedHashMap<String, Session>()
 
@@ -188,8 +165,6 @@ class RiftRappHost(
         sessions.values.forEach { coreSessions.detach(it.coreAttachment) }
         sessions.clear()
         capabilityBroker.destroy()
-        eventExecutor.shutdownNow()
-        eventWatchdog.shutdownNow()
         val current =
             active
                 ?.get()
@@ -362,218 +337,43 @@ class RiftRappHost(
         effectDepth: Int,
         complete: (EventOutcome) -> Unit
     ) {
-        if (
-            effectDepth >
-                MAX_EFFECT_DEPTH
-        ) {
-            complete(
-                EventOutcome(
-                    error =
-                        "RAPP host effect chain exceeded bound"
-                )
-            )
+        if (effectDepth > MAX_EFFECT_DEPTH) {
+            complete(EventOutcome(error = "RAPP host effect chain exceeded bound"))
             return
         }
 
-        RiftBoundedAsync.submit(
-            executor = eventExecutor,
-            watchdog = eventWatchdog,
-            timeoutMs = EVENT_TIMEOUT_MS,
-            timeoutValue = {
-                EventOutcome(
-                    error = "RAPP event timed out"
-                )
-            },
-            failureValue = { error ->
-                EventOutcome(
-                    error = error.message
-                        ?: error.javaClass.simpleName
-                )
-            },
-            work = {
-                require(coreSessions.isAttached(session.coreAttachment)) {
-                    "RAPP Core session has no attached event client"
+        // Core owns runtime execution, deadlines, state persistence and adapter
+        // output parsing; this disposable desktop client only resolves UI effects.
+        coreExecutor.execute(
+            session.coreAttachment,
+            session.payload,
+            session.adapter,
+            event
+        ) { result ->
+            activity.runOnUiThread {
+                if (
+                    activity.isFinishing ||
+                    activity.isDestroyed ||
+                    sessions[session.id] !== session ||
+                    !coreSessions.isAttached(session.coreAttachment)
+                ) {
+                    return@runOnUiThread
                 }
-                val eventPayload =
-                    session.payload.copy(
-                        program =
-                            session.program.copyOf()
-                    )
-                val sequence =
-                    session.coreAttachment.record.nextEventSequence()
 
-                val envelope =
-                    session.adapter.encodeEvent(
-                        eventPayload,
-                        event,
-                        sequence
-                    )
-
-                val output =
-                    executeRuntime(
-                        session,
-                        envelope
-                    )
-
-                val decoded =
-                    session.adapter
-                        .decodeOutput(
-                            output
-                        )
-
-                decoded.nextProgram
-                    ?.let {
-                        nextProgram ->
-                        require(coreSessions.isAttached(session.coreAttachment)) {
-                            "Detached desktop cannot commit RAPP Core session state"
-                        }
-                        require(
-                            nextProgram.size in
-                                1..MAX_SESSION_PROGRAM_BYTES
-                        ) {
-                            "RAPP next program state is out of bounds"
-                        }
-
-                        if (
-                            !nextProgram.contentEquals(
-                                session.program
-                            )
-                        ) {
-                            manager.persistState(
-                                session.id,
-                                nextProgram
-                            )
-                            session.program =
-                                nextProgram.copyOf()
-                        }
-                    }
-
-                EventOutcome(
-                    frame =
-                        decoded.frame,
-                    effects =
-                        decoded.effects
+                val outcome = EventOutcome(
+                    frame = result.frame,
+                    effects = result.effects,
+                    error = result.error
                 )
-            },
-            reply = { outcome ->
-                activity.runOnUiThread {
-                    if (
-                        activity.isFinishing ||
-                        activity.isDestroyed ||
-                        sessions[session.id] !==
-                            session
-                    ) {
-                        return@runOnUiThread
-                    }
-
-                    val effect =
-                        outcome.effects
-                            .singleOrNull()
-
-                    if (
-                        outcome.error !=
-                            null ||
-                        effect ==
-                            null
-                    ) {
-                        complete(
-                            outcome
-                        )
-                    } else {
-                        resolveHostEffect(
-                            session,
-                            effect,
-                            complete,
-                            effectDepth
-                        )
-                    }
+                val effect = outcome.effects.singleOrNull()
+                if (outcome.error != null || effect == null) {
+                    complete(outcome)
+                } else {
+                    resolveHostEffect(session, effect, complete, effectDepth)
                 }
             }
-        )
-    }
-
-    private fun executeRuntime(
-        session: Session,
-        envelope: ByteArray
-    ): ByteArray =
-        when (
-            session.adapter.executorKind
-        ) {
-            RiftAppExecutionKind.NATIVE_BUFFER ->
-                externalRuntimeProviders.execute(
-                    session.adapter.executorKind,
-                    session.payload.runtime,
-                    envelope,
-                    OUTPUT_BYTES
-                ) {
-
-                val result =
-                    RiftNativeBufferCompilerService.compile(
-                        activity,
-                        session.payload.runtime,
-                        envelope,
-                        OUTPUT_BYTES
-                    )
-                val status =
-                    result.getString("status")
-                        ?: "host-reject"
-                require(status == "success") {
-                    buildString {
-                        append("RAPP runtime ")
-                        append(status)
-                        append(" · host=")
-                        append(
-                            result.getInt(
-                                "hostStatus",
-                                -1
-                            )
-                        )
-                        append(" · return=")
-                        append(
-                            result.getLong(
-                                "returnValue",
-                                0xffffffffL
-                            )
-                        )
-                        result.getString(
-                            "detail"
-                        )
-                            ?.takeIf {
-                                it.isNotBlank()
-                            }
-                            ?.let {
-                                append(" · ")
-                                append(it)
-                            }
-                    }
-                }
-
-                result.getByteArray(
-                    "output"
-                )
-                    ?: error(
-                        "RAPP runtime succeeded without output"
-                    )
-                }
-            RiftAppExecutionKind.QUICKJS ->
-                externalRuntimeProviders.execute(
-                    session.adapter.executorKind,
-                    session.payload.runtime,
-                    envelope,
-                    OUTPUT_BYTES
-                ) {
-                    quickJsExecutor.execute(
-                        session.payload.runtime,
-                        envelope,
-                        OUTPUT_BYTES
-                    )
-                }
-
-            else ->
-                error(
-                    "Unsupported RAPP execution kind"
-                )
         }
+    }
 
     private fun resolveHostEffect(
         session: Session,
