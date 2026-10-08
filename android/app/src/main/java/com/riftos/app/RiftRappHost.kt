@@ -49,6 +49,7 @@ class RiftRappHost(
         RiftCoreRuntime.packages(activity.applicationContext)
     }
     private val coreSessions = RiftCoreRuntime.sessions(activity.applicationContext)
+    private val coreSurfaces = RiftCoreRuntime.surfaces(activity.applicationContext)
     private val shellCapabilities = RiftRappShellCapabilityClient(activity, desktop)
     private val coreExecutor = RiftCoreRuntime.appExecutor(activity.applicationContext)
     private val sessions =
@@ -266,8 +267,9 @@ class RiftRappHost(
         event: RiftAppAbi.Event,
         complete: (EventOutcome) -> Unit
     ) {
-        // Core owns authorization, capability work and the entire continuation.
-        // This UI attachment only receives the final frame for presentation.
+        // Core owns authorization, capability chaining and final surface
+        // snapshots. RiftShell renders the immutable Core snapshot only, not
+        // the raw interpreter frame returned through this disposable callback.
         coreExecutor.executeChained(
             session.coreAttachment,
             session.payload,
@@ -279,7 +281,19 @@ class RiftRappHost(
                     sessions[session.id] !== session ||
                     !coreSessions.isAttached(session.coreAttachment)
                 ) return@runOnUiThread
-                complete(EventOutcome(frame = result.frame, error = result.error))
+                val surface = if (result.error == null) {
+                    coreSurfaces.snapshot(session.id)?.takeIf {
+                        it.attachmentGeneration == session.coreAttachment.token
+                    }
+                } else null
+                complete(
+                    EventOutcome(
+                        frame = surface?.frame,
+                        error = result.error ?: if (surface == null) {
+                            "Core application surface unavailable for current attachment"
+                        } else null
+                    )
+                )
             }
         }
     }

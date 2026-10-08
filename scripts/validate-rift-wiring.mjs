@@ -354,6 +354,18 @@ if (!coreExecutor.includes('sessions.publishSurfaceFromExecution(') ||
   fail('C1.2-A Core surface publication, diagnostic or mandatory Gradle snapshot missing');
 }
 
+// C1.2-B1: graphical RiftShell reads authoritative Core surface snapshots.
+for (const required of [
+  'RiftCoreRuntime.surfaces(activity.applicationContext)',
+  'coreSurfaces.snapshot(session.id)',
+  'it.attachmentGeneration == session.coreAttachment.token',
+  'frame = surface?.frame',
+  'Core application surface unavailable for current attachment'
+]) if (!rappHost.includes(required)) fail(`C1.2-B1 shell surface client missing: ${required}`);
+if (rappHost.includes('EventOutcome(frame = result.frame')) {
+  fail('C1.2-B1 RiftShell still renders raw Core executor callback frame');
+}
+
 // C1.1-P: package manager is Core authority; graphical Installed Apps is only a client.
 const corePackageEvents = read(`${kotlinDir}/RiftCorePackageEvents.kt`);
 const corePackageGrants = read(`${kotlinDir}/RiftCorePackageGrants.kt`);

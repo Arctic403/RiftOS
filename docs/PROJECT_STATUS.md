@@ -16,6 +16,10 @@ From `android/app/build.gradle.kts`:
 - version `0.11.11-relay-client`;
 - release minification disabled.
 
+## 2026-10-08 — C1.2-A surface device PASS; C1.2-B1 shell snapshot rendering source
+
+User's installed run 637 (`37788211066`), source `0dc4c277`, Core PID 11301 passed real `core surfaces` proof: 0→1→0 on disposable RAPP install/launch/update, relaunch 1, uninstall 0; UI event advanced revision 3→6 and refreshed 79→157 bytes. New launch after package replacement had revision 9; after uninstall zero Core sessions and original three apps remain. C1.2-A device gate is complete. The next source-only B1 changes generic `RiftRappHost` to render a generation-matched immutable Core surface snapshot rather than the raw event callback frame. Does not move input/focus, change app APIs, provide independent headless execution or constitute a separate replaceable RiftShell. Next user-triggered Builder + disposable app graphical/device proof required.
+
 ## 2026-10-08 — C1.1-B2-B device gate PASS; C1.2-A generic Core surface source pending Builder
 
 The latest user-built/installed RiftOS `60fb0e7`, run 635/`37777098652`, is green and live. Active Core PID 28575, original three RAPPs intact. A disposable QuickJS JSON RAPP displayed a new CANCEL/DENY/ALLOW permission dialog. Android Local Agent pressed CANCEL on fs.write; the app remained attached, displayed `CORE EFFECT RESULT fs.write DENIED/FAILED token=44`, and persisted that result. No new write file was created. On disposal `riftbuild uninstall-rapp` reported clean session stop and package removal, leaving exactly the original three installed RAPPs with zero sessions and queued events. Earlier real-device tests proved Core window-title, fs.read/fs.write Allow, Deny, state persistence and grant revocation on package replacement. **C1.1-B2-B capability consent/effect gate is device-proven**. Shell-less execution and shell process separation remain false.
