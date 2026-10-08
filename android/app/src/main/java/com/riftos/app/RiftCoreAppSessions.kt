@@ -204,6 +204,10 @@ class RiftCoreAppSessions(private val surfaces: RiftCoreAppSurfaces) {
     @Synchronized
     fun focusStatus(): JSONObject = inputFocus.status()
 
+    /** Prevent Core-only starts from replacing a live graphical attachment. */
+    @Synchronized
+    fun hasAttachedApp(id: String): Boolean = sessions[id]?.activeGeneration() != null
+
     @Synchronized
     fun isAttached(attachment: Attachment): Boolean =
         sessions[attachment.record.id] === attachment.record &&

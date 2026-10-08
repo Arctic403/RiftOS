@@ -501,13 +501,21 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "riftos-agent" -> services.riftOsAgent(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
             "riftllm-agent" -> services.riftLlm(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
             "core" -> {
-                require(args.size == 1) { "usage: core status|sessions|surfaces|focus" }
-                val state = when (args.single().lowercase()) {
-                    "status" -> RiftCoreRuntime.status(appContext)
-                    "sessions" -> RiftCoreRuntime.sessions(appContext).list()
-                    "surfaces" -> RiftCoreRuntime.surfaces(appContext).list()
-                    "focus" -> RiftCoreRuntime.sessions(appContext).focusStatus()
-                    else -> error("usage: core status|sessions|surfaces|focus")
+                val usage = "usage: core status|sessions|surfaces|focus|apps|app-start <id>|app-stop <id>"
+                val state = when {
+                    args.size == 1 -> when (args.single().lowercase()) {
+                        "status" -> RiftCoreRuntime.status(appContext)
+                        "sessions" -> RiftCoreRuntime.sessions(appContext).list()
+                        "surfaces" -> RiftCoreRuntime.surfaces(appContext).list()
+                        "focus" -> RiftCoreRuntime.sessions(appContext).focusStatus()
+                        "apps" -> RiftCoreRuntime.lifecycle(appContext).status()
+                        else -> error(usage)
+                    }
+                    args.size == 2 && args[0].lowercase() == "app-start" ->
+                        RiftCoreRuntime.lifecycle(appContext).start(args[1])
+                    args.size == 2 && args[0].lowercase() == "app-stop" ->
+                        RiftCoreRuntime.lifecycle(appContext).stop(args[1])
+                    else -> error(usage)
                 }
                 ShellOutcome(state.toString(2), cwd, state)
             }

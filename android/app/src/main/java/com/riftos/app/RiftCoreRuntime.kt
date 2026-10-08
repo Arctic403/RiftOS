@@ -29,6 +29,7 @@ object RiftCoreRuntime {
     @Volatile private var appSessions: RiftCoreAppSessions? = null
     @Volatile private var appSurfaces: RiftCoreAppSurfaces? = null
     @Volatile private var coreExecutor: RiftCoreAppExecutor? = null
+    @Volatile private var coreAppLifecycle: RiftCoreAppLifecycle? = null
 
     fun initialize(context: Context) {
         if (application != null) return
@@ -96,6 +97,17 @@ object RiftCoreRuntime {
         }
     }
 
+    /** Core-owned app bootstrap; it does not construct or require a desktop. */
+    fun lifecycle(context: Context): RiftCoreAppLifecycle {
+        initialize(context)
+        coreAppLifecycle?.let { return it }
+        return synchronized(this) {
+            coreAppLifecycle ?: RiftCoreAppLifecycle(requireApplication()).also {
+                coreAppLifecycle = it
+            }
+        }
+    }
+
     /** Read-only Core health probe; never opens an Activity or a shell window. */
     fun status(context: Context): JSONObject {
         initialize(context)
@@ -112,6 +124,7 @@ object RiftCoreRuntime {
             .put("appSessions", sessions(context).summary())
             .put("inputFocus", sessions(context).focusStatus())
             .put("appSurfaces", surfaces(context).list())
+            .put("coreApps", lifecycle(context).status())
             .put("desktopRequired", false)
             .put("shellRequired", false)
             .put("appExecutionIndependentOfDesktop", false)

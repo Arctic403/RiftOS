@@ -396,6 +396,44 @@ if (!activityFocusClient.includes('requestFocusFromShell(id)') ||
   fail('C1.2-B2-B1 Core focus wiring, diagnostic or exact mandatory source missing');
 }
 
+// C1.2-C1: installed RAPP BOOT/stop runs in Core without a RiftShell
+// window, Activity or graphical subscriber. Device proof still pending.
+const coreAppLifecycle = read(`${kotlinDir}/RiftCoreAppLifecycle.kt`);
+for (const marker of [
+  'riftos.core.apps/1',
+  'fun start(id: String): JSONObject',
+  'fun stop(id: String): JSONObject',
+  'fun status(): JSONObject',
+  'packages.loadInstalled(id)',
+  'sessions.hasAttachedApp(id)',
+  'sessions.attach(payload, adapter)',
+  'executor.executeChained(',
+  'RiftAppAbi.Event(kind = RiftAppAbi.EventKind.BOOT)',
+  'sessions.close(attachment)',
+  'RiftCorePackageEvents.subscribe',
+  'coreOnlyBootSupported", true'
+]) if (!coreAppLifecycle.includes(marker)) fail(`C1.2-C1 Core-only RAPP lifecycle missing: ${marker}`);
+if (coreAppLifecycle.includes('RiftRappHost') ||
+    coreAppLifecycle.includes('RiftNativeDesktop') ||
+    /import android\.(app|view)\./.test(coreAppLifecycle)) {
+  fail('C1.2-C1 Core-only RAPP lifecycle imports shell or Activity');
+}
+for (const marker of [
+  'fun hasAttachedApp(id: String): Boolean'
+]) if (!coreSessions.includes(marker)) fail(`C1.2-C1 attached-session guard missing: ${marker}`);
+for (const marker of [
+  'fun lifecycle(context: Context): RiftCoreAppLifecycle',
+  '.put("coreApps", lifecycle(context).status())'
+]) if (!coreRuntime.includes(marker)) fail(`C1.2-C1 process-owned lifecycle wiring missing: ${marker}`);
+for (const marker of [
+  '"apps" -> RiftCoreRuntime.lifecycle(appContext).status()',
+  'RiftCoreRuntime.lifecycle(appContext).start(args[1])',
+  'RiftCoreRuntime.lifecycle(appContext).stop(args[1])'
+]) if (!nativeShell.includes(marker)) fail(`C1.2-C1 Core-only app control missing: ${marker}`);
+if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreAppLifecycle.kt"')) {
+  fail('C1.2-C1 mandatory lifecycle Kotlin source missing');
+}
+
 // C1.2-B2-B2: Core lease authorization gates admission AND queued delivery.
 // Input tickets capture the original focus revision so a refocus cannot
 // revive an input that was pending while another window owned focus.

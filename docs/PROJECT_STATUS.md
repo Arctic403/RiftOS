@@ -16,6 +16,12 @@ From `android/app/build.gradle.kts`:
 - version `0.11.11-relay-client`;
 - release minification disabled.
 
+## 2026-10-08 — C1.2-B2-B2 device PASS; C1.2-C1 Core-only BOOT source candidate
+
+User green/live RiftOS `3dfa391e` from manual Builder #642 (`37826822283`), Core PID 29842, validated `focusEnforcedForInput=true` and a disposable JSON RAPP: ACTION and TEXT_INPUT accepted with current lease, switching to Files cleared focus and returning reacquired it, repeated ACTION persisted actions=2 and `FOCUS_BACK`, Core surface updated, test app uninstall returned Core focus none, sessions/surfaces/events zero, all original three RAPPs intact. B2-B2 valid input & focus switching **device PASS**, but deliberate stale queued event was not injected.
+
+**C1.2-C1 source only:** Added `RiftCoreAppLifecycle`, a process-owned Core service that directly loads and verifies an installed RAPP, guards against stealing an attached graphical session, attaches Core session, executes BOOT through existing Core executor, persists program and Core frame, reports lifecycle state, and closes/discards its matching session on stop or failure. New `core apps`, `core app-start <id>`, `core app-stop <id>`, and `core status.coreApps` diagnostics. Graphical `riftbuild launch-rapp` unchanged; no standalone renderer attachment or alternate client proof. New user-manual Builder and device test needed before C1.2-C1 promotion.
+
 ## 2026-10-08 — C1.2-B2-B1 focus lease device PASS; C1.2-B2-B2 enforcement source
 
 User's live RiftOS source `c06365cc` manual Builder #641, PID 25141, passed disposable RAPP focus lifecycle: `core focus` revision 0/no lease, probe launch revision 1/generation 1, native Files focus revision 2/none, taskbar refocus revision 3/same generation, probe uninstall revision 4/none. All three real installed RAPPs untouched and final Core sessions/surfaces/queued events zero. **B2-B1 device PASS**.
