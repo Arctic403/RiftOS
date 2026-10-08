@@ -1109,6 +1109,7 @@ class RiftNativeDesktop(
         LauncherApp("editor", "Editor", "{}"),
         LauncherApp("devlab", "Dev Lab", "◇"),
         LauncherApp("tasks", "Tasks", "≡"),
+        LauncherApp("installed-apps", "Installed Apps", "▦"),
         LauncherApp("settings", "Settings", "⚙"),
         LauncherApp("mcp", "Rift MCP", "⇄")
     )

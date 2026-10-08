@@ -35,7 +35,7 @@ class RiftBuildPlatformTools(context: Context) {
                     "usage",
                     "riftbuild compiler-status <project> | compiler-run <project> <compiler-id> <request.json> | " +
                         "jvm-status | jvm-dex <project> <classes-dir> <output-dir> [minSdk] | runtime-status | " +
-                        "pack-rapp <project> | install-rapp <artifact.rapp> | launch-rapp <id> | rapp-list | " +
+                        "pack-rapp <project> | install-rapp <artifact.rapp> | uninstall-rapp <id> | launch-rapp <id> | rapp-list | " +
                         "verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof"
                 )
 
@@ -76,6 +76,11 @@ class RiftBuildPlatformTools(context: Context) {
             "install-rapp" -> installRapp(
                 args.firstOrNull() ?: error("usage: riftbuild install-rapp <artifact.rapp>")
             )
+
+            "uninstall-rapp" -> {
+                require(args.size == 1) { "usage: riftbuild uninstall-rapp <id>" }
+                uninstallRapp(args.single())
+            }
 
             "launch-rapp" -> launchRapp(
                 args.firstOrNull() ?: error("usage: riftbuild launch-rapp <id>")
@@ -120,6 +125,12 @@ class RiftBuildPlatformTools(context: Context) {
             .put("artifactSha256", sha256(artifact))
             .put("createdAt", System.currentTimeMillis())
     }
+
+    @Synchronized
+    fun uninstallRapp(id: String): JSONObject =
+        rappManager.uninstall(id)
+            .put("runId", runId())
+            .put("createdAt", System.currentTimeMillis())
 
     fun launchRapp(id: String): JSONObject =
         rappManager.launch(id)

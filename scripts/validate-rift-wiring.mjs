@@ -302,6 +302,66 @@ for (const forbidden of ['val pendingEvents =', 'var eventBusy:', 'data class Pe
   if (rappHost.includes(forbidden)) fail(`C1.1-B2-A desktop regained event queue: ${forbidden}`);
 }
 
+// C1.1-P: package manager is Core authority; graphical Installed Apps is only a client.
+const corePackageEvents = read(`${kotlinDir}/RiftCorePackageEvents.kt`);
+const corePackageGrants = read(`${kotlinDir}/RiftCorePackageGrants.kt`);
+const rappManager = read(`${kotlinDir}/RiftRappManager.kt`);
+const nativeSystemApps = read(`${kotlinDir}/RiftNativeSystemApps.kt`);
+for (const required of [
+  'object RiftCorePackageEvents', 'riftos.core.packages.change/1',
+  'fun subscribe(', 'fun unsubscribe(', 'fun publish(',
+  '"installed"', '"updated"', '"uninstalled"',
+]) if (!corePackageEvents.includes(required)) fail(`C1.1-P Core package event missing: ${required}`);
+for (const required of [
+  'object RiftCorePackageGrants', 'setting:permissions:$id',
+  'prefs.edit().remove(key).commit()',
+]) if (!corePackageGrants.includes(required)) fail(`C1.1-P grant revocation missing: ${required}`);
+for (const required of [
+  'fun uninstall(id: String)', 'readInstalledMetadata(id)',
+  'isManagedRapp(target, id)', 'target.renameTo(quarantine)',
+  'RiftCorePackageGrants.revokeAll(appContext, id)',
+  'RiftCoreRuntime.sessions(appContext).invalidateInstalled(id)',
+  'RiftCorePackageEvents.publish(id, "uninstalled")',
+  'RiftCorePackageEvents.publish(id, if (replacing) "updated" else "installed")',
+  'uninstalled-cleanup-pending', 'Files.isSymbolicLink('
+]) if (!rappManager.includes(required)) fail(`C1.1-P Core package operation missing: ${required}`);
+if (rappManager.includes('RiftRappHost')) fail('Core package manager must not call graphical RAPP host');
+if (!corePackageEvents.includes('object RiftCoreAppLaunchRequests') ||
+    !corePackageEvents.includes('riftos.core.app-launch/1') ||
+    !rappManager.includes('RiftCoreAppLaunchRequests.requestLaunch(id)') ||
+    !rappHost.includes('RiftCoreAppLaunchRequests.subscribe') ||
+    !rappHost.includes('RiftCoreAppLaunchRequests.unsubscribe')) {
+  fail('C1.1-P generic Core launch request/replaceable shell subscription missing');
+}
+for (const source of [corePackageEvents, corePackageGrants]) {
+  if (/\b(?:Activity|View|RiftNativeDesktop|RiftNativeSystemApps|RiftRappHost)\b/.test(
+    stripCodeComments(source)
+  )) fail('Core package service must not import graphical shell classes');
+}
+for (const required of [
+  'RiftCorePackageEvents.subscribe', 'RiftCorePackageEvents.unsubscribe',
+  'desktop.window.close'
+]) if (!rappHost.includes(required)) fail(`C1.1-P shell package subscriber missing: ${required}`);
+for (const required of [
+  '"installed-apps"', 'openInstalledApps()', 'RiftCorePackageEvents.subscribe',
+  'uninstallRapp(id)', 'installRapp(path)', 'AlertDialog.Builder(activity)',
+]) if (!nativeSystemApps.includes(required)) fail(`C1.1-P Installed Apps window missing: ${required}`);
+if (!main.includes('add("installed-apps", "Installed Apps",')) {
+  fail('Installed Apps not present in native launcher');
+}
+if (!desktop.includes('LauncherApp("installed-apps", "Installed Apps",')) {
+  fail('Installed Apps not present in native desktop fallback');
+}
+for (const file of ['RiftCorePackageEvents.kt', 'RiftCorePackageGrants.kt']) {
+  if (!gradle.includes(`"src/main/java/com/riftos/app/${file}"`)) {
+    fail(`C1.1-P mandatory Core package source missing: ${file}`);
+  }
+}
+if (!platformBuild.includes('"uninstall-rapp" ->') ||
+    !platformBuild.includes('rappManager.uninstall(id)')) {
+  fail('C1.1-P shell uninstall must route to Core package manager');
+}
+
 // C0.2.5 generic external runtime-provider boundary. No project-specific
 // package identity or runtime engine enters the RAPP host.
 const runtimeProviders = read(`${kotlinDir}/RiftExternalRuntimeProviders.kt`);

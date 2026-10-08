@@ -112,6 +112,8 @@ for (const required of [
   '"jvm-dex"',
   '"pack-rapp"',
   '"install-rapp"',
+  '"uninstall-rapp"',
+  'uninstallRapp(id: String)',
   '"launch-rapp"',
   '"rapp-list"',
   '"verify"',
@@ -227,7 +229,7 @@ assert.match(absolute, /NodeKind\s*\.\s*TEXT_INPUT/);
 assert.match(absolute, /EventKind\s*\.\s*TEXT_INPUT/);
 
 assert.match(shell, /private val riftBuild = RiftCoreRuntime\.buildPlatform\(appContext\)/);
-assert.match(shell, /riftbuild compiler-status\|compiler-run\|jvm-status\|jvm-dex\|runtime-status\|pack-rapp\|install-rapp\|launch-rapp\|rapp-list\|verify\|install-proof\|install-status\|launch-proof/);
+assert.match(shell, /riftbuild compiler-status\|compiler-run\|jvm-status\|jvm-dex\|runtime-status\|pack-rapp\|install-rapp\|uninstall-rapp\|launch-rapp\|rapp-list\|verify\|install-proof\|install-status\|launch-proof/);
 for (const retiredCommand of [
   'riftbuild doctor|validate|plan',
   'kotlin-compile',

@@ -16,6 +16,10 @@ From `android/app/build.gradle.kts`:
 - version `0.11.11-relay-client`;
 - release minification disabled.
 
+## 2026-10-08 — B2-A green/live; C1.1-P Core package management source pending
+
+User confirmed newest B2-A RiftOS build green and live; read-only live `core status` reported PID 32623, 5 installed RAPPs, no sessions, `eventQueueOwner=riftos-core`. C1.1-P now adds validated Core-managed uninstall (confined staged removal, synchronous grant revocation, session invalidation and cleanup receipt), safer RAPP update replacement, and `riftos.core.packages.change/1` notifications instead of Core importing `RiftRappHost`. RiftShell adds a native Installed Apps interface with install-from-Builds, list and confirmed uninstall, but all filesystem/package permissions stay in Core. No user apps were removed during this source change. Manual signed Builder and installed device proof are pending; **this is not evidence of independent shell-process execution yet**. See `docs/systems/core-shell/README.md`.
+
 ## 2026-10-08 — B1 green installed; B2-A Core RAPP FIFO source pending Builder
 
 User confirmed C1.1-B1 green and live. Live `core status` and `core sessions` show process-owned event executor, no active app sessions, five installed RAPPs and no external providers. This checkpoint moves in-flight/pending RAPP event tickets and bounded FIFO policy into `RiftCoreAppSessions`; desktop retains only ephemeral callbacks and host-effect/consent handling. Core session diagnostics add `eventQueueOwner=riftos-core` and `queuedEvents`, while correctly maintaining `headlessExecution=false` and `appExecutionIndependentOfDesktop=false`. Requires user's manual Builder and real-device RAPP interaction before promotion, then B2-B Core capability/effect broker extraction.

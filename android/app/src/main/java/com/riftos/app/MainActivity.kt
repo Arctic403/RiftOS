@@ -134,6 +134,7 @@ class MainActivity : Activity() {
         add("editor", "Editor", "{}")
         add("devlab", "Dev Lab", "◇")
         add("tasks", "Tasks", "≡")
+        add("installed-apps", "Installed Apps", "▦")
         add("settings", "Settings", "⚙")
         add("mcp", "Rift MCP", "⇄")
 
@@ -141,7 +142,7 @@ class MainActivity : Activity() {
 
         val used = linkedSetOf(
             "files", "workspace-live", "terminal", "browser",
-            "editor", "devlab", "tasks", "settings", "mcp"
+            "editor", "devlab", "tasks", "installed-apps", "settings", "mcp"
         )
         var scannedPrograms = 0
         var scannedBytes = 0L

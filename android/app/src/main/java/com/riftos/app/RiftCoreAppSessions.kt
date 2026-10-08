@@ -259,6 +259,14 @@ class RiftCoreAppSessions {
         }
     }
 
+    /** Package update/removal invalidates every attachment and queued event. */
+    @Synchronized
+    fun invalidateInstalled(id: String): Boolean {
+        val record = sessions.remove(id) ?: return false
+        record.resetPendingEvents()
+        return true
+    }
+
     @Synchronized
     fun summary(): JSONObject {
         val attached = sessions.values.count { it.visible() }

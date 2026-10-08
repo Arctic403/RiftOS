@@ -14,7 +14,6 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import org.json.JSONObject
-import java.lang.ref.WeakReference
 
 /**
  * Generic RiftOS application host for installed .rapp programs.
@@ -32,23 +31,6 @@ class RiftRappHost(
         // while keeping every hosted-app transaction finite.
         private const val MAX_EFFECT_DEPTH = 1024
 
-        @Volatile
-        private var active:
-            WeakReference<RiftRappHost>? = null
-
-        fun notifyProgramsChanged() {
-            active
-                ?.get()
-                ?.refreshLauncherAsync()
-        }
-
-        fun launchInstalled(
-            id: String
-        ): Boolean =
-            active
-                ?.get()
-                ?.launchAsync(id)
-                ?: false
     }
 
     private data class Session(
@@ -84,10 +66,22 @@ class RiftRappHost(
     private val coreExecutor = RiftCoreRuntime.appExecutor(activity.applicationContext)
     private val sessions =
         LinkedHashMap<String, Session>()
+    private val packageSubscription = RiftCorePackageEvents.subscribe { change ->
+        activity.runOnUiThread {
+            if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+            if (change.operation != "installed" && sessions.containsKey(change.id)) {
+                // Package was replaced or removed: close stale presentation.
+                desktop.handle(
+                    "desktop.window.close",
+                    JSONObject().put("id", change.id)
+                )
+            }
+            refreshLauncher()
+        }
+    }
 
-    init {
-        active =
-            WeakReference(this)
+    private val launchSubscription = RiftCoreAppLaunchRequests.subscribe { id ->
+        launchAsync(id)
     }
 
     fun openFromLauncher(
@@ -159,6 +153,8 @@ class RiftRappHost(
     }
 
     fun destroy() {
+        RiftCorePackageEvents.unsubscribe(packageSubscription)
+        RiftCoreAppLaunchRequests.unsubscribe(launchSubscription)
         // Activity loss detaches only UI; Core session identities/state remain.
         sessions.values.forEach {
             it.pendingUiCompletions.clear()
@@ -166,12 +162,6 @@ class RiftRappHost(
         }
         sessions.clear()
         capabilityBroker.destroy()
-        val current =
-            active
-                ?.get()
-        if (current === this) {
-            active = null
-        }
     }
 
     private fun open(

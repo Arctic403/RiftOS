@@ -5,6 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.nio.file.Files
 import java.security.MessageDigest
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
@@ -79,6 +80,7 @@ class RiftRappManager(context: Context) {
             "editor",
             "devlab",
             "tasks",
+            "installed-apps",
             "settings",
             "mcp"
         )
@@ -230,6 +232,7 @@ class RiftRappManager(context: Context) {
         return PackResult(target, receipt)
     }
 
+    @Synchronized
     fun install(artifact: File): JSONObject {
         val file = artifact.canonicalFile
         require(confinedTo(artifactRoot, file) && file.isFile) {
@@ -263,6 +266,7 @@ class RiftRappManager(context: Context) {
         validateRuntimeContract(abi, adapter, presentation)
 
         val target = File(programsRoot, id).canonicalFile
+        val replacing = target.exists()
         require(confinedTo(programsRoot, target)) {
             "RAPP install target escaped C:/Programs"
         }
@@ -280,6 +284,7 @@ class RiftRappManager(context: Context) {
             "Could not create RAPP install stage"
         }
 
+        var backupCleanupComplete = true
         try {
             writeAtomic(
                 File(stage, PROGRAM_ENTRY),
@@ -339,8 +344,28 @@ class RiftRappManager(context: Context) {
                 error("Could not commit installed RAPP")
             }
 
+            if (backedUp) {
+                // Revocation must succeed before a replacement is accepted.
+                try {
+                    RiftCorePackageGrants.revokeAll(appContext, id)
+                } catch (error: Throwable) {
+                    val rejected = File(
+                        stageRoot, "rejected-$id-${System.nanoTime()}"
+                    ).canonicalFile
+                    check(confinedTo(stageRoot, rejected) && target.renameTo(rejected)) {
+                        "Cannot quarantine replacement after grant failure: $id"
+                    }
+                    check(backup.renameTo(target)) {
+                        "Cannot restore previous RAPP after grant failure: $id"
+                    }
+                    runCatching { deleteTreeBounded(rejected) }
+                    throw error
+                }
+            }
             if (backedUp && backup.exists()) {
-                deleteTreeBounded(backup)
+                backupCleanupComplete = runCatching {
+                    deleteTreeBounded(backup)
+                }.isSuccess
             }
         } catch (error: Throwable) {
             if (stage.exists()) {
@@ -349,7 +374,8 @@ class RiftRappManager(context: Context) {
             throw error
         }
 
-        RiftRappHost.notifyProgramsChanged()
+        if (replacing) RiftCoreRuntime.sessions(appContext).invalidateInstalled(id)
+        RiftCorePackageEvents.publish(id, if (replacing) "updated" else "installed")
 
         return JSONObject()
             .put("schema", "riftbuild-rapp-install-v1")
@@ -367,7 +393,62 @@ class RiftRappManager(context: Context) {
             .put("programSha256", manifest.getString("programSha256"))
             .put("runtimeSha256", manifest.getString("runtimeSha256"))
             .put("installedPath", "/C:/Programs/$id")
-            .put("state", "installed-rapp")
+            .put("cleanupComplete", backupCleanupComplete)
+            .put("state", if (backupCleanupComplete) "installed-rapp" else "installed-rapp-backup-cleanup-pending")
+    }
+
+    /**
+     * Core-managed RAPP uninstall. Only validated packages under C:/Programs
+     * may be removed; all package-owned state.bin data is removed by default.
+     * Removing the directory from C:/Programs is the visibility commit point.
+     * If the grant write fails, restore the package before publishing a change.
+     */
+    @Synchronized
+    fun uninstall(id: String): JSONObject {
+        require(SAFE_ID.matches(id) && id !in RESERVED_IDS) {
+            "Invalid managed RAPP uninstall identity"
+        }
+        val existing = readInstalledMetadata(id)
+            ?: error("Installed managed RAPP not found: $id")
+        val target = existing.first
+        require(confinedTo(programsRoot, target) && isManagedRapp(target, id)) {
+            "Refusing to uninstall a non-RAPP program"
+        }
+        val quarantine = File(
+            stageRoot, "uninstall-$id-${System.nanoTime()}"
+        ).canonicalFile
+        require(confinedTo(stageRoot, quarantine) && !quarantine.exists()) {
+            "RAPP uninstall staging path is invalid"
+        }
+        require(target.renameTo(quarantine)) {
+            "Could not stage RAPP uninstall"
+        }
+
+        val grantsRevoked = try {
+            RiftCorePackageGrants.revokeAll(appContext, id)
+        } catch (error: Throwable) {
+            check(quarantine.renameTo(target)) {
+                "RAPP grant cleanup failed and package restore failed: $id"
+            }
+            throw error
+        }
+
+        // A package cannot keep running with its old identity after uninstall.
+        val sessionStopped = RiftCoreRuntime.sessions(appContext).invalidateInstalled(id)
+        RiftCorePackageEvents.publish(id, "uninstalled")
+
+        val cleanup = runCatching { deleteTreeBounded(quarantine) }
+        return JSONObject()
+            .put("schema", "riftos.core.package-uninstall/1")
+            .put("changeSchema", RiftCorePackageEvents.SCHEMA)
+            .put("id", id)
+            .put("installedPath", "/C:/Programs/$id")
+            .put("state", if (cleanup.isSuccess) "uninstalled" else "uninstalled-cleanup-pending")
+            .put("appData", "removed-with-package")
+            .put("grantsRevoked", grantsRevoked)
+            .put("sessionStopped", sessionStopped)
+            .put("cleanupComplete", cleanup.isSuccess)
+            .put("cleanupError", cleanup.exceptionOrNull()?.message.orEmpty())
     }
 
     fun launch(id: String): JSONObject {
@@ -377,9 +458,10 @@ class RiftRappManager(context: Context) {
         require(handlesInstalled(id)) {
             "Installed RAPP not found: $id"
         }
-        val accepted = RiftRappHost.launchInstalled(id)
+        val accepted = RiftCoreAppLaunchRequests.requestLaunch(id)
         return JSONObject()
             .put("schema", "riftbuild-rapp-launch-v1")
+            .put("requestSchema", RiftCoreAppLaunchRequests.SCHEMA)
             .put("id", id)
             .put("accepted", accepted)
             .put(
@@ -388,6 +470,7 @@ class RiftRappManager(context: Context) {
             )
     }
 
+    @Synchronized
     fun listInstalled(): JSONArray {
         val out = JSONArray()
         val directories =
@@ -1090,9 +1173,12 @@ class RiftRappManager(context: Context) {
             require(++count <= 64) {
                 "RAPP cleanup exceeded entry bound"
             }
-            if (node.isDirectory) {
-                node.listFiles()
-                    ?.forEach(::remove)
+            val link = Files.isSymbolicLink(node.toPath())
+            if (!link) require(confinedTo(root, node)) {
+                "RAPP cleanup escaped staging root"
+            }
+            if (node.isDirectory && !link) {
+                node.listFiles()?.forEach(::remove)
             }
             require(node.delete() || !node.exists()) {
                 "Could not remove RAPP staging path"

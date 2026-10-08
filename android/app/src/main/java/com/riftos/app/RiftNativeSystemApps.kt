@@ -1,6 +1,7 @@
 package com.riftos.app
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.graphics.Typeface
 import android.os.Handler
 import android.os.Looper
@@ -32,7 +33,7 @@ class RiftNativeSystemApps(
 ) {
     companion object {
         private const val MAX_TERMINAL_CHARS = 200_000
-        private val NATIVE_IDS = setOf("terminal", "tasks")
+        private val NATIVE_IDS = setOf("terminal", "tasks", "installed-apps")
         private const val BG = 0xff0b1118.toInt()
         private const val PANEL = 0xff111a23.toInt()
         private const val TEXT = 0xffe7eef5.toInt()
@@ -57,8 +58,22 @@ class RiftNativeSystemApps(
         val handler: Handler
     )
 
+    private data class InstalledAppsState(
+        val root: LinearLayout,
+        val summary: TextView,
+        val rows: LinearLayout,
+        val artifact: EditText,
+        val install: Button,
+        var busy: Boolean = false,
+        var listenerId: Long = 0L
+    )
+
     private var terminal: TerminalState? = null
     private var tasks: TaskState? = null
+    private var installedApps: InstalledAppsState? = null
+    private val corePackages by lazy {
+        RiftCoreRuntime.packages(activity.applicationContext)
+    }
 
     private fun handles(id: String): Boolean = id.trim().lowercase() in NATIVE_IDS
 
@@ -80,6 +95,10 @@ class RiftNativeSystemApps(
                 stopTasks()
                 true
             }
+            "installed-apps" -> {
+                stopInstalledApps()
+                true
+            }
             else -> false
         }
     }
@@ -87,6 +106,7 @@ class RiftNativeSystemApps(
     fun destroy() {
         terminal = null
         stopTasks()
+        stopInstalledApps()
     }
 
     private fun open(rawId: String) {
@@ -95,6 +115,7 @@ class RiftNativeSystemApps(
         when (id) {
             "terminal" -> openTerminal()
             "tasks" -> openTasks()
+            "installed-apps" -> openInstalledApps()
             else -> throw IllegalArgumentException("Native system app is unavailable: $id")
         }
     }
@@ -349,6 +370,183 @@ class RiftNativeSystemApps(
         state.rows.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             bottomMargin = dp(5)
         })
+    }
+
+    /** Replaceable graphical client of Core's managed-RAPP package APIs. */
+    private fun openInstalledApps() {
+        openWindow("installed-apps", "Installed Apps", "RIFTOS CORE PACKAGES")
+        val previous = installedApps
+        if (previous != null) {
+            desktop.attachContent("installed-apps", previous.root)
+            refreshInstalledApps(previous)
+            return
+        }
+
+        val root = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(BG)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+        }
+        val summary = TextView(activity).apply {
+            setTextColor(TEXT)
+            textSize = 12f
+            setPadding(dp(4), dp(4), dp(4), dp(8))
+            text = "Core application management"
+        }
+        root.addView(summary)
+        val row = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val artifact = EditText(activity).apply {
+            setSingleLine(true)
+            textSize = 12f
+            setTextColor(TEXT)
+            setHintTextColor(MUTED)
+            hint = "D:/Builds/my-app.rapp"
+            contentDescription = "RAPP package path in D:/Builds"
+        }
+        val install = Button(activity).apply {
+            text = "Install"
+            textSize = 11f
+            isAllCaps = false
+        }
+        row.addView(artifact, LinearLayout.LayoutParams(0, dp(48), 1f))
+        row.addView(install, LinearLayout.LayoutParams(dp(94), dp(48)))
+        root.addView(row)
+
+        val rows = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        val scroll = ScrollView(activity).apply {
+            isFillViewport = true
+            addView(rows, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+        }
+        root.addView(scroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+        val state = InstalledAppsState(root, summary, rows, artifact, install)
+        installedApps = state
+        state.listenerId = RiftCorePackageEvents.subscribe {
+            activity.runOnUiThread {
+                if (installedApps === state && !activity.isDestroyed) {
+                    refreshInstalledApps(state)
+                }
+            }
+        }
+        install.setOnClickListener {
+            val path = state.artifact.text?.toString()?.trim().orEmpty()
+            if (path.isBlank()) {
+                state.summary.text = "Enter a .rapp artifact path under D:/Builds"
+            } else {
+                operateInstalledApps(state) {
+                    RiftCoreRuntime.buildPlatform(activity.applicationContext).installRapp(path)
+                }
+            }
+        }
+        desktop.attachContent("installed-apps", root)
+        refreshInstalledApps(state)
+    }
+
+    private fun refreshInstalledApps(state: InstalledAppsState) {
+        if (installedApps !== state) return
+        val apps = runCatching { corePackages.listInstalled() }.getOrElse {
+            state.summary.text = "Unable to read installed apps: ${it.message}"
+            return
+        }
+        if (!state.busy) state.summary.text =
+            "Installed RAPPs: ${apps.length()} · Core-owned packages and permissions"
+        state.rows.removeAllViews()
+        for (index in 0 until apps.length()) {
+            val app = apps.optJSONObject(index) ?: continue
+            val id = app.optString("id")
+            val name = app.optString("name", id)
+            val declared = app.optJSONArray("permissions")
+            val item = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setBackgroundColor(PANEL)
+                setPadding(dp(8), dp(6), dp(8), dp(6))
+            }
+            val labels = LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+            }
+            labels.addView(TextView(activity).apply {
+                text = name
+                setTextColor(TEXT)
+                textSize = 12f
+                maxLines = 1
+            })
+            labels.addView(TextView(activity).apply {
+                text = "$id · ${declared?.length() ?: 0} declared capabilities"
+                setTextColor(MUTED)
+                textSize = 10f
+                maxLines = 2
+            })
+            item.addView(labels, LinearLayout.LayoutParams(0, dp(48), 1f))
+            val remove = Button(activity).apply {
+                text = "Uninstall"
+                textSize = 10f
+                isAllCaps = false
+                isEnabled = !state.busy
+                contentDescription = "Uninstall $name $id"
+                setOnClickListener {
+                    AlertDialog.Builder(activity)
+                        .setTitle("Uninstall $name?")
+                        .setMessage(
+                            "Remove $id from C:/Programs? This also removes its saved " +
+                            "state, revokes its grants, and closes its running session."
+                        )
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Uninstall") { _, _ ->
+                            operateInstalledApps(state) {
+                                RiftCoreRuntime.buildPlatform(
+                                    activity.applicationContext
+                                ).uninstallRapp(id)
+                            }
+                        }
+                        .show()
+                }
+            }
+            item.addView(remove, LinearLayout.LayoutParams(dp(100), dp(48)))
+            state.rows.addView(item, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(5) })
+        }
+    }
+
+    private fun operateInstalledApps(
+        state: InstalledAppsState,
+        operation: () -> JSONObject
+    ) {
+        if (installedApps !== state || state.busy) return
+        state.busy = true
+        state.install.isEnabled = false
+        state.summary.text = "RiftOS Core: managing package…"
+        Thread({
+            val outcome = runCatching(operation)
+            activity.runOnUiThread {
+                if (installedApps !== state || activity.isDestroyed) return@runOnUiThread
+                state.busy = false
+                state.install.isEnabled = true
+                refreshInstalledApps(state)
+                state.summary.text = outcome.fold(
+                    onSuccess = { it.optString("state", "Package operation completed") },
+                    onFailure = { "Package operation failed: ${it.message}" }
+                )
+            }
+        }, "rift-core-package-ui").apply { isDaemon = true; start() }
+    }
+
+    private fun stopInstalledApps() {
+        installedApps?.let { state ->
+            RiftCorePackageEvents.unsubscribe(state.listenerId)
+        }
+        installedApps = null
     }
 
     private fun stopTasks() {
