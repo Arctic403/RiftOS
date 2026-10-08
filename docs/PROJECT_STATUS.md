@@ -16,6 +16,12 @@ From `android/app/build.gradle.kts`:
 - version `0.11.11-relay-client`;
 - release minification disabled.
 
+## 2026-10-08 — C1.1-B2-B device capability proof; explicit Cancel source follow-up
+
+User's green installed RiftOS run 37774098976, source 174f0144, Core PID 21293 was verified through MCP. Disposable `c11b2b-capability-probe-20261008` was installed and launched with a real QuickJS JSON RAPP. User supplied screenshots showing successful Core effect results for `fs.read` (token 43) and `fs.write` (token 44), plus native window-title UI effect. MCP independently read `/D:/Workspace/tmp/c11b2b-capability-probe-20261008/probe-write.txt` containing exactly `OK B2-B smoke`. A disposable v2 update revoked earlier grants and invalidated the old Core session; `fs.read` prompted again and the Local Agent Deny action returned `CORE EFFECT RESULT fs.read DENIED/FAILED token=43`. A second `fs.write` denial returned token 44, persisted in `state.bin`, and no v2 output file was created. The disposable test RAPP was uninstalled; original three RAPPs remained, zero sessions/queued events, same Core PID. No real apps were removed.
+
+Cancellation remained **not yet proven in-session**: Android Back during permission dialog detached the RAPP and did not leave a reliably observable returned result; Local Agent could not tap outside its fixed permission-dialog root. No unauthorized file write occurred. To provide a stable reusable UI route without changing Core authority, `RiftRappShellCapabilityClient` now offers a visible neutral **Cancel** button returning the same fail-closed Core consent result as dialog dismissal. Source/Builder validation explicitly checks this control. This follow-up is **source only until user's next manual Builder and device Cancel check**. Do not promote independent headless execution or shell-process survival; both remain false.
+
 ## 2026-10-08 — C1.1-P live lifecycle passed; C1.1-B2-B source candidate
 
 C1.1-P installed-device test used `64d29d5` and confirmed the native Installed Apps window, Core launch request, disposable RAPP v1 install, v2 replacement, Core session invalidation, automatic catalogue refresh, and running disposable RAPP uninstall/cleanup. The original Rift-Os RAPP was unintentionally removed during UI interaction and reinstalled from its existing D:/Builds package; its former package-local saved state may have been lost. At completion the original three RAPPs were installed and no test session remained. Full grants/rollback fault-path device proof remains separate.

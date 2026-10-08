@@ -37,6 +37,9 @@ class RiftRappShellCapabilityClient(
                         .setNegativeButton("Deny") { _, _ ->
                             RiftCoreShellCapabilityRequests.respondConsent(subscription, request.ticket, false)
                         }
+                        .setNeutralButton("Cancel") { _, _ ->
+                            RiftCoreShellCapabilityRequests.respondConsent(subscription, request.ticket, false)
+                        }
                         .setOnCancelListener {
                             RiftCoreShellCapabilityRequests.respondConsent(subscription, request.ticket, false)
                         }

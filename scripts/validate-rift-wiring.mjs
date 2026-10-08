@@ -311,6 +311,8 @@ for (const [data, required] of [
   [coreConsent, 'riftos.core.ui-effect/1'],
   [coreConsent, 'MAX_PENDING = 64'],
   [shellCapabilityClient, 'RiftCoreShellCapabilityRequests.subscribe('],
+  [shellCapabilityClient, '.setNeutralButton("Cancel")'],
+  [shellCapabilityClient, '.setOnCancelListener'],
   [capabilityBroker, 'RiftCoreShellCapabilityRequests.requestConsent('],
   [capabilityBroker, 'RiftCoreShellCapabilityRequests.requestUiEffect('],
   [coreExecutor, 'fun executeChained('],

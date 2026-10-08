@@ -19,6 +19,12 @@ The generic runtime-provider IPC in `docs/systems/riftbuild/RUNTIME_PROVIDERS.md
 
 **Do not confuse names:** `RiftNativeShell` is the current process-owned **command executor**, not the eventual replaceable **RiftShell graphical desktop**. During migration its generic OS-facing commands become thin clients of Core and its UI-specific commands become shell UI calls or independent clients.
 
+## 2026-10-08 — B2-B live permission/effect proof and explicit Cancel follow-up
+
+Installed RiftOS `174f0144` green/device-live. Read-only Core diagnostics confirmed correct running source, no stale sessions and original RAPP registry intact. A disposable JSON RAPP on device proved Core-owned window-title dispatch, **fs.read success/token 43**, **fs.write success/token 44** with file contents independently read through MCP, replacement revoking prior grants, session invalidation, and `fs.read` plus `fs.write` Deny results delivered via `HOST_EFFECT_RESULT`. Uninstall of the disposable test stopped its active session and restored the three original apps with zero pending Core event tickets.
+
+The platform Back gesture during a permission dialog detached the app session, so a distinct in-session Cancel callback was not proven. Next source checkpoint adds explicit `setNeutralButton("Cancel")` in `RiftRappShellCapabilityClient`; as with Deny and default dialog cancellation it calls `respondConsent(subscription,ticket,false)` on a one-use Core ticket. Core remains the only authority and never interprets the shell's label as an elevated approval. Manual Builder and device-level Cancel proof required before finishing the edge-case acceptance. No new separate-process or headless claims.
+
 ## 2026-10-08 — C1.1-B2-B Core effect chaining and shell consent client (source candidate)
 
 **Source implementation; not yet promoted by manual Builder or signed device.** Following the user-confirmed C1.1-P lifecycle test, all interpreter effect/result continuations now run through Core-owned `RiftCoreAppExecutor.executeChained`, with a 1024-step ceiling and generation-bound attachment checks. A graphical `RiftRappHost` receives only the final frame/error and retains disposable UI event callbacks. The Core-owned `RiftRappCapabilityBroker` now uses application Context and never holds an Activity, desktop or AlertDialog. It verifies declared permissions, validates active installed identity, decides persisted grants, executes bounded non-UI effects and routes authorized UI effects via a client.
