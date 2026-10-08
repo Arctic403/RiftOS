@@ -396,6 +396,24 @@ if (!activityFocusClient.includes('requestFocusFromShell(id)') ||
   fail('C1.2-B2-B1 Core focus wiring, diagnostic or exact mandatory source missing');
 }
 
+// C1.2-C2: an existing Core-booted RAPP is adopted by RiftShell
+// with the same executable, generation and published surface (no re-BOOT).
+for (const marker of [
+  'fun claimForShell(',
+  'entry.state == "running"',
+  'sessions.matchesExecution(entry.attachment, payload, adapter)',
+  'surface.attachmentGeneration == entry.attachment.token',
+  'active.remove(payload.id)',
+  'return entry.attachment'
+]) if (!coreAppLifecycle.includes(marker)) fail(`C1.2-C2 Core attachment transfer missing: ${marker}`);
+for (const marker of [
+  '.claimForShell(payload, adapter)',
+  'val attachment = claimed ?: coreSessions.attach(payload, adapter)',
+  'if (claimed != null) {',
+  'it.attachmentGeneration == claimed.token',
+  'desktop.attachContent(id, render(session, published.frame))'
+]) if (!rappHost.includes(marker)) fail(`C1.2-C2 graphical Core session client missing: ${marker}`);
+
 // C1.2-C1: installed RAPP BOOT/stop runs in Core without a RiftShell
 // window, Activity or graphical subscriber. Device proof still pending.
 const coreAppLifecycle = read(`${kotlinDir}/RiftCoreAppLifecycle.kt`);

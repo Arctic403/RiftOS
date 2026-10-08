@@ -175,7 +175,12 @@ class RiftRappHost(
             program = app.program,
             runtime = app.runtime
         )
-        val attachment = coreSessions.attach(payload, adapter)
+        // Reuse a running Core-only BOOT session when opening its first
+        // graphical window. A claimed attachment preserves Core generation,
+        // interpreter state and already-published immutable surface.
+        val claimed = RiftCoreRuntime.lifecycle(activity.applicationContext)
+            .claimForShell(payload, adapter)
+        val attachment = claimed ?: coreSessions.attach(payload, adapter)
         val session = Session(payload, adapter, attachment)
         sessions[id] = session
 
@@ -189,6 +194,14 @@ class RiftRappHost(
                     "RIFTOS APP · ${app.adapter}"
                 )
         )
+
+        if (claimed != null) {
+            val published = coreSurfaces.snapshot(id)?.takeIf {
+                it.attachmentGeneration == claimed.token
+            } ?: error("Core RAPP claimed surface disappeared before shell rendering")
+            desktop.attachContent(id, render(session, published.frame))
+            return
+        }
 
         desktop.attachContent(
             id,

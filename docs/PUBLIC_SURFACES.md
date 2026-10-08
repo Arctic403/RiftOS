@@ -21,6 +21,10 @@ This inventory separates live packaged authority from retained reference/compati
 | Vortex bridge/agents | `RiftVortexBridgeClient.kt`, `RiftVortexLocalAgent.kt` | Fixed local Binder/accessibility development surfaces. |
 | RiftLLM Dev/training service | `RiftLlmDevClient.kt`, `RiftTrainDataTaskRunner.kt`, `RiftNativeShellServices.kt` | Fixed bounded standalone RiftLLM API/training commands, including fixed frozen-B2 priming, no-argument RiftPack qualification start/status, and fixed no-argument real process-death recovery start/status. |
 
+## C1.2-C2 — Transfer Core-booted application to graphical shell (source-only)
+
+`RiftCoreAppLifecycle.claimForShell(payload, adapter)` transfers the existing Core RAPP attachment **only** when the app is `running`, its installed executable identity still matches, and its generation-matched immutable Core frame already exists. The active Core-only registry entry is retired, not the Core session. `RiftRappHost.open` then renders that frame directly and does **not** send another BOOT event. The Core program state and session generation remain unchanged, and subsequent GUI ACTION/TEXT_INPUT requests continue on the claimed session. Ordinary GUI starts still work through the existing path. These are same-process clients, not authenticated alternate-shell IPC. C1.2-C1 Core-only BOOT/stop passed real device run #644; this transfer is not yet device-proven.
+
 ## C1.2-C1 — Core-only installed RAPP BOOT/stop lifecycle (source candidate)
 
 `RiftCoreAppLifecycle` exposes `riftos.core.apps/1` lifecycle status with a bounded Core app registry (`starting`, `running`, `failed`). Generic `core app-start <id>` resolves the installed program through Core package validation and its runtime adapter, creates an attachment only if no other client owns the app, then sends `BOOT` through the Core executor. That Core execution persists state and publishes a typed Core frame **without opening a graphical desktop window**. `core apps` returns a read-only snapshot; `core app-stop <id>` tears down only that Core-owned attachment. The existing `riftbuild launch-rapp` graphical host path is unchanged.

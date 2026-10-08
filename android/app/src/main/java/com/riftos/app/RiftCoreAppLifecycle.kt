@@ -107,6 +107,31 @@ class RiftCoreAppLifecycle(context: Context) {
         return entryJson(entry).put("accepted", true)
     }
 
+    /**
+     * Transfer an already-running Core app to a graphical presentation
+     * without changing its attachment generation, program, or surface.
+     * No new BOOT event is executed on this path.
+     *
+     * Matching installed program identity is checked before ownership moves.
+     */
+    @Synchronized
+    fun claimForShell(
+        payload: RiftAppAbi.RuntimePayload,
+        adapter: RiftAppRuntimeAdapter
+    ): RiftCoreAppSessions.Attachment? {
+        val entry = active[payload.id] ?: return null
+        require(entry.state == "running") { "Core RAPP is not ready for shell attachment" }
+        require(sessions.matchesExecution(entry.attachment, payload, adapter)) {
+            "Core RAPP shell attachment executable identity mismatch"
+        }
+        val surface = RiftCoreRuntime.surfaces(app).snapshot(payload.id)
+        require(surface != null &&
+            surface.attachmentGeneration == entry.attachment.token
+        ) { "Core RAPP surface is not ready for shell attachment" }
+        active.remove(payload.id)
+        return entry.attachment
+    }
+
     @Synchronized
     fun stop(id: String): JSONObject {
         val entry = active.remove(id)

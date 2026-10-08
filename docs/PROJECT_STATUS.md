@@ -16,6 +16,12 @@ From `android/app/build.gradle.kts`:
 - version `0.11.11-relay-client`;
 - release minification disabled.
 
+## 2026-10-08 — C1.2-C1 Core-only BOOT device PASS; C2 renderer handoff source
+
+User manually installed RiftOS source `2f701e8a`, Builder run #644/`37835000839`, Core PID 9446. Starting from 0 Core apps/sessions/surfaces with 3 original RAPPs, used only disposable `c12b2a-input-probe-20261008`. `core app-start` returned starting then running, with 1 attached session, one five-node Core surface revision 1, no test RAPP window (Local Agent tree showed launcher only). `core app-stop` returned stopped=true and removed record/session/surface; disposable uninstall succeeded, final 0 Core apps/sessions/surfaces/queued events and original 3 intact. **C1.2-C1 Core-only BOOT/stop device PASS**.
+
+Next **C1.2-C2 source candidate**: Core running-app registry explicitly transfers its generation-matched live attachment to the graphical client after checking full executable identity and a published Core surface. `RiftRappHost` renders the already-published frame, does **not** execute a second BOOT, and continues action/text events on the same Core attachment; otherwise legacy graphical launch path remains. Requires user-manual Builder and actual device proof of no duplicate BOOT, generation/revision preservation and input after transfer. Alternate shell and separate process remain pending.
+
 ## 2026-10-08 — C1.2-B2-B2 device PASS; C1.2-C1 Core-only BOOT source candidate
 
 User green/live RiftOS `3dfa391e` from manual Builder #642 (`37826822283`), Core PID 29842, validated `focusEnforcedForInput=true` and a disposable JSON RAPP: ACTION and TEXT_INPUT accepted with current lease, switching to Files cleared focus and returning reacquired it, repeated ACTION persisted actions=2 and `FOCUS_BACK`, Core surface updated, test app uninstall returned Core focus none, sessions/surfaces/events zero, all original three RAPPs intact. B2-B2 valid input & focus switching **device PASS**, but deliberate stale queued event was not injected.
