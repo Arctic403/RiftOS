@@ -21,6 +21,10 @@ This inventory separates live packaged authority from retained reference/compati
 | Vortex bridge/agents | `RiftVortexBridgeClient.kt`, `RiftVortexLocalAgent.kt` | Fixed local Binder/accessibility development surfaces. |
 | RiftLLM Dev/training service | `RiftLlmDevClient.kt`, `RiftTrainDataTaskRunner.kt`, `RiftNativeShellServices.kt` | Fixed bounded standalone RiftLLM API/training commands, including fixed frozen-B2 priming, no-argument RiftPack qualification start/status, and fixed no-argument real process-death recovery start/status. |
 
+## RiftOS Core / replaceable RiftShell contract — C1.0
+
+RiftOS Core, not the desktop, is the platform authority for installation, runtime management, filesystem policy, process lifecycles and capabilities. The graphical RiftShell is a replaceable client of Core APIs; it must not be required to execute apps. The process-owned `RiftCoreApplication` bootstrap and `RiftCoreRuntime` own installed RAPP packages, the external provider registry, and generic RiftBuild platform services. The existing `RiftNativeShell` command executor calls Core for those operations; it is NOT the intended replaceable graphical RiftShell. Use `core status` for headless Core-state inspection. This C1.0 change is source-only until the next user-triggered Builder/device proof; Activity-owned RAPP sessions and a single Android process still prevent claiming shell crash survival. See `docs/systems/core-shell/README.md` for the full immutable ownership policy and gates.
+
 ## Current source pending installed-device promotion
 
 | Surface | Owner | Purpose |

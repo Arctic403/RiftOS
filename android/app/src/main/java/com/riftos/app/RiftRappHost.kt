@@ -85,7 +85,7 @@ class RiftRappHost(
     )
 
     private val manager by lazy(LazyThreadSafetyMode.NONE) {
-        RiftRappManager(activity)
+        RiftCoreRuntime.packages(activity.applicationContext)
     }
     private val capabilityBroker =
         RiftRappCapabilityBroker(
@@ -95,7 +95,7 @@ class RiftRappHost(
     private val quickJsExecutor =
         RiftRappQuickJsExecutor()
     private val externalRuntimeProviders =
-        RiftExternalRuntimeProviders(activity)
+        RiftCoreRuntime.runtimes(activity.applicationContext)
     private val eventExecutor =
         Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "rift-rapp-event").apply {

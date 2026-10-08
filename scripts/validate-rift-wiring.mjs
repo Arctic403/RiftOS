@@ -181,11 +181,41 @@ if (!main.includes('add("mcp", "Rift MCP", "⇄")')) fail('Rift MCP launcher ent
 if (!main.includes('if (id == "mcp")') || !main.includes('startActivity(Intent(this, RiftMcpActivity::class.java))')) fail('Rift MCP launcher does not open the existing RiftMcpActivity');
 if (!desktop.includes('LauncherApp("mcp", "Rift MCP", "⇄")')) fail('Rift MCP is missing from the native desktop fallback launcher');
 
+// C1.0 Core/Shell split: only Core owns installation/runtime/build authority.
+const coreApplication = read(`${kotlinDir}/RiftCoreApplication.kt`);
+const coreRuntime = read(`${kotlinDir}/RiftCoreRuntime.kt`);
+const rappHost = read(`${kotlinDir}/RiftRappHost.kt`);
+const platformBuild = read(`${kotlinDir}/RiftBuildPlatformTools.kt`);
+for (const required of ['class RiftCoreApplication : Application()', 'RiftCoreRuntime.initialize(this)',
+  'Application.getProcessName()', 'applicationInfo.processName']) {
+  if (!coreApplication.includes(required)) fail(`C1.0 app-process bootstrap missing: ${required}`);
+}
+for (const required of ['object RiftCoreRuntime', 'fun initialize(context: Context)',
+  'fun packages(context: Context)', 'fun runtimes(context: Context)',
+  'fun buildPlatform(context: Context)', 'fun status(context: Context)',
+  'riftos.core.status/1', '"desktopRequired", false', '"separateCoreProcess", false']) {
+  if (!coreRuntime.includes(required)) fail(`C1.0 process-owned Core service missing: ${required}`);
+}
+if (/RiftNativeDesktop|MainActivity|RiftNativeShell|RiftRappHost|\bActivity\b/.test(
+  coreRuntime.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+)) fail('Core implementation must not have RiftShell or desktop code references');
+if (!manifest.includes('android:name=".RiftCoreApplication"')) fail('Android app manifest must bootstrap RiftOS Core');
+for (const f of ['RiftCoreApplication.kt', 'RiftCoreRuntime.kt']) {
+  if (!gradle.includes(`"src/main/java/com/riftos/app/${f}"`)) fail(`C1.0 exact Gradle source missing: ${f}`);
+}
+if (!nativeShell.includes('RiftCoreRuntime.buildPlatform(appContext)') ||
+    !nativeShell.includes('"core" -> {') ||
+    !nativeShell.includes('RiftCoreRuntime.status(appContext)')) {
+  fail('RiftShell is still owning or not exposing the Core platform status');
+}
+if (!rappHost.includes('RiftCoreRuntime.packages(activity.applicationContext)') ||
+    !platformBuild.includes('RiftCoreRuntime.packages(appContext)')) {
+  fail('RAPP package ownership has not moved into RiftOS Core');
+}
+
 // C0.2.5 generic external runtime-provider boundary. No project-specific
 // package identity or runtime engine enters the RAPP host.
 const runtimeProviders = read(`${kotlinDir}/RiftExternalRuntimeProviders.kt`);
-const rappHost = read(`${kotlinDir}/RiftRappHost.kt`);
-const platformBuild = read(`${kotlinDir}/RiftBuildPlatformTools.kt`);
 for (const required of [
   'riftos-runtime-providers/1', 'riftos-runtime-exec/1',
   'com.riftos.runtime.EXECUTE_V1', 'riftos.runtime.provider/1',
@@ -194,7 +224,7 @@ for (const required of [
   '?: return fallback()', 'registry.json',
 ]) if (!runtimeProviders.includes(required)) fail(`runtime-provider boundary missing: ${required}`);
 for (const required of [
-  'RiftExternalRuntimeProviders(activity)', 'externalRuntimeProviders.execute(',
+  'RiftCoreRuntime.runtimes(activity.applicationContext)', 'externalRuntimeProviders.execute(',
 ]) if (!rappHost.includes(required)) fail(`RAPP host runtime dispatch missing: ${required}`);
 if (!manifest.includes('<action android:name="com.riftos.runtime.EXECUTE_V1" />')) {
   fail('generic external Android runtime provider visibility action missing');
@@ -202,7 +232,7 @@ if (!manifest.includes('<action android:name="com.riftos.runtime.EXECUTE_V1" />'
 if (!gradle.includes('"src/main/java/com/riftos/app/RiftExternalRuntimeProviders.kt"')) {
   fail('external runtime provider is not Gradle-mandatory');
 }
-for (const required of ['"runtime-status" -> runtimeProviders.status()', 'RiftExternalRuntimeProviders(appContext)']) {
+for (const required of ['"runtime-status" -> runtimeProviders.status()', 'RiftCoreRuntime.runtimes(appContext)']) {
   if (!platformBuild.includes(required)) fail(`generic runtime status command missing: ${required}`);
 }
 for (const retiredPkg of ['com.riftpp.editor', 'com.codynex.editor']) {

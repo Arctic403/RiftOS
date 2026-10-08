@@ -16,6 +16,10 @@ From `android/app/build.gradle.kts`:
 - version `0.11.11-relay-client`;
 - release minification disabled.
 
+## 2026-10-08 — Core / Shell separation gate C1.0 (source pending manual Builder)
+
+The user has confirmed C0.2.5 build green and current RiftOS installed/device-live. This is the baseline for the next architectural gate. C1.0 now adds an Android Application bootstrap and process-owned `RiftCoreRuntime` to centralize the RAPP installation manager, external runtime registry and generic RiftBuild platform services outside Activity-owned desktop objects. `RiftNativeShell` delegates build commands and `core status` to Core; RAPP host presents UI but retrieves packages/runtimes from Core. No change to QuickJS embedding or RAPP compatibility at this stage. **Do not report full shell independence yet:** app execution sessions and window management remain Activity-owned, Core is still in the same Android process, and no replaceable RiftShell package has shipped. Next: user-manual Builder green + `core status` device proof, then C1.1 sessions and C1.2 surface API. Canonical ownership: `docs/systems/core-shell/README.md`.
+
 ## Engine state
 
 ### Source-verified live architecture

@@ -213,7 +213,7 @@ assert.match(absolute, /Layout\s*\.\s*ABSOLUTE/);
 assert.match(absolute, /NodeKind\s*\.\s*TEXT_INPUT/);
 assert.match(absolute, /EventKind\s*\.\s*TEXT_INPUT/);
 
-assert.match(shell, /private val riftBuild = RiftBuildPlatformTools\(appContext\)/);
+assert.match(shell, /private val riftBuild = RiftCoreRuntime\.buildPlatform\(appContext\)/);
 assert.match(shell, /riftbuild compiler-status\|compiler-run\|jvm-status\|jvm-dex\|runtime-status\|pack-rapp\|install-rapp\|launch-rapp\|rapp-list\|verify\|install-proof\|install-status\|launch-proof/);
 for (const retiredCommand of [
   'riftbuild doctor|validate|plan',

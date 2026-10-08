@@ -81,6 +81,8 @@ val riftBuildAndroidSdkDirectory = androidComponents.sdkComponents.sdkDirectory
 val verifyRiftOsAndroidSources by tasks.registering {
     val required = listOf(
         "src/main/java/com/riftos/app/MainActivity.kt",
+        "src/main/java/com/riftos/app/RiftCoreApplication.kt",
+        "src/main/java/com/riftos/app/RiftCoreRuntime.kt",
         "src/main/java/com/riftos/app/RiftBrowserAndroidWebViewEngine.kt",
         "src/main/java/com/riftos/app/RiftBrowserAppHost.kt",
         "src/main/java/com/riftos/app/RiftBrowserEngine.kt",

@@ -1,6 +1,6 @@
 # RiftOS
 
-RiftOS is an Android-hosted user-space operating environment. The current source architecture is Android-native: Android owns the real process/security boundary, RiftOS supplies its own desktop, filesystem namespace, shell, application surfaces, workspace tooling and local MCP capability layer.
+RiftOS is an Android-hosted user-space operating environment. **Permanent architectural rule:** RiftOS Core owns software installation, runtime management, filesystems, processes, application execution and capabilities. RiftShell is a **replaceable desktop/UI component** providing the desktop, taskbar, Start menu, File Explorer and user interaction; applications must not need RiftShell to execute. Android still owns the underlying process/security boundary. The transition is implemented in [phased Core/Shell gates](docs/systems/core-shell/README.md), starting with process-scoped Core service ownership; app sessions and a truly replaceable shell are not yet independent in C1.0.
 
 ## Verification status
 

@@ -20,11 +20,11 @@ class RiftBuildPlatformTools(context: Context) {
     private val artifactRoot = File(riftRoot, "documents/builds").apply { mkdirs() }.canonicalFile
     private val buildLocal = RiftLocalBuildCapability(appContext)
     private val rappManager by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        RiftRappManager(appContext)
+        RiftCoreRuntime.packages(appContext)
     }
     private val verifier = RiftApkV2Verifier()
     private val installer = RiftBuildInstaller(appContext)
-    private val runtimeProviders = RiftExternalRuntimeProviders(appContext)
+    private val runtimeProviders = RiftCoreRuntime.runtimes(appContext)
 
     fun executeShell(args: MutableList<String>, cwd: String): CommandResult {
         val sub = args.removeFirstOrNull()?.lowercase() ?: "help"

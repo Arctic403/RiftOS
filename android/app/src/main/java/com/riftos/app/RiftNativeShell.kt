@@ -57,7 +57,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     private val watchdog = Executors.newSingleThreadScheduledExecutor()
     private val headlessJs = RiftHeadlessJsRuntime(appContext)
     private val services = RiftNativeShellServices(appContext)
-    private val riftBuild = RiftBuildPlatformTools(appContext)
+    private val riftBuild = RiftCoreRuntime.buildPlatform(appContext)
     private val nativeGit = RiftMcpRuntime.nativeGit(appContext)
     @Volatile private var closed = false
 
@@ -404,6 +404,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "write <file> <text>  touch <file>  mkdir <dir>  cp|mv <from> <to> [--force]  rm <path>\n" +
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
                     "workspace [cd|info|ls|status|push]\n" +
+                    "core status   [RIFTOS CORE / HEADLESS PLATFORM]\n" +
                     "riftbuild compiler-status|compiler-run|jvm-status|jvm-dex|runtime-status|pack-rapp|install-rapp|launch-rapp|rapp-list|verify|install-proof|install-status|launch-proof   [GENERIC / BOUNDED]\n" +
                     "riftcrash help|status|start|capture|latest|reset [package]   [LOCALHOST DIAGNOSTIC BRIDGE]\n" +
                     "qjs help|version|eval|run   [BOUNDED HEADLESS QUICKJS / READ-ONLY RIFTFS]\n" +
@@ -499,6 +500,13 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "vortex-agent" -> services.vortexAgent(args).let { ShellOutcome(it.output, cwd, it.value) }
             "riftos-agent" -> services.riftOsAgent(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
             "riftllm-agent" -> services.riftLlm(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
+            "core" -> {
+                require(args.size == 1 && args[0].equals("status", ignoreCase = true)) {
+                    "usage: core status"
+                }
+                val state = RiftCoreRuntime.status(appContext)
+                ShellOutcome(state.toString(2), cwd, state)
+            }
             "riftbuild" -> {
                 val value = riftBuild.executeShell(args, cwd)
                 ShellOutcome(value.output, cwd, value.value)

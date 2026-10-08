@@ -79,6 +79,8 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftRappJsonAdapter.kt` | `docs/systems/riftbuild/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRappQuickJsExecutor.kt` | `docs/systems/riftbuild/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftExternalRuntimeProviders.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftCoreApplication.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftCoreRuntime.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRappCapabilityBroker.kt` | `docs/systems/riftbuild/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRappAbsoluteView.kt` | `docs/systems/riftbuild/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRappManager.kt` | `docs/systems/riftbuild/README.md` |
