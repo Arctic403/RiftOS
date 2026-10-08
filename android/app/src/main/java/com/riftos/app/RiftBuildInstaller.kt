@@ -293,7 +293,7 @@ class RiftBuildInstaller(context: Context) {
 
     fun installProof(
         apk: File,
-        verified: RiftApkV2Signer.VerifyResult
+        verified: RiftApkV2Verifier.VerifyResult
     ): JSONObject {
         require(apk.isFile) { "signed proof APK is missing" }
         require(verified.apkSha256.isNotBlank()) {

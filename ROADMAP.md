@@ -14,39 +14,27 @@ This roadmap describes intended work, not shipped capability. Current implementa
 - Implement the RiftEngine/Servo migration behind a hardware compatibility gate; Android System WebView remains the current compatibility renderer until that gate passes.
 - Add focused on-device diagnostics and exported test results rather than emulator-heavy CI.
 
-## Rift++ machine-code compiler host
+## RiftBuild external-provider boundary
 
-Current Rift++ compiler authority is the hot managed-compiler path:
+**PROMOTED + FROZEN.** The device-proven build path is external to RiftOS:
 
-1. **SOURCE IMPLEMENTED** — project-owned exact-hash compiler registry via `riftbuild-hot.json`;
-2. **SOURCE IMPLEMENTED** — generic isolated `native-buffer-v1` execution in `:riftNativeBufferCompiler`;
-3. **SOURCE IMPLEMENTED** — generic isolated `dex-json-v1` JVM/DEX tool execution in `:riftJvmToolHot`;
-4. **SOURCE IMPLEMENTED** — project-neutral `compiler-status` / `compiler-run` plus the managed `kotlin-compile` convenience path; the dedicated `riftpp-compile-hot` route is retired;
-5. **SOURCE IMPLEMENTED** — generic `prepare-native-app -> pack -> sign -> verify -> install-proof` packaging flow;
-6. **RETIREMENT LOCKED** — the former `riftpp-host`, `:riftppCompiler`, `RiftppCompilerService`, direct V0/App0/Seed0 prepare routes, and their proof hosts are absent and regression-forbidden.
+1. **DEVICE PROVEN** — external Compile through the project-owned managed compiler registry;
+2. **DEVICE PROVEN** — external Preflight;
+3. **DEVICE PROVEN** — deterministic external APK Pack;
+4. **DEVICE PROVEN** — external APK-v2 Sign using only generic `signing.identity`;
+5. **DEVICE PROVEN** — external Verify plus independent RiftOS `RiftApkV2Verifier`;
+6. **DEVICE PROVEN** — Android install/launch, Rift++ editor launch, typing, clear, preview, and downstream editor native compile/preflight/pack/sign output;
+7. **RETIREMENT LOCKED** — embedded build orchestration, language-specific compile shortcuts, native clang toolchain/prepared-app materialization, APK packing, and APK signing are absent from RiftOS.
 
-The retained QuickJS `riftpp` language route and older direct-ELF/App0/Seed0 proofs are compatibility/history only; they do not define current compiler authority.
+The permanent RiftOS side is reusable infrastructure only: `RiftLocalBuildCapability`, `RiftJvmDexService`, `RiftBuildManagedToolchains`, `RiftManagedJvmToolService`, `RiftNativeBufferCompilerService`, `RiftBuildPlatformTools`, `RiftApkV2Verifier`, `RiftBuildInstaller`, and `RiftRappCapabilityBroker`.
 
-## In-house RiftBuild Android pipeline
+Future work may extend this boundary only when device proof demonstrates a missing **generic reusable primitive**. Provider-specific recipes remain outside RiftOS.
 
-RiftBuild is being promoted from retained/non-executing design to a bounded native local build controller.
+### RiftOS-native RAPP lane
 
-Immediate order:
-1. **SOURCE IMPLEMENTED + INSTALLED PROVEN** — native doctor/validate/plan/run records;
-2. **SOURCE IMPLEMENTED + INSTALLED PROVEN** — direct Rift++ V0 ARMv7/AArch64 ELF materialization, fixed binary manifest and deterministic unsigned APK packaging under `D:/Builds`;
-3. **SOURCE IMPLEMENTED** — bounded Android-Keystore APK Signature Scheme v2 signing + independent v2 verification;
-4. **SOURCE IMPLEMENTED** — exact-package, user-confirmed PackageInstaller handoff + first-launch proof recording;
-5. **PROOF NEXT** — Builder compile/install this signer patch, then sign → verify → install → launch the existing proof APK on-device;
-6. **THEN RETURN TO RIFTLLM+** as the first real repository compiled through the native Rift++/RiftBuild path;
-7. broader Gradle/NDK compatibility adapters stay deferred unless RiftLLM+ proves they are actually needed.
+**LIVE GENERIC PLATFORM BOUNDARY.** `riftos-app-abi/1` owns normalized app/lifecycle/input events, bounded generic frames, runtime adapters, durable `state.bin`, and permission-gated host effects. `pack-rapp`, `install-rapp`, `launch-rapp`, and `rapp-list` remain platform operations because they package and host RAPP programs, not Android APKs.
 
-RiftBuild Native Compile V1 may execute explicitly configured local/downloaded compiler toolchains through structured argument-vector process launches. Project/source text is never interpreted as a shell command, and `/system/bin/sh -c` remains outside the build path. Automatic Git push, CLI enablement and new MCP authority remain out of scope.
-
-### RiftOS-native app lane
-
-**SOURCE IMPLEMENTED; installed proof pending.** RiftBuild now has a parallel `.rapp` target that does not enter Android APK signing or PackageInstaller. The permanent boundary is `riftos-app-abi/1`: normalized app/lifecycle/input events, generic bounded frame nodes, app-supplied program/runtime bytes, and a runtime-adapter interface. `pack-rapp` creates a bounded hash-verified package under `D:/Builds`, `install-rapp` atomically installs only managed RAPP programs under `/C:/Programs`, `launch-rapp` dispatches an installed app into a RiftOS-owned window, and `rapp-list` reports installed native apps. `RiftRappHost` is language-neutral; the first compatibility adapter owns the existing Rift++ RPA2/RPE2/RUI2 translation. Future runtimes add adapters rather than language semantics to the host. Native runtime events execute off the desktop UI thread through the existing crash-contained generic native-buffer service, while the RAPP manager stays lazy so the existing APK `pack → sign → verify → install-proof` pipeline and normal desktop startup remain independent of this new lane.
-
-First proof gate: compile a tiny Rift++ RUI2 app, write `riftapp.json`, run `pack-rapp → install-rapp → launch-rapp`, close it, rebuild the program artifact, repeat the same three commands, and verify the second version runs without rebuilding or reinstalling the RiftOS APK.
+`riftpp-generic-v1` is the forward Rift++ adapter; older RPA/RWS adapters remain compatibility lanes. Language semantics stay in adapters/providers rather than the host.
 
 ## Semnexis self-hosting bootstrap
 

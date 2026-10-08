@@ -64,16 +64,15 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftBrowserEngine.kt` | `docs/systems/browser/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBrowserMcpAppBridge.kt` | `docs/systems/browser/mcp-compat/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBrowserWindow.kt` | `docs/systems/browser/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftApkV2Signer.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
-| `android/app/src/main/java/com/riftos/app/RiftBuildInstaller.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
-| `android/app/src/main/java/com/riftos/app/RiftAppDiagnosticBridge.kt` | `docs/systems/diagnostics/README.md` + `docs/systems/riftbuild/README.md` + `docs/systems/android-host/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftBuildLocalExecutor.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/systems/shell/README.md` + `docs/systems/apps/README.md` + `docs/PATCH_HISTORY.md` |
-| `android/app/src/main/java/com/riftos/app/RiftBuildKotlinCompiler.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
+| `android/app/src/main/java/com/riftos/app/RiftLocalBuildCapability.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
+| `android/app/src/main/java/com/riftos/app/RiftJvmDexService.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBuildManagedToolchains.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeBufferCompilerService.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
 | `android/app/src/main/java/com/riftos/app/RiftManagedJvmToolService.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftBuildNativeToolchain.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
-| `android/app/src/main/java/com/riftos/app/RiftBuildNativeApp.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
+| `android/app/src/main/java/com/riftos/app/RiftBuildPlatformTools.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/systems/shell/README.md` + `docs/PUBLIC_SURFACES.md` |
+| `android/app/src/main/java/com/riftos/app/RiftApkV2Verifier.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
+| `android/app/src/main/java/com/riftos/app/RiftBuildInstaller.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
+| `android/app/src/main/java/com/riftos/app/RiftAppDiagnosticBridge.kt` | `docs/systems/diagnostics/README.md` + `docs/systems/riftbuild/README.md` + `docs/systems/android-host/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftAppAbi.kt` | `docs/systems/riftbuild/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRappRiftppAdapter.kt` | `docs/systems/riftbuild/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRappRiftppWs15Adapter.kt` | `docs/systems/riftbuild/README.md` |

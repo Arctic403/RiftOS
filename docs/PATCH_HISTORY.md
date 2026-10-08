@@ -4,7 +4,7 @@
 
 **VERIFIED AGAINST CURRENT SOURCE — 2026-09-30.**
 
-This file records source-first implementation patches. It is not authority by itself: source code, Gradle packaging, manifest state, focused tests and direct audits outrank this history. Each entry describes what changed, where, why, how it works, what it affects, validation performed, limits/risks and rollback scope.
+This file records source-first implementation patches. It is not current architecture authority: source code, Gradle packaging, manifest state, focused tests, direct audits, and `docs/systems/riftbuild/README.md` outrank this history. Older entries intentionally preserve retired RiftBuild compiler/toolchain/prepared-app/pack/sign experiments as provenance; those names and commands must not be treated as live implementation guidance. Each entry describes what changed, where, why, validation performed, limits/risks and rollback scope.
 
 ## Patch 10.68 — RiftBuild Hosted source split
 

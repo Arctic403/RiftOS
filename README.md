@@ -75,7 +75,7 @@ The legacy shell `mount`/`umount` and generic `rift` wrappers are retired in the
 
 ## Rift++
 
-Rift++ compiler authority is project-owned and hot-swappable through RiftBuild's managed compiler registry. Native compiler payloads execute through the bounded `native-buffer-v1` engine in the generic isolated `:riftNativeBufferCompiler` process; JVM/DEX compiler payloads use the generic `dex-json-v1` engine. `compiler-status` and `compiler-run` are the project-neutral compiler surfaces, while `kotlin-compile` is the managed Kotlin convenience path.
+Rift++ compiler authority is project-owned and hot-swappable through RiftBuild's managed compiler registry. Native compiler payloads execute through the bounded `native-buffer-v1` engine in the generic isolated `:riftNativeBufferCompiler` process; JVM/DEX compiler payloads use the generic `dex-json-v1` engine. RiftOS exposes only project-neutral compiler status/run plus generic JVM DEX conversion. The external build provider owns Compile → Preflight → Pack → Sign → Verify and uses those generic capabilities without a Rift++-specific or Kotlin-specific RiftOS build route.
 
 The former `riftpp-host` / `:riftppCompiler` / `RiftppCompilerService` path and the special `prepare-riftpp-*` proof/package routes are retired. RiftOS does not pin Rift++ compiler generations or own Rift++ parsing/code-generation semantics; compiler identity comes from exact-hash managed payload manifests.
 

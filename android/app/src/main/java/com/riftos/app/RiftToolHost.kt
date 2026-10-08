@@ -1299,16 +1299,10 @@ class RiftToolHost(
         val parts = command.trim().split(Regex("\\s+"), limit = 3)
         if (parts.firstOrNull()?.lowercase() != "riftbuild") return false
         return parts.getOrNull(1)?.lowercase() in setOf(
-            "toolchain-install-bundled",
-            "managed-copy",
             "compiler-run",
-            "kotlin-compile",
-            "compile-native",
-            "compile-object",
-            "extract-object-text",
-            "prepare-native-app",
-            "pack",
-            "sign",
+            "jvm-dex",
+            "pack-rapp",
+            "install-rapp",
             "verify",
             "install-proof"
         )

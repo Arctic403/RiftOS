@@ -87,7 +87,7 @@ class RiftRappCapabilityBroker(
             .canonicalFile
 
     private val buildExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        RiftBuildLocalExecutor(activity.applicationContext)
+        RiftLocalBuildCapability(activity.applicationContext)
     }
 
     private val executor =

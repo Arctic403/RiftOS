@@ -30,7 +30,7 @@ assert.ok(shell.includes('MAX_SHELL_JOBS = 16'), 'native RiftShell persistent jo
 assert.ok(shell.includes('SHELL_JOB_RETENTION_MS = 10 * 60 * 1000L'), 'native RiftShell job retention must stay bounded');
 assert.ok(shell.includes('MAX_SHELL_JOB_RETAINED_RESULT_BYTES = 2 * 1024 * 1024'), 'native RiftShell retained results must stay bounded');
 assert.ok(shell.includes('rift.shell-job/1') && shell.includes('rift.shell-jobs/1'), 'native RiftShell job schemas must remain explicit');
-assert.ok(toolHost.includes('shouldSubmitShellJob(command)') && toolHost.includes('"kotlin-compile"'), 'MCP shell auto mode must route long RiftBuild work into persistent jobs');
+assert.ok(toolHost.includes('shouldSubmitShellJob(command)') && toolHost.includes('"compiler-run"') && toolHost.includes('"jvm-dex"') && !toolHost.includes('"kotlin-compile"'), 'MCP shell auto mode must route only surviving generic RiftBuild work into persistent jobs');
 assert.ok(toolHost.includes('"auto", "exec", "submit", "status", "result", "cancel", "list"'), 'MCP shell job-control action family must remain exposed');
 assert.ok(managedJvmTool.includes('RUN_TIMEOUT_SECONDS = 10 * 60L'), 'managed JVM compiler window must not regress to 60 seconds');
 assert.ok(managedJvmTool.includes('putString("status", "cancelled")') && managedJvmTool.includes('Process.killProcess(remotePid)'), 'managed JVM cancellation must terminate the isolated compiler process');
