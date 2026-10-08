@@ -99,26 +99,46 @@ class RiftCoreAppExecutor(context: Context) {
         event: RiftAppAbi.Event,
         complete: (Outcome) -> Unit
     ) {
+        fun finish(outcome: Outcome) {
+            if (outcome.error == null && outcome.frame != null &&
+                sessions.matchesExecution(attachment, payload, adapter)
+            ) {
+                val published = runCatching {
+                    sessions.publishSurfaceFromExecution(
+                        attachment,
+                        payload,
+                        adapter,
+                        outcome.frame
+                    )
+                }
+                if (published.isFailure) {
+                    complete(Outcome(error = "Core surface publication failed"))
+                    return
+                }
+            }
+            complete(outcome)
+        }
+
         fun step(current: RiftAppAbi.Event, depth: Int) {
             if (!sessions.matchesExecution(attachment, payload, adapter)) {
-                complete(Outcome(error = "RAPP Core event attachment is stale"))
+                finish(Outcome(error = "RAPP Core event attachment is stale"))
                 return
             }
             if (depth > maxEffectDepth) {
-                complete(Outcome(error = "RAPP Core effect chain exceeded bound"))
+                finish(Outcome(error = "RAPP Core effect chain exceeded bound"))
                 return
             }
             execute(attachment, payload, adapter, current) runtimeReply@{ outcome ->
                 if (!sessions.matchesExecution(attachment, payload, adapter)) {
-                    complete(Outcome(error = "RAPP Core event attachment is stale"))
+                    finish(Outcome(error = "RAPP Core event attachment is stale"))
                     return@runtimeReply
                 }
                 if (outcome.error != null || outcome.effects.isEmpty()) {
-                    complete(outcome)
+                    finish(outcome)
                     return@runtimeReply
                 }
                 if (outcome.effects.size != 1 || depth >= maxEffectDepth) {
-                    complete(Outcome(error = "RAPP Core effect chain is invalid or exceeded bound"))
+                    finish(Outcome(error = "RAPP Core effect chain is invalid or exceeded bound"))
                     return@runtimeReply
                 }
                 val effect = outcome.effects.single()
@@ -130,7 +150,7 @@ class RiftCoreAppExecutor(context: Context) {
                     stillValid = { sessions.matchesExecution(attachment, payload, adapter) }
                 ) capabilityReply@{ result ->
                     if (!sessions.matchesExecution(attachment, payload, adapter)) {
-                        complete(Outcome(error = "RAPP Core event attachment is stale"))
+                        finish(Outcome(error = "RAPP Core event attachment is stale"))
                         return@capabilityReply
                     }
                     step(

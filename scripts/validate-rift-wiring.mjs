@@ -325,6 +325,35 @@ for (const name of ['RiftCoreShellCapabilityRequests.kt', 'RiftRappShellCapabili
   if (!gradle.includes(`"src/main/java/com/riftos/app/${name}"`)) fail(`Missing required Kotlin source ${name}`);
 }
 
+// C1.2-A: Core-owned generic immutable surface snapshots; shell no longer
+// needs to own the only copy of the final app UI frame.
+const coreSurfaces = read(`${kotlinDir}/RiftCoreAppSurfaces.kt`);
+for (const required of [
+  'class RiftCoreAppSurfaces', 'riftos.core.app-surfaces/1',
+  'data class Snapshot(', 'data class Change(',
+  'MAX_SURFACES = 128', 'MAX_SUBSCRIBERS = 32',
+  'MAX_SURFACE_TEXT_BYTES = 256 * 1024',
+  'MAX_TOTAL_SURFACE_TEXT_BYTES = 4 * 1024 * 1024',
+  'frame.nodes.map { it.copy() }', 'fun snapshot(', 'fun publish(',
+  'fun remove(', 'fun subscribe(', 'fun unsubscribe('
+]) if (!coreSurfaces.includes(required)) fail(`C1.2-A Core surfaces missing: ${required}`);
+if (/\b(?:Activity|View|RiftNativeDesktop|RiftRappHost)\b/.test(stripCodeComments(coreSurfaces))) {
+  fail('C1.2-A Core surface registry imports graphical shell implementation types');
+}
+for (const required of [
+  'fun surfaces(context: Context): RiftCoreAppSurfaces',
+  '.put("appSurfaces", surfaces(context).list())'
+]) if (!coreRuntime.includes(required)) fail(`C1.2-A Core surfaces service missing: ${required}`);
+for (const required of [
+  'publishSurfaceFromExecution(', 'surfaces.remove(attachment.record.id)',
+  'surfaces.remove(id)'
+]) if (!coreSessions.includes(required)) fail(`C1.2-A lifecycle surface publication missing: ${required}`);
+if (!coreExecutor.includes('sessions.publishSurfaceFromExecution(') ||
+    !nativeShell.includes('"surfaces" -> RiftCoreRuntime.surfaces(appContext).list()') ||
+    !gradle.includes('"src/main/java/com/riftos/app/RiftCoreAppSurfaces.kt"')) {
+  fail('C1.2-A Core surface publication, diagnostic or mandatory Gradle snapshot missing');
+}
+
 // C1.1-P: package manager is Core authority; graphical Installed Apps is only a client.
 const corePackageEvents = read(`${kotlinDir}/RiftCorePackageEvents.kt`);
 const corePackageGrants = read(`${kotlinDir}/RiftCorePackageGrants.kt`);

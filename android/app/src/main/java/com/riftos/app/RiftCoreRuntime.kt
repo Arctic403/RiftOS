@@ -27,6 +27,7 @@ object RiftCoreRuntime {
     @Volatile private var runtimeRegistry: RiftExternalRuntimeProviders? = null
     @Volatile private var buildPlatform: RiftBuildPlatformTools? = null
     @Volatile private var appSessions: RiftCoreAppSessions? = null
+    @Volatile private var appSurfaces: RiftCoreAppSurfaces? = null
     @Volatile private var coreExecutor: RiftCoreAppExecutor? = null
 
     fun initialize(context: Context) {
@@ -69,11 +70,19 @@ object RiftCoreRuntime {
         }
     }
 
+    fun surfaces(context: Context): RiftCoreAppSurfaces {
+        initialize(context)
+        appSurfaces?.let { return it }
+        return synchronized(this) {
+            appSurfaces ?: RiftCoreAppSurfaces().also { appSurfaces = it }
+        }
+    }
+
     fun sessions(context: Context): RiftCoreAppSessions {
         initialize(context)
         appSessions?.let { return it }
         return synchronized(this) {
-            appSessions ?: RiftCoreAppSessions().also { appSessions = it }
+            appSessions ?: RiftCoreAppSessions(surfaces(context)).also { appSessions = it }
         }
     }
 
@@ -101,6 +110,7 @@ object RiftCoreRuntime {
             .put("runtimeProviderCount", providers.optInt("registered"))
             .put("runtimeProviderState", providers.optString("state"))
             .put("appSessions", sessions(context).summary())
+            .put("appSurfaces", surfaces(context).list())
             .put("desktopRequired", false)
             .put("shellRequired", false)
             .put("appExecutionIndependentOfDesktop", false)

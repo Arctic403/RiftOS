@@ -21,6 +21,12 @@ This inventory separates live packaged authority from retained reference/compati
 | Vortex bridge/agents | `RiftVortexBridgeClient.kt`, `RiftVortexLocalAgent.kt` | Fixed local Binder/accessibility development surfaces. |
 | RiftLLM Dev/training service | `RiftLlmDevClient.kt`, `RiftTrainDataTaskRunner.kt`, `RiftNativeShellServices.kt` | Fixed bounded standalone RiftLLM API/training commands, including fixed frozen-B2 priming, no-argument RiftPack qualification start/status, and fixed no-argument real process-death recovery start/status. |
 
+## C1.2-A — Generic Core application surface snapshots (source-only)
+
+`RiftCoreAppSurfaces` is a process-owned, bounded `riftos.core.app-surfaces/1` typed snapshot and change-subscription API for final `RiftAppAbi.Frame` outputs. A snapshot identifies the app, current Core UI-attachment generation, monotonic revision, layout and copied node list; no Android View or desktop classes enter Core. `RiftCoreAppSessions.publishSurfaceFromExecution` holds Core session authority during publication, and close/update/uninstall invalidates the stored frame. The read-only `core surfaces` command and `core status.appSurfaces` report inventory, not UI implementation details.
+
+This is not yet an external Binder protocol, independently executing app lifecycle, input/focus authorization or shell-less launch. C1.2 device gate requires the user's manual Builder, successful final signed DEX, a disposable RAPP frame revision/change lifecycle proof, then later shell-less app and alternate-client proof. Do not infer the graphical shell process is replaceable until C1.3.
+
 ## C1.1-B2-B — Core capability-effect and RiftShell UI protocol (source, device gate pending)
 
 Core owns interpreter `HOST_EFFECT_RESULT` chaining, bounded 1024-effect continuation, attachment validation, declared capability policy, synchronous Core grant storage and non-UI filesystem/build/signing effects. Public in-process contracts are `riftos.core.capability-consent/1` and `riftos.core.ui-effect/1` through the bounded ticket registry `RiftCoreShellCapabilityRequests`. A disposable `RiftRappShellCapabilityClient` only renders consent and UI-bound effects; replies require a valid single-use ticket. Shell teardown fails pending approvals closed. Binder/external shell version negotiation is deferred to C1.3; authorization policies remain a C1.4 gate. These contracts do not claim headless execution.

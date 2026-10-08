@@ -15,7 +15,7 @@ import java.security.MessageDigest
  * event queues, and rendering remain attached to RiftRappHost until the
  * separately device-gated execution/effect broker migration.
  */
-class RiftCoreAppSessions {
+class RiftCoreAppSessions(private val surfaces: RiftCoreAppSurfaces) {
     companion object {
         private const val MAX_SESSIONS = 128
         private const val MAX_PENDING_EVENTS = 64
@@ -172,7 +172,10 @@ class RiftCoreAppSessions {
             require(previous != null || sessions.size < MAX_SESSIONS) {
                 "RAPP Core session registry is full"
             }
-            Record(payload, adapter).also { sessions[payload.id] = it }
+            Record(payload, adapter).also {
+                surfaces.remove(payload.id)
+                sessions[payload.id] = it
+            }
         }
         return Attachment(record, record.attach())
     }
@@ -228,6 +231,20 @@ class RiftCoreAppSessions {
             )
     }
 
+    /** Publish only for the currently installed executable + attachment generation. */
+    @Synchronized
+    fun publishSurfaceFromExecution(
+        attachment: Attachment,
+        payload: RiftAppAbi.RuntimePayload,
+        adapter: RiftAppRuntimeAdapter,
+        frame: RiftAppAbi.Frame
+    ): Long {
+        require(matchesExecution(attachment, payload, adapter)) {
+            "Stale Core session cannot publish a surface"
+        }
+        return surfaces.publish(attachment.record.id, attachment.token, frame)
+    }
+
     /**
      * C1.1-B2-A: one Core-owned bounded FIFO per installed RAPP session.
      * Only the current UI attachment may submit/complete events.
@@ -256,6 +273,7 @@ class RiftCoreAppSessions {
     fun close(attachment: Attachment) {
         if (isAttached(attachment)) {
             sessions.remove(attachment.record.id)
+            surfaces.remove(attachment.record.id)
         }
     }
 
@@ -264,6 +282,7 @@ class RiftCoreAppSessions {
     fun invalidateInstalled(id: String): Boolean {
         val record = sessions.remove(id) ?: return false
         record.resetPendingEvents()
+        surfaces.remove(id)
         return true
     }
 
