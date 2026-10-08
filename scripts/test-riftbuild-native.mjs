@@ -117,8 +117,10 @@ for (const required of [
   '"install-status"',
   '"launch-proof"',
   'RiftApkV2Verifier()',
-  'RiftRappManager',
+  'RiftCoreRuntime.packages(appContext)',
+  'RiftCoreRuntime.runtimes(appContext)',
 ]) assert.ok(platform.includes(required), 'platform tool contract missing: ' + required);
+assert.doesNotMatch(platform, /RiftRappManager\(appContext\)|RiftExternalRuntimeProviders\(appContext\)/, 'platform tools must delegate package/runtime ownership to Core');
 for (const forbidden of [
   '"kotlin-compile"',
   '"compile-native"',
