@@ -62,7 +62,7 @@ for (const forbidden of [
 const kotlinDir = 'android/app/src/main/java/com/riftos/app';
 const kotlinFiles = walk(kotlinDir).filter(file => file.endsWith('.kt'));
 const manifestComponents = [...manifest.matchAll(
-  /<(activity|service|receiver|provider)\b[^>]*\bandroid:name="\.([^"]+)"/g
+  /<(application|activity|service|receiver|provider)\b[^>]*\bandroid:name="\.([^"]+)"/g
 )].map(match => ({ kind: match[1], name: match[2] }));
 const manifestComponentNames = new Set(manifestComponents.map(component => component.name));
 const manifestActivities = new Set(
@@ -70,7 +70,17 @@ const manifestActivities = new Set(
     .filter(component => component.kind === 'activity')
     .map(component => component.name)
 );
+const manifestApplications = manifestComponents.filter(component => component.kind === 'application');
+if (manifestApplications.length !== 1) {
+  fail('AndroidManifest must name exactly one Core Application bootstrap');
+}
 const kotlinTexts = new Map(kotlinFiles.map(file => [file, read(file)]));
+for (const component of manifestApplications) {
+  const applicationPattern = new RegExp(`\\bclass\\s+${component.name}\\s*:\\s*Application\\s*\\(`);
+  if (!kotlinFiles.some(file => applicationPattern.test(kotlinTexts.get(file) || ''))) {
+    fail(`AndroidManifest application is not backed by an Application subclass: ${component.name}`);
+  }
+}
 for (const component of manifestComponents) {
   const declarationPattern = new RegExp(`\\b(?:class|object)\\s+${component.name}\\b`);
   const owner = kotlinFiles.find(file => declarationPattern.test(kotlinTexts.get(file) || ''));
