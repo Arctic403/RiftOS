@@ -16,6 +16,12 @@ From `android/app/build.gradle.kts`:
 - version `0.11.11-relay-client`;
 - release minification disabled.
 
+## 2026-10-08 — C1.1-P live lifecycle passed; C1.1-B2-B source candidate
+
+C1.1-P installed-device test used `64d29d5` and confirmed the native Installed Apps window, Core launch request, disposable RAPP v1 install, v2 replacement, Core session invalidation, automatic catalogue refresh, and running disposable RAPP uninstall/cleanup. The original Rift-Os RAPP was unintentionally removed during UI interaction and reinstalled from its existing D:/Builds package; its former package-local saved state may have been lost. At completion the original three RAPPs were installed and no test session remained. Full grants/rollback fault-path device proof remains separate.
+
+C1.1-B2-B now moves generic effect-result continuation and bounded chaining into process-owned `RiftCoreAppExecutor.executeChained`. `RiftRappCapabilityBroker` owns Core validation/grant persistence/non-UI effects using application Context. `RiftCoreShellCapabilityRequests` provides versioned one-use consent/UI tickets to disposable `RiftRappShellCapabilityClient`; the shell can display dialogs and perform UI-only effects but does not own persistent grants. No separate Core process, no fully headless execution, and no B2-B signed-device proof yet. User manually triggers the Builder; do not auto-run. See canonical Core/Shell design for gates.
+
 ## 2026-10-08 — B2-A green/live; C1.1-P Core package management source pending
 
 User confirmed newest B2-A RiftOS build green and live; read-only live `core status` reported PID 32623, 5 installed RAPPs, no sessions, `eventQueueOwner=riftos-core`. C1.1-P now adds validated Core-managed uninstall (confined staged removal, synchronous grant revocation, session invalidation and cleanup receipt), safer RAPP update replacement, and `riftos.core.packages.change/1` notifications instead of Core importing `RiftRappHost`. RiftShell adds a native Installed Apps interface with install-from-Builds, list and confirmed uninstall, but all filesystem/package permissions stay in Core. No user apps were removed during this source change. Manual signed Builder and installed device proof are pending; **this is not evidence of independent shell-process execution yet**. See `docs/systems/core-shell/README.md`.

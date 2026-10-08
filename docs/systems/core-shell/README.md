@@ -19,6 +19,16 @@ The generic runtime-provider IPC in `docs/systems/riftbuild/RUNTIME_PROVIDERS.md
 
 **Do not confuse names:** `RiftNativeShell` is the current process-owned **command executor**, not the eventual replaceable **RiftShell graphical desktop**. During migration its generic OS-facing commands become thin clients of Core and its UI-specific commands become shell UI calls or independent clients.
 
+## 2026-10-08 — C1.1-B2-B Core effect chaining and shell consent client (source candidate)
+
+**Source implementation; not yet promoted by manual Builder or signed device.** Following the user-confirmed C1.1-P lifecycle test, all interpreter effect/result continuations now run through Core-owned `RiftCoreAppExecutor.executeChained`, with a 1024-step ceiling and generation-bound attachment checks. A graphical `RiftRappHost` receives only the final frame/error and retains disposable UI event callbacks. The Core-owned `RiftRappCapabilityBroker` now uses application Context and never holds an Activity, desktop or AlertDialog. It verifies declared permissions, validates active installed identity, decides persisted grants, executes bounded non-UI effects and routes authorized UI effects via a client.
+
+`RiftCoreShellCapabilityRequests` defines `riftos.core.capability-consent/1` and `riftos.core.ui-effect/1`. Pending requests are bounded (64), ticketed once, and tied to a subscribed shell client. Replies from an obsolete client or consumed ticket are rejected, and unsubscribe fails requests closed. `RiftRappShellCapabilityClient` owns only user-facing Allow/Deny/Cancel dialogs, clipboard, share and window-title rendering; it cannot write Core grants or run filesystem/build/signing work. Core persists allowed grants synchronously and refuses stale session replies.
+
+**Important limitations:** Transport is still in the same Android application process, and interactive consent/UI effects still need an attached shell. The UI host still submits and completes event tickets against the Core-owned FIFO, which must be moved to an independent lifecycle before true headless operation. Current truthful flags remain `headlessExecution=false`, `capabilityEffectsIndependentOfDesktop=false`, `appExecutionIndependentOfDesktop=false`, and `separateCoreProcess=false`. This is **not** C1.3 shell-crash-survival proof.
+
+**Next manual promotion:** user manually runs Builder for the pushed RiftOS/Builder pair; require exact Kotlin source reachability, full checks, real Kotlin/Gradle compile, signed DEX markers, and device checks. Exercise permission Allow/Deny/Cancel, Core grant persistence/revocation after an update, an effect that returns to Core runtime, Activity recreation during pending consent (fail closed), ordinary apps, RiftBuild Hosted compile/preflight/pack/sign/verify, and MCP/Files/RiftShell. No auto Builder dispatch and no uninstall of real apps.
+
 ## 2026-10-08 — C1.1-P Core RAPP package management (source, manual Builder pending)
 
 The user confirmed C1.1-B2-A green and installed. Live `core status` showed Core PID 32623, five installed RAPPs, zero attached/queued sessions, `eventQueueOwner=riftos-core`, and `appExecutionIndependentOfDesktop=false`. The package lifecycle was still incomplete: `RiftRappManager` had install/replace/list/launch but no uninstall, and installation called `RiftRappHost.notifyProgramsChanged()` directly.
@@ -100,8 +110,11 @@ This document owns the Core/Shell separation policy and phased C1 migration boun
 | `android/app/src/main/java/com/riftos/app/RiftCoreApplication.kt` | Android Application bootstrap; initializes Core without creating desktop UI |
 | `android/app/src/main/java/com/riftos/app/RiftCoreRuntime.kt` | Main-process Core service catalogue, generic package manager, runtime registry and build-platform owner |
 | `android/app/src/main/java/com/riftos/app/RiftCoreAppSessions.kt` | C1.1-A non-UI RAPP session identity, bounded opaque state, monotonic sequence, UI attach/detach token authority |
-| `android/app/src/main/java/com/riftos/app/RiftCoreAppExecutor.kt` | C1.1-B1 process-scoped bounded interpreter invocation, adapter encoding/decoding and persisted-state execution; not permission/GUI ownership |
+| `android/app/src/main/java/com/riftos/app/RiftCoreAppExecutor.kt` | C1.1-B1/B2-B process-scoped bounded interpreter invocation, persisted state, and effect/result chaining; not graphical UI authority |
+| `android/app/src/main/java/com/riftos/app/RiftCoreShellCapabilityRequests.kt` | Core-owned one-shot pending consent and UI-effect ticket registry with timeout and shell unsubscribe invalidation |
 | `android/app/src/main/java/com/riftos/app/RiftRappManager.kt` | Generic installed RAPP packaging, verification, installation catalogue and state |
+| `android/app/src/main/java/com/riftos/app/RiftRappCapabilityBroker.kt` | Core-owned generic grant policy, filesystem/build/signing and non-UI effect executor |
+| `android/app/src/main/java/com/riftos/app/RiftRappShellCapabilityClient.kt` | Disposable graphical shell consent dialogs, clipboard/share/window UI-effect client |
 | `android/app/src/main/java/com/riftos/app/RiftCorePackageEvents.kt` | Core-owned versioned install/update/uninstall change feed; shell observes and unsubscribes |
 | `android/app/src/main/java/com/riftos/app/RiftCorePackageGrants.kt` | Synchronous revocation of per-ID stored RAPP grants on replacement/removal |
 | `android/app/src/main/java/com/riftos/app/RiftExternalRuntimeProviders.kt` | Signer-pinned runtime-provider registration lookup and bounded external execution IPC |

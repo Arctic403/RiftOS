@@ -1,11 +1,6 @@
 package com.riftos.app
 
-import android.app.Activity
-import android.app.AlertDialog
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -30,10 +25,8 @@ import javax.security.auth.x500.X500Principal
  * implementations plug in behind this broker and return a generic
  * HOST_EFFECT_RESULT event to the runtime.
  */
-class RiftRappCapabilityBroker(
-    private val activity: Activity,
-    private val desktop: RiftNativeDesktop
-) {
+class RiftRappCapabilityBroker(context: Context) {
+    private val appContext = context.applicationContext
     data class Result(
         val ok: Boolean,
         val token: Int = 0,
@@ -71,14 +64,14 @@ class RiftRappCapabilityBroker(
     }
 
     private val prefs =
-        activity.getSharedPreferences(
+        appContext.getSharedPreferences(
             "rift-native",
             Context.MODE_PRIVATE
         )
 
     private val riftRoot =
         File(
-            activity.filesDir,
+            appContext.filesDir,
             "riftfs"
         )
             .apply {
@@ -87,7 +80,7 @@ class RiftRappCapabilityBroker(
             .canonicalFile
 
     private val buildExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        RiftLocalBuildCapability(activity.applicationContext)
+        RiftLocalBuildCapability(appContext)
     }
 
     private val executor =
@@ -115,127 +108,69 @@ class RiftRappCapabilityBroker(
         watchdog.shutdownNow()
     }
 
+    /**
+     * Core is the only grant/authorization authority. The disposable shell
+     * presents consent, but only Core can validate an app attachment, persist a
+     * grant and dispatch an effect. Late shell replies fail closed.
+     */
     fun execute(
         appId: String,
         appName: String,
         declared: Set<String>,
         effect: RiftAppAbi.HostEffect,
+        stillValid: () -> Boolean,
         complete: (Result) -> Unit
     ) {
-        if (
-            effect.capability !in
-                RiftAppAbi.Capability.DECLARABLE
-        ) {
-            complete(
-                Result(
-                    ok = false,
-                    token = effect.token,
-                    error =
-                        "Unknown capability: ${effect.capability}"
-                )
-            )
+        val finish: (Result) -> Unit = { result ->
+            val checked = when {
+                !stillValid() -> Result(ok = false, token = effect.token, error = "Stale Core app session")
+                result.bytes.size > MAX_TEXT_BYTES ->
+                    Result(ok = false, token = effect.token, error = "Capability result exceeds bound")
+                else -> result.copy(token = effect.token)
+            }
+            complete(checked)
+        }
+        if (effect.capability !in RiftAppAbi.Capability.DECLARABLE) {
+            finish(Result(ok = false, error = "Unknown capability: ${effect.capability}"))
             return
         }
-
-        if (
-            effect.capability !in
-                declared
-        ) {
-            complete(
-                Result(
-                    ok = false,
-                    token = effect.token,
-                    error =
-                        "${effect.capability} is not declared by this app"
-                )
-            )
+        if (effect.capability !in declared) {
+            finish(Result(ok = false, error = "${effect.capability} is not declared by this app"))
             return
         }
-
         val run = {
-            dispatch(
-                appId,
-                appName,
-                effect,
-                complete
-            )
+            if (!stillValid() || !RiftCoreRuntime.packages(appContext).handlesInstalled(appId)) {
+                finish(Result(ok = false, error = "Stale or uninstalled Core application"))
+            } else {
+                dispatch(appId, appName, effect, finish)
+            }
         }
-
-        if (
-            effect.capability in
-                NO_PROMPT_CAPABILITIES ||
-            hasGrant(
-                appId,
-                effect.capability
-            )
-        ) {
+        if (effect.capability in NO_PROMPT_CAPABILITIES || hasGrant(appId, effect.capability)) {
             run()
             return
         }
-
-        activity.runOnUiThread {
-            if (
-                activity.isFinishing ||
-                activity.isDestroyed
-            ) {
-                complete(
-                    Result(
-                        ok = false,
-                        token = effect.token,
-                        error =
-                            "RiftOS host is not available"
-                    )
-                )
-                return@runOnUiThread
+        RiftCoreShellCapabilityRequests.requestConsent(
+            appId, appName, effect.capability
+        ) { accepted ->
+            if (!accepted || !stillValid() ||
+                !RiftCoreRuntime.packages(appContext).handlesInstalled(appId)) {
+                finish(Result(ok = false, error = "${effect.capability} permission denied or expired"))
+            } else {
+                runCatching {
+                    // Serialize grant approval with the Core package manager's
+                    // synchronized update/uninstall + grant revocation path.
+                    val packages = RiftCoreRuntime.packages(appContext)
+                    synchronized(packages) {
+                        check(stillValid() && packages.handlesInstalled(appId)) {
+                            "Stale Core package identity"
+                        }
+                        grant(appId, effect.capability)
+                    }
+                }.onSuccess { run() }
+                    .onFailure { error ->
+                        finish(Result(ok = false, error = error.message ?: "Core grant failed"))
+                    }
             }
-
-            AlertDialog.Builder(
-                activity
-            )
-                .setTitle(
-                    "RiftOS permission"
-                )
-                .setMessage(
-                    "$appName wants permission: ${effect.capability}"
-                )
-                .setPositiveButton(
-                    "Allow"
-                ) {
-                    _,
-                    _ ->
-                    grant(
-                        appId,
-                        effect.capability
-                    )
-                    run()
-                }
-                .setNegativeButton(
-                    "Deny"
-                ) {
-                    _,
-                    _ ->
-                    complete(
-                        Result(
-                            ok = false,
-                            token =
-                                effect.token,
-                            error =
-                                "${effect.capability} permission denied"
-                        )
-                    )
-                }
-                .setOnCancelListener {
-                    complete(
-                        Result(
-                            ok = false,
-                            token =
-                                effect.token,
-                            error =
-                                "${effect.capability} permission denied"
-                        )
-                    )
-                }
-                .show()
         }
     }
 
@@ -245,92 +180,46 @@ class RiftRappCapabilityBroker(
         effect: RiftAppAbi.HostEffect,
         complete: (Result) -> Unit
     ) {
-        val ui =
-            effect.capability ==
-                RiftAppAbi.Capability.CLIPBOARD_READ ||
-                effect.capability ==
-                    RiftAppAbi.Capability.CLIPBOARD_WRITE ||
-                effect.capability ==
-                    RiftAppAbi.Capability.SHARE ||
-                effect.capability ==
-                    RiftAppAbi.Capability.WINDOW_TITLE
-
+        val ui = effect.capability in setOf(
+            RiftAppAbi.Capability.CLIPBOARD_READ,
+            RiftAppAbi.Capability.CLIPBOARD_WRITE,
+            RiftAppAbi.Capability.SHARE,
+            RiftAppAbi.Capability.WINDOW_TITLE
+        )
         if (ui) {
-            activity.runOnUiThread {
-                complete(
-                    runCatching {
-                        executeNow(
-                            appId,
-                            appName,
-                            effect
-                        )
-                    }.getOrElse {
-                        error ->
-                        Result(
-                            ok = false,
-                            token =
-                                effect.token,
-                            error =
-                                error.message
-                                    ?: error
-                                        .javaClass
-                                        .simpleName
-                        )
-                    }
-                )
+            val validOperation = when (effect.capability) {
+                RiftAppAbi.Capability.CLIPBOARD_READ -> effect.operation == "read"
+                RiftAppAbi.Capability.CLIPBOARD_WRITE ->
+                    effect.operation == "write" && effect.text.length <= MAX_CLIPBOARD_CHARS
+                RiftAppAbi.Capability.SHARE ->
+                    effect.operation == "text" && effect.text.length <= MAX_SHARE_CHARS
+                RiftAppAbi.Capability.WINDOW_TITLE ->
+                    effect.operation == "set" && effect.text.isNotBlank() && effect.text.length <= 96
+                else -> false
             }
+            if (!validOperation) {
+                complete(Result(ok = false, token = effect.token, error = "Unsupported shell UI effect"))
+                return
+            }
+            RiftCoreShellCapabilityRequests.requestUiEffect(appId, appName, effect, complete)
             return
         }
 
         RiftBoundedAsync.submit(
             executor = executor,
             watchdog = watchdog,
-            timeoutMs =
-                if (effect.capability == RiftAppAbi.Capability.BUILD_LOCAL) {
-                    BUILD_OPERATION_TIMEOUT_MS
-                } else {
-                    OPERATION_TIMEOUT_MS
-                },
-            timeoutValue = {
-                Result(
-                    ok = false,
-                    token =
-                        effect.token,
-                    error =
-                        "RAPP capability timed out"
-                )
-            },
-            failureValue = {
-                error ->
-                Result(
-                    ok = false,
-                    token =
-                        effect.token,
-                    error =
-                        error.message
-                            ?: error
-                                .javaClass
-                                .simpleName
-                )
+            timeoutMs = if (effect.capability == RiftAppAbi.Capability.BUILD_LOCAL) {
+                BUILD_OPERATION_TIMEOUT_MS
+            } else OPERATION_TIMEOUT_MS,
+            timeoutValue = { Result(ok = false, token = effect.token, error = "RAPP capability timed out") },
+            failureValue = { error ->
+                Result(ok = false, token = effect.token, error = error.message ?: error.javaClass.simpleName)
             },
             work = {
-                RiftDeadline.check(
-                    "RAPP capability"
-                )
-                executeNow(
-                    appId,
-                    appName,
-                    effect
-                )
+                RiftDeadline.check("RAPP Core capability")
+                executeNow(appId, appName, effect)
             },
-            reply = {
-                result ->
-                activity.runOnUiThread {
-                    complete(
-                        result
-                    )
-                }
-            }
+            reply = complete
         )
     }
 
@@ -455,109 +344,11 @@ class RiftRappCapabilityBroker(
                         )
                 }
 
-            RiftAppAbi.Capability.CLIPBOARD_READ ->
-                when (
-                    effect.operation
-                ) {
-                    "read" ->
-                        Result(
-                            ok = true,
-                            token =
-                                effect.token,
-                            bytes =
-                                clipboardRead()
-                                    .toByteArray(
-                                        Charsets.UTF_8
-                                    )
-                        )
-
-                    else ->
-                        unsupported(
-                            effect
-                        )
-                }
-
-            RiftAppAbi.Capability.CLIPBOARD_WRITE ->
-                when (
-                    effect.operation
-                ) {
-                    "write" -> {
-                        clipboardWrite(
-                            effect.text
-                        )
-                        Result(
-                            ok = true,
-                            token =
-                                effect.token
-                        )
-                    }
-
-                    else ->
-                        unsupported(
-                            effect
-                        )
-                }
-
-            RiftAppAbi.Capability.SHARE ->
-                when (
-                    effect.operation
-                ) {
-                    "text" -> {
-                        share(
-                            effect.text,
-                            appName
-                        )
-                        Result(
-                            ok = true,
-                            token =
-                                effect.token
-                        )
-                    }
-
-                    else ->
-                        unsupported(
-                            effect
-                        )
-                }
-
-            RiftAppAbi.Capability.WINDOW_TITLE ->
-                when (
-                    effect.operation
-                ) {
-                    "set" -> {
-                        require(
-                            effect.text.isNotBlank() &&
-                                effect.text.length <=
-                                    96
-                        ) {
-                            "Window title is invalid"
-                        }
-
-                        desktop.handle(
-                            "desktop.window.title",
-                            JSONObject()
-                                .put(
-                                    "id",
-                                    appId
-                                )
-                                .put(
-                                    "title",
-                                    effect.text
-                                )
-                        )
-
-                        Result(
-                            ok = true,
-                            token =
-                                effect.token
-                        )
-                    }
-
-                    else ->
-                        unsupported(
-                            effect
-                        )
-                }
+            // UI-only operations must never execute within Core.
+            RiftAppAbi.Capability.CLIPBOARD_READ,
+            RiftAppAbi.Capability.CLIPBOARD_WRITE,
+            RiftAppAbi.Capability.SHARE,
+            RiftAppAbi.Capability.WINDOW_TITLE -> unsupported(effect)
 
             RiftAppAbi.Capability.SIGNING_IDENTITY ->
                 when (
@@ -1868,85 +1659,8 @@ class RiftRappCapabilityBroker(
                     )
                     .toString()
             )
-            .apply()
+            .commit()
+            .also { check(it) { "Core capability grant could not be persisted" } }
     }
 
-    private fun clipboardRead():
-        String {
-        val value =
-            (
-                activity.getSystemService(
-                    Context.CLIPBOARD_SERVICE
-                ) as ClipboardManager
-                )
-                .primaryClip
-                ?.getItemAt(0)
-                ?.coerceToText(
-                    activity
-                )
-                ?.toString()
-                .orEmpty()
-
-        require(
-            value.toByteArray(
-                Charsets.UTF_8
-            ).size <=
-                MAX_TEXT_BYTES
-        ) {
-            "Clipboard text exceeds native app result limit"
-        }
-
-        return value
-    }
-
-    private fun clipboardWrite(
-        text: String
-    ) {
-        require(
-            text.length <=
-                MAX_CLIPBOARD_CHARS
-        ) {
-            "Clipboard text exceeds $MAX_CLIPBOARD_CHARS characters"
-        }
-
-        (
-            activity.getSystemService(
-                Context.CLIPBOARD_SERVICE
-            ) as ClipboardManager
-            )
-            .setPrimaryClip(
-                ClipData.newPlainText(
-                    "RiftOS program",
-                    text
-                )
-            )
-    }
-
-    private fun share(
-        text: String,
-        title: String
-    ) {
-        require(
-            text.length <=
-                MAX_SHARE_CHARS
-        ) {
-            "Share text exceeds $MAX_SHARE_CHARS characters"
-        }
-
-        activity.startActivity(
-            Intent.createChooser(
-                Intent(
-                    Intent.ACTION_SEND
-                ).apply {
-                    type =
-                        "text/plain"
-                    putExtra(
-                        Intent.EXTRA_TEXT,
-                        text
-                    )
-                },
-                title
-            )
-        )
-    }
 }

@@ -242,7 +242,7 @@ for (const required of [
   'coreSessions.attach(payload, adapter)',
   'coreSessions.detach(it.coreAttachment)',
   'coreSessions.close(session.coreAttachment)',
-  'coreExecutor.execute(',
+  'coreExecutor.executeChained(',
 ]) if (!rappHost.includes(required)) fail(`RAPP desktop attachment migration missing: ${required}`);
 if (!coreRuntime.includes('fun sessions(context: Context): RiftCoreAppSessions') ||
     !coreRuntime.includes('sessions(context).summary()')) {
@@ -267,7 +267,7 @@ if (/\b(?:Activity|View|RiftNativeDesktop|RiftNativeShell|RiftRappHost)\b/.test(
 )) fail('Core RAPP executor references UI/desktop types');
 for (const required of [
   'RiftCoreRuntime.appExecutor(activity.applicationContext)',
-  'coreExecutor.execute('
+  'coreExecutor.executeChained('
 ]) if (!rappHost.includes(required)) fail(`C1.1-B1 RAPP UI still owns execution: ${required}`);
 for (const forbidden of [
   'RiftRappQuickJsExecutor()', 'RiftNativeBufferCompilerService.compile(',
@@ -300,6 +300,27 @@ for (const required of [
 ]) if (!rappHost.includes(required)) fail(`C1.1-B2-A UI/Core ticket contract missing: ${required}`);
 for (const forbidden of ['val pendingEvents =', 'var eventBusy:', 'data class PendingEvent(']) {
   if (rappHost.includes(forbidden)) fail(`C1.1-B2-A desktop regained event queue: ${forbidden}`);
+}
+
+// C1.1-B2-B: capability execution belongs to Core; only UI requests cross to shell.
+const coreConsent = read(`${kotlinDir}/RiftCoreShellCapabilityRequests.kt`);
+const shellCapabilityClient = read(`${kotlinDir}/RiftRappShellCapabilityClient.kt`);
+const capabilityBroker = read(`${kotlinDir}/RiftRappCapabilityBroker.kt`);
+for (const [data, required] of [
+  [coreConsent, 'riftos.core.capability-consent/1'],
+  [coreConsent, 'riftos.core.ui-effect/1'],
+  [coreConsent, 'MAX_PENDING = 64'],
+  [shellCapabilityClient, 'RiftCoreShellCapabilityRequests.subscribe('],
+  [capabilityBroker, 'RiftCoreShellCapabilityRequests.requestConsent('],
+  [capabilityBroker, 'RiftCoreShellCapabilityRequests.requestUiEffect('],
+  [coreExecutor, 'fun executeChained('],
+  [coreExecutor, 'capabilityBroker.execute('],
+]) if (!data.includes(required)) fail(`C1.1-B2-B missing: ${required}`);
+if (rappHost.includes('resolveHostEffect(') || rappHost.includes('capabilityBroker.execute(')) {
+  fail('C1.1-B2-B effect loop remains in desktop');
+}
+for (const name of ['RiftCoreShellCapabilityRequests.kt', 'RiftRappShellCapabilityClient.kt']) {
+  if (!gradle.includes(`"src/main/java/com/riftos/app/${name}"`)) fail(`Missing required Kotlin source ${name}`);
 }
 
 // C1.1-P: package manager is Core authority; graphical Installed Apps is only a client.
@@ -373,7 +394,7 @@ for (const required of [
   '?: return fallback()', 'registry.json',
 ]) if (!runtimeProviders.includes(required)) fail(`runtime-provider boundary missing: ${required}`);
 for (const required of [
-  'RiftCoreRuntime.appExecutor(activity.applicationContext)', 'coreExecutor.execute(',
+  'RiftCoreRuntime.appExecutor(activity.applicationContext)', 'coreExecutor.executeChained(',
 ]) if (!rappHost.includes(required)) fail(`RAPP host Core execution delegation missing: ${required}`);
 for (const required of [
   'RiftCoreRuntime.runtimes(app)', 'providers.execute(',

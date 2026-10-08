@@ -26,13 +26,6 @@ class RiftRappHost(
     private val desktop: RiftNativeDesktop,
     private val refreshLauncher: () -> Unit
 ) {
-    companion object {
-        // 1024 x 256 KiB binary host effects reaches the existing 256 MiB build ceiling
-        // while keeping every hosted-app transaction finite.
-        private const val MAX_EFFECT_DEPTH = 1024
-
-    }
-
     private data class Session(
         val payload: RiftAppAbi.RuntimePayload,
         val adapter: RiftAppRuntimeAdapter,
@@ -49,8 +42,6 @@ class RiftRappHost(
 
     private data class EventOutcome(
         val frame: RiftAppAbi.Frame? = null,
-        val effects: List<RiftAppAbi.HostEffect> =
-            emptyList(),
         val error: String? = null
     )
 
@@ -58,11 +49,7 @@ class RiftRappHost(
         RiftCoreRuntime.packages(activity.applicationContext)
     }
     private val coreSessions = RiftCoreRuntime.sessions(activity.applicationContext)
-    private val capabilityBroker =
-        RiftRappCapabilityBroker(
-            activity,
-            desktop
-        )
+    private val shellCapabilities = RiftRappShellCapabilityClient(activity, desktop)
     private val coreExecutor = RiftCoreRuntime.appExecutor(activity.applicationContext)
     private val sessions =
         LinkedHashMap<String, Session>()
@@ -161,7 +148,7 @@ class RiftRappHost(
             coreSessions.detach(it.coreAttachment)
         }
         sessions.clear()
-        capabilityBroker.destroy()
+        shellCapabilities.destroy()
     }
 
     private fun open(
@@ -259,7 +246,7 @@ class RiftRappHost(
             !coreSessions.isAttached(session.coreAttachment)
         ) return
 
-        runEventStep(session, ticket.event, 0) { outcome ->
+        runEventStep(session, ticket.event) { outcome ->
             if (
                 sessions[session.id] !== session ||
                 !coreSessions.isAttached(session.coreAttachment)
@@ -277,122 +264,23 @@ class RiftRappHost(
     private fun runEventStep(
         session: Session,
         event: RiftAppAbi.Event,
-        effectDepth: Int,
         complete: (EventOutcome) -> Unit
     ) {
-        if (effectDepth > MAX_EFFECT_DEPTH) {
-            complete(EventOutcome(error = "RAPP host effect chain exceeded bound"))
-            return
-        }
-
-        // Core owns runtime execution, deadlines, state persistence and adapter
-        // output parsing; this disposable desktop client only resolves UI effects.
-        coreExecutor.execute(
+        // Core owns authorization, capability work and the entire continuation.
+        // This UI attachment only receives the final frame for presentation.
+        coreExecutor.executeChained(
             session.coreAttachment,
             session.payload,
             session.adapter,
             event
         ) { result ->
             activity.runOnUiThread {
-                if (
-                    activity.isFinishing ||
-                    activity.isDestroyed ||
+                if (activity.isFinishing || activity.isDestroyed ||
                     sessions[session.id] !== session ||
                     !coreSessions.isAttached(session.coreAttachment)
-                ) {
-                    return@runOnUiThread
-                }
-
-                val outcome = EventOutcome(
-                    frame = result.frame,
-                    effects = result.effects,
-                    error = result.error
-                )
-                val effect = outcome.effects.singleOrNull()
-                if (outcome.error != null || effect == null) {
-                    complete(outcome)
-                } else {
-                    resolveHostEffect(session, effect, complete, effectDepth)
-                }
+                ) return@runOnUiThread
+                complete(EventOutcome(frame = result.frame, error = result.error))
             }
-        }
-    }
-
-    private fun resolveHostEffect(
-        session: Session,
-        effect: RiftAppAbi.HostEffect,
-        complete: (EventOutcome) -> Unit,
-        effectDepth: Int
-    ) {
-        if (
-            effectDepth >=
-                MAX_EFFECT_DEPTH
-        ) {
-            complete(
-                EventOutcome(
-                    error =
-                        "RAPP host effect chain exceeded bound"
-                )
-            )
-            return
-        }
-
-        capabilityBroker.execute(
-            appId =
-                session.id,
-            appName =
-                session.name,
-            declared =
-                session.payload
-                    .permissions,
-            effect =
-                effect
-        ) {
-            result ->
-            if (
-                sessions[session.id] !==
-                    session
-            ) {
-                return@execute
-            }
-
-            runEventStep(
-                session =
-                    session,
-                event =
-                    RiftAppAbi.Event(
-                        kind =
-                            RiftAppAbi.EventKind
-                                .HOST_EFFECT_RESULT,
-                        targetId =
-                            effect.requestId,
-                        arg0 =
-                            if (
-                                result.ok
-                            ) {
-                                1
-                            } else {
-                                0
-                            },
-                        arg1 =
-                            result.token,
-                        text =
-                            if (
-                                result.ok
-                            ) {
-                                result.text
-                            } else {
-                                result.error
-                                    .orEmpty()
-                            },
-                        bytes =
-                            result.bytes
-                    ),
-                effectDepth =
-                    effectDepth + 1,
-                complete =
-                    complete
-            )
         }
     }
 

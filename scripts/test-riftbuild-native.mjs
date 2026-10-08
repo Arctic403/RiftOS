@@ -161,7 +161,7 @@ for (const required of [
   '"toolchainStatus"',
   '"compilerRun"',
   '"jvmDex"',
-  'RiftLocalBuildCapability(activity.applicationContext)',
+  'RiftLocalBuildCapability(appContext)',
   'Capability.SIGNING_IDENTITY',
   '"signSha256RsaPkcs1"',
   '"verifySha256RsaPkcs1"',
@@ -196,16 +196,15 @@ assert.doesNotMatch(
 );
 
 for (const required of [
-  'MAX_EFFECT_DEPTH = 1024',
   'ScrollView(activity)',
   '!field.hasFocus()',
-  'coreExecutor.execute(',
-  'HOST_EFFECT_RESULT',
+  'coreExecutor.executeChained(',
 ]) assert.ok(host.includes(required), 'generic RAPP host contract missing: ' + required);
 for (const required of [
   'RiftRappQuickJsExecutor()', 'RiftNativeBufferCompilerService.compile(',
   'RiftBoundedAsync.submit(', 'sessions.commitFromExecution(',
   'adapter.encodeEvent(', 'adapter.decodeOutput(',
+  'maxEffectDepth = 1024', 'HOST_EFFECT_RESULT', 'capabilityBroker.execute(',
 ]) assert.ok(coreExecutor.includes(required), 'Core RAPP executor contract missing: ' + required);
 assert.doesNotMatch(
   host, /RiftRappQuickJsExecutor\(|RiftBoundedAsync\.submit\(|RiftNativeBufferCompilerService\.compile\(/,
