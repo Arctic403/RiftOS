@@ -156,7 +156,6 @@ for (const required of [
   '"compilerRun"',
   '"jvmDex"',
   'RiftLocalBuildCapability(activity.applicationContext)',
-  'BUILD_OPERATION_TIMEOUT_MS = 180_000L',
   'Capability.SIGNING_IDENTITY',
   '"signSha256RsaPkcs1"',
   '"verifySha256RsaPkcs1"',
@@ -164,6 +163,11 @@ for (const required of [
   'SHA256withRSA',
   'riftbuild-apk-v2-rsa-v1',
 ]) assert.ok(broker.includes(required), 'generic capability broker contract missing: ' + required);
+assert.match(
+  broker,
+  /\bBUILD_OPERATION_TIMEOUT_MS\s*=\s*180_000L\b/,
+  'generic build operation must retain its 180-second bounded timeout'
+);
 assert.doesNotMatch(broker, /RiftBuildLocalExecutor|RiftBuildNativeToolchain|RiftBuildNativeApp/);
 
 assert.match(abi, /BUILD_LOCAL\s*=\s*"build\.local"/);
@@ -188,11 +192,11 @@ assert.doesNotMatch(
 for (const required of [
   'MAX_EFFECT_DEPTH = 1024',
   'ScrollView(activity)',
-  'isFillViewport = true',
   '!field.hasFocus()',
   'RiftRappQuickJsExecutor',
   'HOST_EFFECT_RESULT',
 ]) assert.ok(host.includes(required), 'generic RAPP host contract missing: ' + required);
+assert.match(host, /\bisFillViewport\s*=\s*true\b/, 'generic RAPP host scroll view must fill viewport');
 assert.doesNotMatch(host, /Riftpp|RPE2|RUI2/, 'generic RAPP host must not own language protocol semantics');
 
 for (const required of [
@@ -263,12 +267,18 @@ for (const retiredSource of [
 ]) assert.ok(!gradle.includes(retiredSource), 'Gradle retained retired RiftBuild source: ' + retiredSource);
 
 for (const required of [
-  'class RiftManagedJvmToolService',
-  'rift-managed-jvm-tool-v1',
+  'class RiftManagedJvmToolService : Service()',
+  'DESCRIPTOR = "com.riftos.app.RiftManagedJvmToolService"',
+  'MAX_PAYLOAD_BYTES = 128L * 1024L * 1024L',
+  'RUN_TIMEOUT_SECONDS = 10 * 60L',
+  'Process.killProcess(remotePid)',
 ]) assert.ok(jvmTool.includes(required), 'managed JVM execution service contract missing: ' + required);
 for (const required of [
-  'class RiftNativeBufferCompilerService',
-  'rift-native-buffer-compile-v1',
+  'class RiftNativeBufferCompilerService : Service()',
+  'DESCRIPTOR = "com.riftos.app.RiftNativeBufferCompilerService"',
+  'MAX_SOURCE_BYTES = 512 * 1024',
+  'MAX_OUTPUT_BYTES = 512 * 1024',
+  'COMPILE_TIMEOUT_SECONDS = 3L',
 ]) assert.ok(nativeBuffer.includes(required), 'native-buffer engine contract missing: ' + required);
 
 console.log('ok - RiftOS generic build provider boundary and legacy purge');
