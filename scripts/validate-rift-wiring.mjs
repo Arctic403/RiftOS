@@ -192,6 +192,25 @@ if (gradle.includes('RiftCliHost.kt') || gradle.includes('libriftcli') ||
     toolSandbox.includes('RiftCliExecutionGate') ||
     toolSandbox.includes('submitCliJob(') ||
     toolSandbox.includes('executeCliBatchRequest(')) fail('retired RiftCLI execution surface returned');
+// The previous CLI retirement briefly left Kotlin compilation broken even though the
+// source-only checks passed. Lock independent host ownership and shell cleanup explicitly.
+if (!toolHost.includes('private val appContext = context.applicationContext') ||
+    !toolHost.includes('private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)') ||
+    !toolHost.includes('private val sandbox: RiftToolSandbox') ||
+    !toolHost.includes('sandbox = RiftToolSandbox(appContext)') ||
+    !toolHost.includes('import java.util.concurrent.atomic.AtomicBoolean')) {
+  fail('MCP ToolHost common Kotlin fields or callback import were removed');
+}
+if (/\b(?:bypassAccess|trusted-cli)\b/.test(toolHost) ||
+    /\b(?:cancelAllCliShellJobs|cliWorker)\b/.test(nativeShell)) {
+  fail('retired CLI Kotlin references or privileged authorization bypass remain');
+}
+if (!nativeShell.includes('cancelAllShellJobs("Native RiftShell closed")') ||
+    !nativeShell.includes('shellJobWorker.shutdownNow()') ||
+    !toolHost.includes('if (!isAllowed(name, args))') ||
+    !toolHost.includes('if (!isAllowed(name, normalizedArgs))')) {
+  fail('native shell shutdown or MCP access enforcement regressed');
+}
 if (!toolHost.includes('"rift_local_agent_batch"') ||
     !localAgentBatch.includes('MAX_STEPS = 16') ||
     !localAgentBatch.includes('RiftLocalAgentExecutionGate') ||

@@ -383,10 +383,8 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     override fun close() {
         closed = true
         cancelAllShellJobs("Native RiftShell closed")
-        cancelAllCliShellJobs("Native RiftShell closed")
         worker.shutdownNow()
         shellJobWorker.shutdownNow()
-        cliWorker.shutdownNow()
         watchdog.shutdownNow()
     }
 

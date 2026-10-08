@@ -7,6 +7,7 @@ import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Canonical device-side capability registry for the local Rift MCP server. */
 class RiftToolHost(
@@ -27,6 +28,9 @@ class RiftToolHost(
         const val SCOPE = "riftfs/workspace"
     }
 
+    private val appContext = context.applicationContext
+    private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val sandbox: RiftToolSandbox
     @Volatile private var shellExecutor: RiftShellExecutor? = initialShellExecutor
 
     fun setShellExecutor(executor: RiftShellExecutor) {
@@ -426,7 +430,7 @@ class RiftToolHost(
             component = "tool.host",
             operation = name.ifBlank { "unknown" },
             parent = debugContext,
-            attributes = mapOf("lane" to if (bypassAccess) "trusted-cli" else "mcp")
+            attributes = mapOf("lane" to "mcp")
         )
         val terminal = AtomicBoolean(false)
         val reply: (JSONObject) -> Unit = { response ->
@@ -441,7 +445,7 @@ class RiftToolHost(
         }
 
         if (name == "rift_mcp_reconcile") {
-            if (!bypassAccess && !allowRead()) {
+            if (!allowRead()) {
                 val error = "Rift MCP read access is disabled on this device. Enable it in Rift MCP settings."
                 recordAudit(name, args, false, error)
                 reply(JSONObject().put("ok", false).put("name", name).put("error", error))
@@ -471,7 +475,7 @@ class RiftToolHost(
         }
 
         if (name == "rift_debug") {
-            if (!bypassAccess && !allowRead()) {
+            if (!allowRead()) {
                 val error = "Rift MCP read access is disabled on this device. Enable it in Rift MCP settings."
                 recordAudit(name, args, false, error)
                 reply(JSONObject().put("ok", false).put("name", name).put("error", error))
@@ -491,7 +495,7 @@ class RiftToolHost(
         if (name == "rift_local_agent_batch") {
             val requiresWrite = RiftLocalAgentBatch.requiresWrite(args)
             val allowed = if (requiresWrite) allowRead() && allowWrite() else allowRead()
-            if (!bypassAccess && !allowed) {
+            if (!allowed) {
                 val error = if (requiresWrite) {
                     "Rift MCP Local Agent batch contains mutation/cancellation authority and requires read and write access on this device."
                 } else {
@@ -526,7 +530,7 @@ class RiftToolHost(
                 return
             }
 
-            if (!bypassAccess && !isAllowed(name, args)) {
+            if (!isAllowed(name, args)) {
                 val error = when {
                     !allowRead() && !allowWrite() ->
                         "Rift MCP shell access is disabled on this device. Enable read and write access in Rift MCP settings."
@@ -666,7 +670,7 @@ class RiftToolHost(
         }
 
         val mutatingRequest = requiresWrite(name, normalizedArgs)
-        if (!bypassAccess && !isAllowed(name, normalizedArgs)) {
+        if (!isAllowed(name, normalizedArgs)) {
             val error = when {
                 name == "rift_workspace_exec" && !allowRead() ->
                     "Rift MCP read access is disabled on this device. Enable it in Rift MCP settings."
