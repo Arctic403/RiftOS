@@ -19,6 +19,16 @@ The generic runtime-provider IPC in `docs/systems/riftbuild/RUNTIME_PROVIDERS.md
 
 **Do not confuse names:** `RiftNativeShell` is the current process-owned **command executor**, not the eventual replaceable **RiftShell graphical desktop**. During migration its generic OS-facing commands become thin clients of Core and its UI-specific commands become shell UI calls or independent clients.
 
+## 2026-10-08 — C1.1-B2-A Core-owned event FIFO (source, pending manual Builder)
+
+The user confirmed C1.1-B1 green, installed and live. Live RiftOS MCP reported Core PID 27438, `eventExecutorOwner=riftos-core`, no active RAPP sessions, five installed programs and a working empty external runtime registry. This proves Core diagnostics only: it does not prove RAPP event interaction or state restoration yet.
+
+C1.1-B2-A migrates the **64-event bounded FIFO**, current running event ticket, payload-byte budget (1 MiB per session), and FIFO completion order from Activity-owned `RiftRappHost` to **`RiftCoreAppSessions`**. Core stores plain `RiftAppAbi.Event` payload copies and monotonically increasing ticket identifiers, never Java/Kotlin callbacks, Views, Activities, or desktop references. The current desktop holds a map of disposable completion callbacks keyed by ticket ID, and asks Core `offerEvent`/`finishEvent` which event to dispatch next. Explicit app-window close removes the Core session; Activity destruction invalidates outstanding Core event tickets and drops UI callbacks while preserving program state and runtime event sequence. Reattachment resets the queue safely. This is an in-process migration; Core is not yet a separate Android process.
+
+**Not yet shell-independent**: Core now owns event ordering, interpreter threads and opaque state; `RiftRappHost` still pumps responses and resolves capability host effects, UI consent, and user interaction. Core sessions still report `headlessExecution=false`, `capabilityEffectsIndependentOfDesktop=false`, `appExecutionIndependentOfDesktop=false`, and `separateCoreProcess=false`. Never claim a detached RAPP continues executing. The next C1.1-B2-B gate must establish a versioned Core-to-UI effect/consent interface with Core-owned scheduling and capability enforcement, separate from replaceable desktop code.
+
+**Device promotion:** require manually built signed APK green and installed; `core sessions` reports `eventQueueOwner=riftos-core` and truthful false headless flags; launch an installed RAPP and verify attached/pending count and preserved program state under repeated input and close; exercise RiftBuild Hosted build effects/permissions; validate Activity recreation and stale completion isolation; keep Files/MCP/terminal working. This source checkpoint alone is not device proof.
+
 ## 2026-10-08 — C1.1-B1 Core event execution extraction (source; pending user-manual Builder)
 
 The user confirmed the C1.1-A APK green, installed and running. Live Rift MCP reads showed `core status` PID 22686, `riftos.core.sessions/1`, five installed RAPPs and an empty attached/detached session registry, plus `riftbuild runtime-status` reporting zero external providers and legacy fallback. This validates the registry and commands **while no RAPP was running**, not yet app attach/typing/relaunch/crash behavior.

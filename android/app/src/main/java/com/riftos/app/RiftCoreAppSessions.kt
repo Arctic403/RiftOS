@@ -18,9 +18,14 @@ import java.security.MessageDigest
 class RiftCoreAppSessions {
     companion object {
         private const val MAX_SESSIONS = 128
+        private const val MAX_PENDING_EVENTS = 64
+        private const val MAX_PENDING_EVENT_BYTES = 1024 * 1024
         private const val MAX_PROGRAM_BYTES = 1024 * 1024
         private const val REPORT_SCHEMA = "riftos.core.sessions/1"
     }
+
+    data class EventTicket(val id: Long, val event: RiftAppAbi.Event)
+    data class OfferedEvent(val ticket: EventTicket, val startNow: Boolean)
 
     class Record internal constructor(
         payload: RiftAppAbi.RuntimePayload,
@@ -39,6 +44,54 @@ class RiftCoreAppSessions {
         private var sequence = 1
         private var generation = 0L
         private var attached = false
+        private var runningEvent: Long? = null
+        private val waitingEvents = ArrayDeque<EventTicket>()
+        private var pendingBytes = 0
+        private var nextTicketId = 1L
+
+        private fun eventBytes(event: RiftAppAbi.Event) =
+            event.text.toByteArray(Charsets.UTF_8).size + event.bytes.size
+
+        // Core owns event ordering; never retain UI callbacks or Views here.
+        internal fun offer(event: RiftAppAbi.Event): OfferedEvent {
+            require(nextTicketId < Long.MAX_VALUE) {
+                "RAPP Core event ticket sequence exhausted"
+            }
+            val copied = event.copy(bytes = event.bytes.copyOf())
+            if (runningEvent == null) {
+                val ticket = EventTicket(nextTicketId++, copied)
+                runningEvent = ticket.id
+                return OfferedEvent(ticket, true)
+            }
+            require(waitingEvents.size < MAX_PENDING_EVENTS) {
+                "RAPP pending event queue exceeded bound"
+            }
+            val bytes = eventBytes(copied)
+            require(bytes <= MAX_PENDING_EVENT_BYTES - pendingBytes) {
+                "RAPP Core pending event bytes exceeded bound"
+            }
+            val ticket = EventTicket(nextTicketId++, copied)
+            waitingEvents.addLast(ticket)
+            pendingBytes += bytes
+            return OfferedEvent(ticket, false)
+        }
+
+        internal fun finish(ticket: EventTicket): EventTicket? {
+            if (runningEvent != ticket.id) return null
+            val next = waitingEvents.removeFirstOrNull()
+            if (next != null) pendingBytes -= eventBytes(next.event)
+            runningEvent = next?.id
+            return next
+        }
+
+        internal fun resetPendingEvents() {
+            runningEvent = null
+            waitingEvents.clear()
+            pendingBytes = 0
+        }
+
+        internal fun queuedCount(): Int =
+            waitingEvents.size + if (runningEvent == null) 0 else 1
 
         @Synchronized
         fun programSnapshot(): ByteArray = state.copyOf()
@@ -66,12 +119,16 @@ class RiftCoreAppSessions {
             }
             generation++
             attached = true
+            resetPendingEvents()
             return generation
         }
 
         @Synchronized
         internal fun detach(token: Long) {
-            if (generation == token) attached = false
+            if (generation == token) {
+                attached = false
+                resetPendingEvents()
+            }
         }
 
         @Synchronized
@@ -171,6 +228,23 @@ class RiftCoreAppSessions {
             )
     }
 
+    /**
+     * C1.1-B2-A: one Core-owned bounded FIFO per installed RAPP session.
+     * Only the current UI attachment may submit/complete events.
+     * Callbacks remain with the disposable UI host, never in Core.
+     */
+    @Synchronized
+    fun offerEvent(attachment: Attachment, event: RiftAppAbi.Event): OfferedEvent {
+        require(isAttached(attachment)) { "RAPP Core event attachment is stale" }
+        return attachment.record.offer(event)
+    }
+
+    @Synchronized
+    fun finishEvent(attachment: Attachment, ticket: EventTicket): EventTicket? {
+        if (!isAttached(attachment)) return null
+        return attachment.record.finish(ticket)
+    }
+
     @Synchronized
     fun detach(attachment: Attachment) {
         if (sessions[attachment.record.id] === attachment.record) {
@@ -193,6 +267,8 @@ class RiftCoreAppSessions {
             .put("count", sessions.size)
             .put("attached", attached)
             .put("detached", sessions.size - attached)
+            .put("queuedEvents", sessions.values.sumOf { it.queuedCount() })
+            .put("eventQueueOwner", "riftos-core")
             .put("headlessExecution", false)
             .put("eventExecutorOwner", "riftos-core")
             .put("capabilityEffectsIndependentOfDesktop", false)

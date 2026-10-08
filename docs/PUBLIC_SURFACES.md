@@ -21,6 +21,10 @@ This inventory separates live packaged authority from retained reference/compati
 | Vortex bridge/agents | `RiftVortexBridgeClient.kt`, `RiftVortexLocalAgent.kt` | Fixed local Binder/accessibility development surfaces. |
 | RiftLLM Dev/training service | `RiftLlmDevClient.kt`, `RiftTrainDataTaskRunner.kt`, `RiftNativeShellServices.kt` | Fixed bounded standalone RiftLLM API/training commands, including fixed frozen-B2 priming, no-argument RiftPack qualification start/status, and fixed no-argument real process-death recovery start/status. |
 
+## C1.1-B2-A — Core-owned event queue (source pending device proof)
+
+The Core RAPP session registry now offers a bounded language-independent FIFO/ticket protocol: `offerEvent` queues a copy of an app event, `finishEvent` authorizes the next event for the current UI attachment only. The FIFO has a 64-pending-event and 1 MiB pending-payload bound per session, clears on Activity detach/re-attach, and retains no UI callbacks. `core sessions` adds `eventQueueOwner=riftos-core` and `queuedEvents`; app state stays Core-owned. UI callback delivery and capability-effect consent remain attached to the Activity, so headless and shell-independent execution are explicitly **not** claimed in this gate.
+
 ## C1.1-B1 — Core-owned bounded RAPP execution (source pending device proof)
 
 `RiftCoreAppExecutor` owns the generic interpreter/provider call, event encoding and output decoding, timeout watchdog, and session-state persistence; it runs with application context and no desktop class dependency. RiftShell/RAPP graphical host now invokes this Core service, then renders returned frames or asks the existing Activity-bound capability broker to handle effects. Core session state commits verify the current attachment generation. `core sessions` indicates `eventExecutorOwner=riftos-core` and `capabilityEffectsIndependentOfDesktop=false`. This is **not yet headless execution**: event-effect chaining, consent and UI lifecycle are still attached to the desktop Activity. Source/build/device promotion remains pending.

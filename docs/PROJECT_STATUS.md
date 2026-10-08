@@ -16,6 +16,10 @@ From `android/app/build.gradle.kts`:
 - version `0.11.11-relay-client`;
 - release minification disabled.
 
+## 2026-10-08 — B1 green installed; B2-A Core RAPP FIFO source pending Builder
+
+User confirmed C1.1-B1 green and live. Live `core status` and `core sessions` show process-owned event executor, no active app sessions, five installed RAPPs and no external providers. This checkpoint moves in-flight/pending RAPP event tickets and bounded FIFO policy into `RiftCoreAppSessions`; desktop retains only ephemeral callbacks and host-effect/consent handling. Core session diagnostics add `eventQueueOwner=riftos-core` and `queuedEvents`, while correctly maintaining `headlessExecution=false` and `appExecutionIndependentOfDesktop=false`. Requires user's manual Builder and real-device RAPP interaction before promotion, then B2-B Core capability/effect broker extraction.
+
 ## 2026-10-08 — C1.1-A device-live; C1.1-B1 Core interpreter extraction source pending
 
 The user reports the C1.1-A build green, installed and live. Live Core diagnostics show `riftos.core.sessions/1`, zero current RAPP sessions, five installed applications and the generic runtime registry operational. C1.1-B1 now moves bounded RAPP event execution/encoding/decoding/runtime provider invocation, deadlines and persisted program-state commits to `RiftCoreAppExecutor` owned by `RiftCoreRuntime`. The Activity host still owns capability prompts, host-effect chaining, event queue orchestration and presentation. **Not headless yet**: `headlessExecution=false`, `capabilityEffectsIndependentOfDesktop=false`, `appExecutionIndependentOfDesktop=false`. Manual Builder + real signed APK/device proof is still required for B1; C1.1-B2 will move host effects and process lifecycle to Core.

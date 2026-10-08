@@ -51,11 +51,6 @@ class RiftRappHost(
                 ?: false
     }
 
-    private data class PendingEvent(
-        val event: RiftAppAbi.Event,
-        val complete: (EventOutcome) -> Unit
-    )
-
     private data class Session(
         val payload: RiftAppAbi.RuntimePayload,
         val adapter: RiftAppRuntimeAdapter,
@@ -66,8 +61,8 @@ class RiftRappHost(
 
         // Core owns the program bytes, event sequence and execution. Only
         // UI/effect callbacks remain on this disposable host attachment.
-        var eventBusy: Boolean = false
-        val pendingEvents = ArrayDeque<PendingEvent>()
+        // UI callbacks are disposable; Core owns the ordered event ticket queue.
+        val pendingUiCompletions = LinkedHashMap<Long, (EventOutcome) -> Unit>()
     }
 
     private data class EventOutcome(
@@ -117,7 +112,10 @@ class RiftRappHost(
         id: String
     ): Boolean {
         val session = sessions.remove(id)
-        if (session != null) coreSessions.close(session.coreAttachment)
+        if (session != null) {
+            session.pendingUiCompletions.clear()
+            coreSessions.close(session.coreAttachment)
+        }
         return session != null || manager.handlesInstalled(id)
     }
 
@@ -162,7 +160,10 @@ class RiftRappHost(
 
     fun destroy() {
         // Activity loss detaches only UI; Core session identities/state remain.
-        sessions.values.forEach { coreSessions.detach(it.coreAttachment) }
+        sessions.values.forEach {
+            it.pendingUiCompletions.clear()
+            coreSessions.detach(it.coreAttachment)
+        }
         sessions.clear()
         capabilityBroker.destroy()
         val current =
@@ -250,85 +251,37 @@ class RiftRappHost(
         complete: (EventOutcome) -> Unit
     ) {
         if (
-            sessions[session.id] !==
-                session
-        ) {
-            return
-        }
+            sessions[session.id] !== session ||
+            !coreSessions.isAttached(session.coreAttachment)
+        ) return
 
-        if (
-            session.eventBusy
-        ) {
-            require(
-                session.pendingEvents.size <
-                    64
-            ) {
-                "RAPP pending event queue exceeded bound"
-            }
-
-            session.pendingEvents.addLast(
-                PendingEvent(
-                    event,
-                    complete
-                )
-            )
-            return
-        }
-
-        session.eventBusy =
-            true
-
-        runEventStep(
-            session =
-                session,
-            event =
-                event,
-            effectDepth =
-                0
-        ) {
-            outcome ->
-            if (
-                sessions[session.id] !==
-                    session
-            ) {
-                return@runEventStep
-            }
-
-            try {
-                complete(
-                    outcome
-                )
-            } finally {
-                session.eventBusy =
-                    false
-                drainPendingEvent(
-                    session
-                )
-            }
-        }
+        val offered = coreSessions.offerEvent(session.coreAttachment, event)
+        session.pendingUiCompletions[offered.ticket.id] = complete
+        if (offered.startNow) dispatchCoreEvent(session, offered.ticket)
     }
 
-    private fun drainPendingEvent(
-        session: Session
+    private fun dispatchCoreEvent(
+        session: Session,
+        ticket: RiftCoreAppSessions.EventTicket
     ) {
         if (
-            sessions[session.id] !==
-                session ||
-            session.eventBusy
-        ) {
-            return
+            sessions[session.id] !== session ||
+            !coreSessions.isAttached(session.coreAttachment)
+        ) return
+
+        runEventStep(session, ticket.event, 0) { outcome ->
+            if (
+                sessions[session.id] !== session ||
+                !coreSessions.isAttached(session.coreAttachment)
+            ) return@runEventStep
+
+            try {
+                session.pendingUiCompletions.remove(ticket.id)?.invoke(outcome)
+            } finally {
+                val next = coreSessions.finishEvent(session.coreAttachment, ticket)
+                if (next != null) dispatchCoreEvent(session, next)
+            }
         }
-
-        val pending =
-            session.pendingEvents
-                .removeFirstOrNull()
-                ?: return
-
-        runEventAsync(
-            session,
-            pending.event,
-            pending.complete
-        )
     }
 
     private fun runEventStep(

@@ -284,6 +284,24 @@ if (!coreSessions.includes('fun commitFromExecution(')) {
   fail('C1.1-B1 Core program commit must validate attachment generation');
 }
 
+// C1.1-B2-A: Core owns FIFO event tickets and bounded queue state, never UI callbacks.
+for (const required of [
+  'data class EventTicket(', 'data class OfferedEvent(', 'MAX_PENDING_EVENTS = 64',
+  'MAX_PENDING_EVENT_BYTES = 1024 * 1024', 'private val waitingEvents',
+  'private var runningEvent', 'private var pendingBytes',
+  'fun offerEvent(attachment: Attachment', 'fun finishEvent(attachment: Attachment',
+  'resetPendingEvents()', 'event.copy(bytes = event.bytes.copyOf())',
+  '"eventQueueOwner", "riftos-core"', '"headlessExecution", false',
+]) if (!coreSessions.includes(required)) fail(`C1.1-B2-A Core FIFO contract missing: ${required}`);
+for (const required of [
+  'coreSessions.offerEvent(session.coreAttachment, event)',
+  'coreSessions.finishEvent(session.coreAttachment, ticket)',
+  'session.pendingUiCompletions', 'dispatchCoreEvent(session, offered.ticket)',
+]) if (!rappHost.includes(required)) fail(`C1.1-B2-A UI/Core ticket contract missing: ${required}`);
+for (const forbidden of ['val pendingEvents =', 'var eventBusy:', 'data class PendingEvent(']) {
+  if (rappHost.includes(forbidden)) fail(`C1.1-B2-A desktop regained event queue: ${forbidden}`);
+}
+
 // C0.2.5 generic external runtime-provider boundary. No project-specific
 // package identity or runtime engine enters the RAPP host.
 const runtimeProviders = read(`${kotlinDir}/RiftExternalRuntimeProviders.kt`);
