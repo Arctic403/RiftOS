@@ -263,6 +263,14 @@ for (const required of [
 
 if (!nativeShell.includes('class RiftNativeShell(context: Context) : RiftShellExecutor')) fail('native RiftShell executor is missing');
 if (!nativeShell.includes('.put("webViewRequired", false)')) fail('native RiftShell does not explicitly report WebView-free execution');
+// C0.1: individual editor shells are not OS built-ins. The reusable OS job,
+// filesystem, generic compiler, and RAPP facilities remain platform-owned.
+if (/"(?:riftpp-editor|codynex-editor)"\s*->|execute(?:Riftpp|Codynex)EditorCommand|usage: (?:riftpp-editor|codynex-editor)/.test(nativeShell)) {
+  fail('project-owned editor command parser returned to RiftShell');
+}
+for (const required of ['"riftbuild" ->', '"qjs" ->', '"git" ->', '"ps" ->', '"apps" ->', '"open" ->', '"permissions" ->', 'cancelAllShellJobs("Native RiftShell closed")']) {
+  if (!nativeShell.includes(required)) fail('generic OS shell command was lost during editor ownership cleanup: ' + required);
+}
 if (!nativeShell.includes('headlessJs.executeRiftpp(args, cwd)')) fail('Rift++ is not routed through the headless runtime');
 if (!nativeShell.includes('headlessJs.executeSemnexis(args, cwd)')) fail('Semnexis is not routed through the headless runtime');
 if (!nativeShell.includes('dump-ir|emit-arm32-proof|emit-arm32-runtime')) fail('Semnexis IR/backend shell surface is missing');
