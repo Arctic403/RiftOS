@@ -16,6 +16,12 @@ From `android/app/build.gradle.kts`:
 - version `0.11.11-relay-client`;
 - release minification disabled.
 
+## 2026-10-08 — C1.2-B2-A device PASS; B2-B1 Core focus lease source-only
+
+User-installed RiftOS `e13c5bfe`, manual Builder #639 (`37797584074`), Core PID 25370 passed disposable generic input RAPP `c12b2a-input-probe-20261008`: ACTION node 10 accepted/count 1, editable TEXT_INPUT node 20 accepted `B2A_TEST`, repeat ACTION count 2 preserved typed text, surface revisions 2→3→6→7, and exact state persisted. Uninstall removed the session/surface, restoring original three RAPPs and zero events. Valid input **device gate PASS**; deliberately malformed/fabricated target input is not device-injected yet.
+
+New **C1.2-B2-B1 source only**: `RiftCoreInputFocus` stores versioned attached-app focus leases. Desktop reports active window changes to Core via replaceable callback, which resolves the ID against current Core session and attachment generation; unknown/system window focus clears the lease. Attach/detach/close/update/uninstall revoke the old lease. `core focus` and `core status.inputFocus` expose only read-only diagnostics. No focused-input enforcement yet, as current B2-A input/keyboard paths must not regress without separate real-device proof. Manual Builder required after code/validation push; subsequent B2-B2 adds focused input enforcement.
+
 ## 2026-10-08 — C1.2-B1 live Core-snapshot GUI PASS; C1.2-B2-A source typed input gate
 
 User-built RiftOS `9cf4b46c`, Builder run 638/`37793993504`, Core PID 20652, passed initial and updated graphical UI rendering from Core surface snapshot: disposable JSON RAPP frame revision 2 (79 bytes), native `fs.read` Cancel event rendered denied token 43 while revision became 3 (157 bytes) and state persisted. Core attached session stayed valid; disposable app uninstall completed and Core surfaces/sessions returned to 0, original three RAPPs preserved. **B1 device-gated complete**.

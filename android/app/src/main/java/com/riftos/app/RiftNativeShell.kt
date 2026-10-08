@@ -501,12 +501,13 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "riftos-agent" -> services.riftOsAgent(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
             "riftllm-agent" -> services.riftLlm(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
             "core" -> {
-                require(args.size == 1) { "usage: core status|sessions|surfaces" }
+                require(args.size == 1) { "usage: core status|sessions|surfaces|focus" }
                 val state = when (args.single().lowercase()) {
                     "status" -> RiftCoreRuntime.status(appContext)
                     "sessions" -> RiftCoreRuntime.sessions(appContext).list()
                     "surfaces" -> RiftCoreRuntime.surfaces(appContext).list()
-                    else -> error("usage: core status|sessions|surfaces")
+                    "focus" -> RiftCoreRuntime.sessions(appContext).focusStatus()
+                    else -> error("usage: core status|sessions|surfaces|focus")
                 }
                 ShellOutcome(state.toString(2), cwd, state)
             }

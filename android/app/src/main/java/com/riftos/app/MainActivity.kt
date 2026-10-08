@@ -76,7 +76,10 @@ class MainActivity : Activity() {
             activity = this,
             host = rootView,
             appOpenSink = ::openNativeDesktopApp,
-            windowClosedSink = ::closeNativeDesktopApp
+            windowClosedSink = ::closeNativeDesktopApp,
+            focusRequestSink = { id ->
+                RiftCoreRuntime.sessions(applicationContext).requestFocusFromShell(id)
+            }
         )
         setContentView(rootView)
         ViewCompat.requestApplyInsets(rootView)

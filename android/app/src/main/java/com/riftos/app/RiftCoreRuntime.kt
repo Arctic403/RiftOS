@@ -110,6 +110,7 @@ object RiftCoreRuntime {
             .put("runtimeProviderCount", providers.optInt("registered"))
             .put("runtimeProviderState", providers.optString("state"))
             .put("appSessions", sessions(context).summary())
+            .put("inputFocus", sessions(context).focusStatus())
             .put("appSurfaces", surfaces(context).list())
             .put("desktopRequired", false)
             .put("shellRequired", false)

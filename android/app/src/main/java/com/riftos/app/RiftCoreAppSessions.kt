@@ -136,6 +136,9 @@ class RiftCoreAppSessions(private val surfaces: RiftCoreAppSurfaces) {
             attached && generation == token
 
         @Synchronized
+        internal fun activeGeneration(): Long? = generation.takeIf { attached }
+
+        @Synchronized
         internal fun visible(): Boolean = attached
 
         @Synchronized
@@ -145,6 +148,7 @@ class RiftCoreAppSessions(private val surfaces: RiftCoreAppSurfaces) {
     data class Attachment(val record: Record, val token: Long)
 
     private val sessions = LinkedHashMap<String, Record>()
+    private val inputFocus = RiftCoreInputFocus()
 
     @Synchronized
     fun attach(
@@ -177,8 +181,24 @@ class RiftCoreAppSessions(private val surfaces: RiftCoreAppSurfaces) {
                 sessions[payload.id] = it
             }
         }
+        inputFocus.revoke(payload.id)
         return Attachment(record, record.attach())
     }
+
+    /**
+     * Replaceable shell requests focus for its foreground window ID. Core
+     * resolves only live attached sessions; unregistered/system windows clear
+     * the previous RAPP focus lease. A shell cannot supply its own generation.
+     */
+    @Synchronized
+    fun requestFocusFromShell(windowId: String?): JSONObject {
+        val record = windowId?.let { sessions[it] }
+        inputFocus.requestVerified(record?.id, record?.activeGeneration())
+        return inputFocus.status()
+    }
+
+    @Synchronized
+    fun focusStatus(): JSONObject = inputFocus.status()
 
     @Synchronized
     fun isAttached(attachment: Attachment): Boolean =
@@ -299,6 +319,9 @@ class RiftCoreAppSessions(private val surfaces: RiftCoreAppSurfaces) {
     @Synchronized
     fun detach(attachment: Attachment) {
         if (sessions[attachment.record.id] === attachment.record) {
+            if (attachment.record.isAttached(attachment.token)) {
+                inputFocus.revoke(attachment.record.id)
+            }
             attachment.record.detach(attachment.token)
         }
     }
@@ -307,6 +330,7 @@ class RiftCoreAppSessions(private val surfaces: RiftCoreAppSurfaces) {
     fun close(attachment: Attachment) {
         if (isAttached(attachment)) {
             sessions.remove(attachment.record.id)
+            inputFocus.revoke(attachment.record.id)
             surfaces.remove(attachment.record.id)
         }
     }
@@ -316,6 +340,7 @@ class RiftCoreAppSessions(private val surfaces: RiftCoreAppSurfaces) {
     fun invalidateInstalled(id: String): Boolean {
         val record = sessions.remove(id) ?: return false
         record.resetPendingEvents()
+        inputFocus.revoke(id)
         surfaces.remove(id)
         return true
     }

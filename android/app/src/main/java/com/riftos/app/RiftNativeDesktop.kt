@@ -35,7 +35,8 @@ class RiftNativeDesktop(
     private val activity: Activity,
     host: FrameLayout,
     private val appOpenSink: (String) -> Unit,
-    private val windowClosedSink: (String) -> Unit
+    private val windowClosedSink: (String) -> Unit,
+    private val focusRequestSink: (String?) -> Unit
 ) {
     companion object {
         private const val BG = 0xff07141d.toInt()
@@ -100,6 +101,7 @@ class RiftNativeDesktop(
     private val taskbarPins = LinkedHashSet<String>()
     private var runtimeReady = false
     private var activeId: String? = null
+    private var lastNotifiedFocusId: String? = null
     private var zCounter = 100L
     private var sequence = 0L
     private var launcherLayoutProfile = ""
@@ -870,6 +872,11 @@ class RiftNativeDesktop(
     }
 
     private fun publish(reason: String): JSONObject {
+        val visibleFocusId = activeId?.takeIf { windows[it]?.minimized == false }
+        if (visibleFocusId != lastNotifiedFocusId || reason == "open") {
+            lastNotifiedFocusId = visibleFocusId
+            focusRequestSink(visibleFocusId)
+        }
         sequence++
         return stateObject(reason, sequence)
     }

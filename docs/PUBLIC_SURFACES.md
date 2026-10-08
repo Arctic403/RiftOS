@@ -21,6 +21,10 @@ This inventory separates live packaged authority from retained reference/compati
 | Vortex bridge/agents | `RiftVortexBridgeClient.kt`, `RiftVortexLocalAgent.kt` | Fixed local Binder/accessibility development surfaces. |
 | RiftLLM Dev/training service | `RiftLlmDevClient.kt`, `RiftTrainDataTaskRunner.kt`, `RiftNativeShellServices.kt` | Fixed bounded standalone RiftLLM API/training commands, including fixed frozen-B2 priming, no-argument RiftPack qualification start/status, and fixed no-argument real process-death recovery start/status. |
 
+## C1.2-B2-B1 — Core focus lease/notification contract (source-only)
+
+`riftos.core.input-focus/1` stores a monotonic revision and optional current `{ appId, attachmentGeneration }` focus lease. The replaceable desktop reports preferred foreground window changes to `RiftCoreAppSessions.requestFocusFromShell`, which authorizes only an attached Core app generation and treats system/unregistered windows as requests to clear focus. A new attachment generation, detach, close or package invalidation revokes the previous lease. `core focus` and `core status.inputFocus` are read-only. `focusEnforcedForInput=false` remains until the next source/device gate: shell focus reports are advisory, not independent cryptographically verified client identity or a permission grant. No Android View is held in Core and no shell-less process is claimed.
+
 ## C1.2-B2-A — Core authorization of typed app input events (source-only)
 
 The in-process shell can submit generic `RiftAppAbi.Event` requests through `RiftCoreAppSessions.offerEvent`, but Core validates that the named `ACTION` or `TEXT_INPUT` target exists with the correct node kind in `RiftCoreAppSurfaces` for the current session attachment generation. Named keyboard events require a current node ID; untargeted keyboard/canvas pointer events remain supported. No shell may enqueue a forged `HOST_EFFECT_RESULT` event, and only supported runtime-adapter event kinds pass. Invalid input is returned as a generic error through the disposable shell callback; it is not granted permission through a View tag.

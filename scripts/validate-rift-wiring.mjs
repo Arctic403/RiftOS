@@ -366,6 +366,66 @@ if (rappHost.includes('EventOutcome(frame = result.frame')) {
   fail('C1.2-B1 RiftShell still renders raw Core executor callback frame');
 }
 
+// C1.2-B2-B1: versioned Core-owned focus lease; shell only requests focus.
+const coreInputFocus = read(`${kotlinDir}/RiftCoreInputFocus.kt`);
+const desktopFocusClient = read(`${kotlinDir}/RiftNativeDesktop.kt`);
+const activityFocusClient = read(`${kotlinDir}/MainActivity.kt`);
+for (const marker of [
+  'riftos.core.input-focus/1', 'data class Lease(',
+  'requestVerified(', 'fun revoke(', 'focusEnforcedForInput", false'
+]) if (!coreInputFocus.includes(marker)) fail(`C1.2-B2-B1 Core focus lease missing: ${marker}`);
+if (/import android\.(app|view)\./.test(coreInputFocus) ||
+    coreInputFocus.includes('RiftNativeDesktop')) {
+  fail('C1.2-B2-B1 Core focus lease cannot depend on Activity or desktop');
+}
+for (const marker of [
+  'private val inputFocus = RiftCoreInputFocus()',
+  'fun requestFocusFromShell(', 'record?.activeGeneration()',
+  'inputFocus.revoke(payload.id)', 'inputFocus.revoke(id)',
+  'fun focusStatus(): JSONObject'
+]) if (!coreSessions.includes(marker)) fail(`C1.2-B2-B1 Core focus authority missing: ${marker}`);
+for (const marker of [
+  'focusRequestSink: (String?) -> Unit',
+  'focusRequestSink(visibleFocusId)',
+  'reason == "open"'
+]) if (!desktopFocusClient.includes(marker)) fail(`C1.2-B2-B1 shell focus client missing: ${marker}`);
+if (!activityFocusClient.includes('requestFocusFromShell(id)') ||
+    !nativeShell.includes('"focus" -> RiftCoreRuntime.sessions(appContext).focusStatus()') ||
+    !gradle.includes('"src/main/java/com/riftos/app/RiftCoreInputFocus.kt"') ||
+    !coreRuntime.includes('.put("inputFocus", sessions(context).focusStatus())')) {
+  fail('C1.2-B2-B1 Core focus wiring, diagnostic or exact mandatory source missing');
+}
+
+// C1.2-B2-B1: versioned Core-owned focus lease; shell only requests focus.
+const coreInputFocus = read(`${kotlinDir}/RiftCoreInputFocus.kt`);
+const desktopFocusClient = read(`${kotlinDir}/RiftNativeDesktop.kt`);
+const activityFocusClient = read(`${kotlinDir}/MainActivity.kt`);
+for (const marker of [
+  'riftos.core.input-focus/1', 'data class Lease(',
+  'requestVerified(', 'fun revoke(', 'focusEnforcedForInput", false'
+]) if (!coreInputFocus.includes(marker)) fail(`C1.2-B2-B1 Core focus lease missing: ${marker}`);
+if (/import android\.(app|view)\./.test(coreInputFocus) ||
+    coreInputFocus.includes('RiftNativeDesktop')) {
+  fail('C1.2-B2-B1 Core focus lease cannot depend on Activity or desktop');
+}
+for (const marker of [
+  'private val inputFocus = RiftCoreInputFocus()',
+  'fun requestFocusFromShell(', 'record?.activeGeneration()',
+  'inputFocus.revoke(payload.id)', 'inputFocus.revoke(id)',
+  'fun focusStatus(): JSONObject'
+]) if (!coreSessions.includes(marker)) fail(`C1.2-B2-B1 Core focus authority missing: ${marker}`);
+for (const marker of [
+  'focusRequestSink: (String?) -> Unit',
+  'focusRequestSink(visibleFocusId)',
+  'reason == "open"'
+]) if (!desktopFocusClient.includes(marker)) fail(`C1.2-B2-B1 shell focus client missing: ${marker}`);
+if (!activityFocusClient.includes('requestFocusFromShell(id)') ||
+    !nativeShell.includes('"focus" -> RiftCoreRuntime.sessions(appContext).focusStatus()') ||
+    !gradle.includes('"src/main/java/com/riftos/app/RiftCoreInputFocus.kt"') ||
+    !coreRuntime.includes('.put("inputFocus", sessions(context).focusStatus())')) {
+  fail('C1.2-B2-B1 Core focus wiring, diagnostic or exact mandatory source missing');
+}
+
 // C1.2-B2-A: Core owns generic input-kind and target authorization.
 // The graphical shell may request an input event, never forge effect-result events.
 for (const required of [

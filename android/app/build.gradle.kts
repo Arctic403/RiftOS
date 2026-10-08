@@ -85,6 +85,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftCoreRuntime.kt",
         "src/main/java/com/riftos/app/RiftCoreAppSessions.kt",
         "src/main/java/com/riftos/app/RiftCoreAppSurfaces.kt",
+        "src/main/java/com/riftos/app/RiftCoreInputFocus.kt",
         "src/main/java/com/riftos/app/RiftCoreAppExecutor.kt",
         "src/main/java/com/riftos/app/RiftCoreShellCapabilityRequests.kt",
         "src/main/java/com/riftos/app/RiftCorePackageEvents.kt",
