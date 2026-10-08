@@ -98,8 +98,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftBuildPlatformTools.kt",
         "src/main/java/com/riftos/app/RiftBuildManagedToolchains.kt",
         "src/main/java/com/riftos/app/RiftChatHandoff.kt",
-        "src/main/java/com/riftos/app/RiftCliHost.kt",
-        "src/main/java/com/riftos/app/RiftCliEventBus.kt",
+        "src/main/java/com/riftos/app/RiftMcpEventBus.kt",
         "src/main/java/com/riftos/app/RiftCodynexEditorBridgeClient.kt",
         "src/main/java/com/riftos/app/RiftppEditorBridgeClient.kt",
         "src/main/java/com/riftos/app/RiftDiffEngineV2.kt",
@@ -152,10 +151,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/cpp/CMakeLists.txt",
         "src/main/cpp/compiler/rift_native_buffer_compiler_host.cpp",
         "src/main/cpp/editor/editor_vm_bridge.cpp",
-        "src/main/cpp/editor/riftpp_editor_bridge.cpp",
-        "src/main/cpp/riftcli/rift_cli_core.cpp",
-        "src/main/cpp/riftcli/rift_cli_core.h",
-        "src/main/cpp/riftcli/rift_cli_jni.cpp"
+        "src/main/cpp/editor/riftpp_editor_bridge.cpp"
     )
 
     doLast {

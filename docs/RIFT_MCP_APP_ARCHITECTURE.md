@@ -100,7 +100,7 @@ Project Intelligence v2 is an internal expansion of that existing surface rather
 
 Patch 5 also gives the future Local Agent an internal candidate-impact seam that is **not** part of the MCP schema. `RiftWorkspaceRecords` derives the exact changed-path seed from Patch Manifest V1; the same `RiftSourceIntelligenceV2` parser used by normal PI-v2 indexing computes before/after symbol and dependency deltas, while the live index supplies current dependents, references, tests and documentation ownership. Bounded or missing evidence is marked incomplete rather than silently discarded.
 
-Native RiftCLI Bootstrap-0 does not yet consume this candidate-impact seam. The seam remains reusable RiftOS evidence for future C++ RiftCLI architecture/impact gates; adding that integration must not create a second MCP tool family or hidden model connection.
+RiftCLI has been permanently retired. This candidate-impact seam remains bounded shared RiftOS evidence for MCP and Local Agent workflows; it must not create another tool family, hidden model connection, or independent execution authority.
 
 The incremental symbol/dependency index is persisted in app-private RiftOS state outside `riftfs/workspace` and revalidated against workspace file size/mtime during refresh. It is an acceleration cache only; source files remain authoritative and stale rows are dropped/rebuilt.
 

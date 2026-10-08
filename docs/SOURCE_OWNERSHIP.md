@@ -108,17 +108,13 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftNativeGit.kt` | `docs/systems/git/README.md` + `docs/systems/secrets/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeWorkspaceApps.kt` | `docs/systems/files-app/README.md` + `docs/systems/settings/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/workspace/live/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeDevLab.kt` | `docs/systems/dev-lab/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCliHost.kt` | `docs/systems/riftcli/README.md` + `docs/systems/shell/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCliEventBus.kt` | `docs/systems/riftcli/README.md` + `docs/systems/mcp/relay/README.md` + `docs/systems/relay-service/README.md` + `docs/systems/debugger/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftMcpEventBus.kt` | `docs/systems/mcp/relay/README.md` + `docs/systems/relay-service/README.md` + `docs/systems/debugger/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCodynexEditorBridgeClient.kt` | `docs/PUBLIC_SURFACES.md` + `docs/systems/shell/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/codynex/editorapp/CodynexEditorBridgeService.kt` | `docs/PUBLIC_SURFACES.md` + `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/codynex/editorapp/CodynexEditorToolchainPort.kt` | `docs/PUBLIC_SURFACES.md` + `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/codynex/editorapp/CodynexCompilerRuntime.kt` | `docs/PUBLIC_SURFACES.md` + `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftppEditorBridgeClient.kt` | `docs/systems/riftpp-core/README.md` + `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/cpp/CMakeLists.txt` | `docs/systems/riftcli/README.md` + `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/cpp/riftcli/rift_cli_core.h` | `docs/systems/riftcli/README.md` |
-| `android/app/src/main/cpp/riftcli/rift_cli_core.cpp` | `docs/systems/riftcli/README.md` |
-| `android/app/src/main/cpp/riftcli/rift_cli_jni.cpp` | `docs/systems/riftcli/README.md` + `docs/systems/android-host/README.md` |
+| `android/app/src/main/cpp/CMakeLists.txt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftTrainDataTaskRunner.kt` | `docs/systems/riftllm-bridge/README.md` + `docs/systems/shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftToolHost.kt` | `docs/systems/mcp/tool-host/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt` | `docs/systems/mcp/sandbox/README.md` + `docs/systems/engine/README.md` |
@@ -170,10 +166,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `scripts/test-rift-patch-sessions.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/workspace/live/README.md` + `docs/systems/mcp/sandbox/README.md` |
 | `scripts/test-rift-patch-manifest-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/workspace/live/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-semantic-impact-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/workspace/live/README.md` + `docs/PATCH_HISTORY.md` |
-| `scripts/test-rift-cli-native-bootstrap.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/PATCH_HISTORY.md` |
-| `scripts/test-rift-cli-driver-protocol.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/PATCH_HISTORY.md` |
-| `scripts/test-rift-cli-push-channel.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/systems/mcp/relay/README.md` + `docs/systems/debugger/README.md` + `docs/PATCH_HISTORY.md` |
-| `scripts/test-rift-cli-batch-v2.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/PATCH_HISTORY.md` |
+| `scripts/test-rift-mcp-event-channel.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/relay/README.md` + `docs/systems/debugger/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-local-agent-batch.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/vortex-agent/README.md` + `docs/systems/mcp/README.md` |
 | `scripts/test-rift-mcp-operation-journal.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/README.md` + `docs/systems/mcp/server/README.md` + `docs/PATCH_HISTORY.md` |
 | `scripts/test-rift-debug-hub.mjs` | `docs/systems/debugger/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
@@ -185,7 +178,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `scripts/test-riftllm-bridge.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftllm-bridge/README.md` |
 | `scripts/test-riftllm-text-encoding-bridge.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftllm-bridge/README.md` |
 | `scripts/test-riftllm-training-bridge.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftllm-bridge/README.md` |
-| `scripts/validate-rift-wiring.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftcli/README.md` + `docs/systems/mcp/relay/README.md` + `docs/systems/debugger/README.md` |
+| `scripts/validate-rift-wiring.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/relay/README.md` + `docs/systems/debugger/README.md` |
 | `scripts/validate-rift-transport.mjs` | `docs/systems/build-validation/README.md` |
 | `scripts/validate-rift-docs.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftmemory/N2_FEDERATED_MEMORY_ROADMAP.md` |
 

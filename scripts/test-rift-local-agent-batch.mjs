@@ -64,7 +64,7 @@ assert.match(host, /op == "grep" \|\| op in WORKSPACE_OPS/);
 assert.match(host, /"project-export" -> "workspace\.exportProject"/);
 assert.match(host, /"workspace-diff" -> "workspace\.diff"/);
 assert.match(host, /"rift_local_agent_batch" -> \{/);
-assert.match(host, /"rift_local_agent_batch",\s*"rift_cli_batch"/);
+assert.ok(!host.includes('"rift_cli_batch"'), "retired RiftCLI batch tool must be absent");
 assert.match(host, /unfinished jobs are never replayed after process restart/i);
 for (const op of ['read', 'read_range', 'write', 'replace', 'patch', 'search', 'grep', 'symbols', 'references', 'audit', 'scan', 'workspace-diff', 'project-export']) {
   assert.ok(batch.includes(`"${op}"`), 'missing engineering batch op: ' + op);

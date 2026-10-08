@@ -7,13 +7,13 @@ import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Process-local RiftCLI event stream.
+ * Process-local MCP relay event stream.
  *
  * This is transport-neutral: producers publish bounded state transitions, while the relay client
  * subscribes and forwards them over the already-open device WebSocket. A small replay ring lets a
- * reconnected driver recover recent events without polling every CLI job.
+ * reconnected driver recover recent events without polling every background operation.
  */
-class RiftCliEventBus(
+class RiftMcpEventBus(
     debugHub: RiftDebugHub? = null
 ) {
     companion object {
@@ -24,7 +24,7 @@ class RiftCliEventBus(
     }
 
     private val sequence = AtomicLong(System.currentTimeMillis() * 1000L)
-    private val debugSink = debugHub?.sink("riftcli.event-bus")
+    private val debugSink = debugHub?.sink("mcp.event-bus")
     private val lock = Any()
     private val events = ArrayDeque<JSONObject>(MAX_EVENTS)
     private val listeners = CopyOnWriteArraySet<(JSONObject) -> Unit>()

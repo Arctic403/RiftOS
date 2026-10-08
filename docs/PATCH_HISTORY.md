@@ -1,8 +1,10 @@
 # RiftOS Patch History
 
-## Verification status
+## Historical provenance — not current execution authority
 
-**VERIFIED AGAINST CURRENT SOURCE — 2026-09-30.**
+**RiftCLI retired permanently during the October 7, 2026 cleanup.** Earlier RiftCLI JNI/C++, jobs, Batch V2, native build, N0/N1/N1.5/N1.6 gates and tests described below are historical evidence only. They are not installed/source requirements or valid instructions. Current authority belongs to the live source, bounded MCP/Local Agent, generic host boundaries, and the external RiftBuild Hosted provider. Relay `cli.*` event/ack/replay keys remain intentionally compatible wire protocol names, not the CLI runtime.
+
+**HISTORICAL SOURCE LOG — earlier entries describe past states, not current source.**
 
 This file records source-first implementation patches. It is not current architecture authority: source code, Gradle packaging, manifest state, focused tests, direct audits, and `docs/systems/riftbuild/README.md` outrank this history. Older entries intentionally preserve retired RiftBuild compiler/toolchain/prepared-app/pack/sign experiments as provenance; those names and commands must not be treated as live implementation guidance. Each entry describes what changed, where, why, validation performed, limits/risks and rollback scope.
 

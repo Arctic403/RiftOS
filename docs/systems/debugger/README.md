@@ -16,7 +16,7 @@ It is not a shell, executor, permission service, validator, cancellation service
 - `RiftMcpRuntime.kt` — owns the single process-wide hub and injects it into the CLI event/relay path.
 - `RiftMcpServer.kt` — creates the MCP tool-call parent span and returns `riftos/traceId`.
 - `RiftToolHost.kt` — creates the child tool-host span and exposes the read-only `rift_debug` query.
-- `RiftCliEventBus.kt` — emits bounded event-creation metadata into component `riftcli.event-bus`.
+- `RiftMcpEventBus.kt` — emits bounded event-creation metadata into component `mcp.event-bus`.
 - `RiftMcpRelayClient.kt` — emits bounded socket/push/replay/ACK metadata into component `mcp.relay`.
 - `scripts/test-rift-debug-hub.mjs` — source/wiring/privacy/authority regression lock.
 
@@ -37,7 +37,7 @@ RiftCLI N1.5 adds a second passive diagnostic flow:
 
 ```text
 RiftCLI state transition
-  -> RiftCliEventBus event.created
+  -> RiftMcpEventBus event.created
   -> RiftMcpRelayClient cli.event.send
   -> existing device WSS
   -> Cloudflare relay
@@ -135,7 +135,7 @@ The hub stores no payload body and persists nothing to disk.
 - MCP parent correlation/result metadata -> `RiftMcpServer.kt`;
 - public query schema/read grant/child span -> `RiftToolHost.kt`;
 - subsystem-specific emission -> that subsystem's adapter/lightweight debug sink;
-- RiftCLI event creation -> `RiftCliEventBus.kt`;
+- MCP relay event creation -> `RiftMcpEventBus.kt`;
 - relay socket/push/replay/ACK diagnostics -> `RiftMcpRelayClient.kt`.
 
 ## Validation

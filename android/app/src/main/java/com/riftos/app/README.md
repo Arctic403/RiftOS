@@ -25,7 +25,6 @@ This package contains Android-side authorities and services. Keep class ownershi
 | `RiftMcpRelayClient.kt`, `RiftRelaySettings.kt` | [`mcp/relay`](../../../../../../../../docs/systems/mcp/relay/README.md) |
 | `RiftProjectExporter.kt` | [`mcp/project-exporter`](../../../../../../../../docs/systems/mcp/project-exporter/README.md) |
 | `RiftNativeShell.kt`, `RiftShellExecutor.kt`, `RiftHeadlessJsRuntime.kt`, `RiftNativeShellServices.kt` | [`shell`](../../../../../../../../docs/systems/shell/README.md) + [`mcp`](../../../../../../../../docs/systems/mcp/README.md) + [`riftpp-core`](../../../../../../../../docs/systems/riftpp-core/README.md) + [`semnexis-bootstrap`](../../../../../../../../docs/systems/semnexis-bootstrap/README.md) |
-| `RiftCliHost.kt` | [`riftcli`](../../../../../../../../docs/systems/riftcli/README.md) + [`shell`](../../../../../../../../docs/systems/shell/README.md) |
 | `RiftCodynexEditorBridgeClient.kt` | [`public surfaces`](../../../../../../../../docs/PUBLIC_SURFACES.md) + [`shell`](../../../../../../../../docs/systems/shell/README.md) |
 | `RiftDiffEngineV2.kt`, `RiftFileIdentityV2.kt`, `RiftPatchManifestV1.kt`, `RiftPatchSessions.kt`, `RiftWorkspaceRecords.kt`, `RiftWorkspaceWatcher.kt` | [`workspace/live`](../../../../../../../../docs/systems/workspace/live/README.md) + [`workspace`](../../../../../../../../docs/systems/workspace/README.md) |
 | `RiftBrowserPreviewActivity.kt` | [`preview`](../../../../../../../../docs/systems/preview/README.md) |

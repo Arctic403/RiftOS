@@ -41,7 +41,7 @@ Current ordered flow:
 4. validate-rift-docs.mjs;
 5. every focused test-rift-*.mjs listed in package.json.
 
-The external Builder also requires package.json to keep the wiring, transport, docs, RiftCLI push, Batch V2 and DebugHub entrypoints reachable from npm run check.
+The external Builder also requires package.json to keep the wiring, transport, docs, MCP event replay, Local Agent batching and DebugHub entrypoints reachable from npm run check.
 
 validate-rift-wiring now also auto-discovers every scripts/test-*.mjs and fails if a focused test exists but is not executed by a package script.
 
@@ -131,7 +131,7 @@ validate-rift-docs enforces:
 - required local source-area READMEs;
 - Markdown relative-link validity;
 - retired protocol markers absent;
-- the RiftCLI N2 federated-memory roadmap remains explicitly roadmap-only;
+- historical RiftCLI roadmap documents are not active implementation contracts;
 - the frozen N2 contract still names the canonical-kernel/specialist split, replaceable MemoryStore, SQLite reference backend and RiftStore experiment;
 - ROADMAP.md and the N2 spec retain the hard N2.12-before-N3 promotion barrier.
 
@@ -221,7 +221,7 @@ For every listed top-level Kotlin filename it requires the corresponding com/rif
 
 It also explicitly requires private top-level RiftDevLabLocalAgent and embedded SOURCE_SHA.
 
-For RiftCLI N1.5, the final signed DEX must also retain the passive push-diagnostic markers `riftcli.event-bus`, `mcp.relay`, `event.created`, `cli.event.send`, `relay.ready`, `cli.replay.request`, `cli.replay.send` and `cli.ack`. Mandatory class descriptors prove the Kotlin owners exist; these markers prove the specific event/relay instrumentation survived compilation into the final artifact.
+For the current MCP relay, the final signed DEX must retain the passive push-diagnostic markers `mcp.event-bus`, `mcp.relay`, `event.created`, `cli.event.send`, `relay.ready`, `cli.replay.request`, `cli.replay.send` and `cli.ack`. Mandatory class descriptors prove the Kotlin owners exist; these markers prove the specific event/relay instrumentation survived compilation into the final artifact.
 
 The final DEX smoke also rejects retired native migration descriptors (`RiftShellBridge`, `RiftSystemDump`, `AndroidWebViewBrowserEngine`, `RiftNativeAppHost`, `RiftPreviewActivity`, `RiftRendererCrashGuard`, `RiftNativeDispatcher`, `RiftTransferManifest`) so stale build-cache output cannot silently reintroduce removed native classes.
 
@@ -314,7 +314,7 @@ Stale-document detection belongs to source ownership, changed-source impact, roa
 - Patch 3 added `test-rift-patch-sessions.mjs`, which locks state-bound provenance, honest unattributed fallback, writer integrations, optional MCP intent metadata and ownership/source declaration;
 - Patch 4 added `test-rift-patch-manifest-v1.mjs`, which locks deterministic canonical/tree/change-set hashing, immutable private freeze bounds, record-chain/pruning/recovery semantics, checkpoint-sequence evidence, inert trusted state and absence of MCP freeze authority;
 - Patch 5 added `test-rift-semantic-impact-v1.mjs`, which locks one shared PI-v2 parser, candidate-derived semantic scope, bounded incomplete-evidence behavior, ownership lookup, deterministic semantic hashing and absence of an MCP impact tool;
-- Native RiftCLI reset replaced the retired Kotlin lifecycle/swarm/IR test stack with `test-rift-cli-native-bootstrap.mjs`, which locks retired-source absence, thin JNI ownership, exact C++ source snapshot, ARM64+ARM32 wiring, UTF-safe JNI, process-local enablement, external-driver dependency direction and zero mutation/model/network/process authority;
+- Permanent RiftCLI retirement is verified by source-absence checks, preserved MCP event replay/ACK regression tests, Local Agent batch tests and Builder final-APK exclusion of `libriftcli.so`.
 - Native RiftBuild added `test-riftbuild-native.mjs`, which locks workspace/output confinement, prepared binary APK inputs, honest unsigned status and zero process/CLI/MCP authority expansion;
 - retained-reference tests now assert their JS implementations remain un-packaged/unwired;
 - script index labels retained tests honestly;

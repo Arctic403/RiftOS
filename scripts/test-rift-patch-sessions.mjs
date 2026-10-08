@@ -26,7 +26,7 @@ assert.match(records, /RiftPatchSessions\.unattributed/);
 assert.match(sandbox, /provenanceMutationPaths/);
 assert.match(sandbox, /origin = origin/);
 assert.match(sandbox, /executeRequest\(raw, "mcp"\)/);
-assert.match(sandbox, /executeRequest\(raw, "rift-cli"\)/);
+assert.match(sandbox, /executeRequest\(raw, "local-agent-batch"\)/);
 assert.match(shell, /origin = "native-shell"/);
 assert.match(apps, /origin = "native-editor"/);
 assert.match(devlab, /origin = "devlab"/);

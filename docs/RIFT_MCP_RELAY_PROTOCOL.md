@@ -38,15 +38,15 @@ RiftOS answers with the correlated result:
 
 Protocol-level failures use `mcp.error` with the same `requestId`. Relay keepalives use `relay.ping` and `device.pong`.
 
-## RiftCLI persistent event channel
+## MCP relay compatibility event channel
 
-The same device WebSocket also carries bounded RiftCLI lifecycle events:
+The same device WebSocket also carries bounded MCP event envelopes. Legacy `cli.*` names remain wire-compatible and do not activate RiftCLI:
 
 ```json
 {"type":"cli.event","protocol":"rift-mcp-relay-v1","event":{"schema":"rift.cli-event/1","sequence":123,"type":"job.completed","jobId":"...","terminal":true}}
 ```
 
-The device owns a process-local replay ring of 256 events. Events are capped at 96 KiB and small results may be inlined up to 48 KiB; larger results advertise result metadata and remain recoverable through explicit job polling.
+The device owns a process-local replay ring of 256 events. Events are capped at 96 KiB and small results may be inlined up to 48 KiB; larger results advertise bounded result metadata; the retired RiftCLI job-polling API no longer exists.
 
 A driver may subscribe with `GET /mcp/<secret>?after=<sequence>` as a WebSocket upgrade or as SSE. Driver WebSockets are bounded at four. SSE connections are bounded separately at eight and require stable identity: production clients send `Mcp-Session-Id`; manual browser diagnostics may use `?subscriber=<id>` with a validated 1-128 character `[A-Za-z0-9._:-]` identifier. Diagnostic IDs are isolated internally as `diag:<id>`. Anonymous SSE opens are rejected.
 
@@ -54,7 +54,7 @@ A driver may subscribe with `GET /mcp/<secret>?after=<sequence>` as a WebSocket 
 
 The relay requests device replay with `cli.replay.request`, acknowledges accepted device events with `cli.ack`, and tracks per-subscriber cursors so replayed events are not rebroadcast to subscribers that already consumed them. On device reconnect, `relay.ready.cliResumeAfter` is the oldest active subscriber cursor the relay still needs. Replay payloads remain device-owned; the Durable Object does not write each event to storage.
 
-SSE events are valid JSON-RPC notifications using `notifications/riftcli/event`. Job list/poll/cancel remain recovery/debug fallbacks rather than the normal progress loop.
+SSE events are valid JSON-RPC notifications using `notifications/riftcli/event`. These `riftcli` notification method strings are retained solely for client compatibility, not as CLI execution or job-control authority.
 
 ## Security requirements
 
@@ -63,8 +63,8 @@ SSE events are valid JSON-RPC notifications using `notifications/riftcli/event`.
 - Bind each authenticated token to one device ID.
 - Allow only one active socket per device; a newer authenticated socket replaces the older one.
 - Generate unpredictable request IDs and enforce request timeouts.
-- Limit relay envelopes to 1,000,000 UTF-8 bytes on-device and at the Worker boundary; apply the tighter RiftCLI event bounds before relay send.
+- Limit relay envelopes to 1,000,000 UTF-8 bytes on-device and at the Worker boundary; apply the tighter MCP event-bus bounds before relay send.
 - Never interpret tool arguments in the relay. Forward complete MCP JSON-RPC objects unchanged.
-- Never persist MCP payloads, tool results, or RiftCLI event payloads in Durable Object storage; socket/correlation/subscriber cursors remain ephemeral.
+- Never persist MCP payloads, tool results, or MCP relay event payloads in Durable Object storage; socket/correlation/subscriber cursors remain ephemeral.
 - Coalesce identical retried `tools/call` requests inside the on-device `RiftMcpServer`, including requests already in flight.
 - Keep `RiftToolHost` permissions and `RiftToolSandbox` as the final authority.

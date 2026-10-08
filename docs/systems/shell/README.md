@@ -84,7 +84,6 @@ Native core includes:
 - qjs help/version/eval/run
 - semx help/version/self-test/check/dump-graph/dump-plan/dump-ir/emit-arm32-proof/emit-arm32-runtime
 - riftpp
-- rift-cli
 
 mount / umount are explicitly retired.
 
@@ -320,16 +319,6 @@ RiftShell -> headless QuickJS -> packaged Rift++ Core -> packaged RiftVM.
 No Chromium is required.
 
 Normal `run/exec` rejects executable host imports. `run-stateful/exec-stateful` is a separate bounded path that permits only `state.load`, `state.save`, and `state.remove` against an isolated validated checkpoint namespace; it does not expose generic native calls or software verification.
-
-## Native RiftCLI
-
-`rift-cli` delegates to the thin `RiftCliHost` JNI adapter, which calls the C++ RiftCLI core in `libriftcli.so`.
-
-Bootstrap-0 exposes only help/status/architecture plus explicit process-local enable/disable. The native CLI currently has zero mutation, tool, network, model/API, project-memory or planner authority.
-
-Shell availability does not imply RiftCLI is enabled. The process-local switch still defaults OFF after every process restart.
-
-See `docs/systems/riftcli/README.md`.
 
 ## MCP authority
 

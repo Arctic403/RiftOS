@@ -21,7 +21,7 @@ import kotlin.random.Random
 class RiftMcpRelayClient(
     context: Context,
     private val server: RiftMcpServer,
-    private val cliEvents: RiftCliEventBus,
+    private val mcpEvents: RiftMcpEventBus,
     debugHub: RiftDebugHub? = null,
     private val operationJournal: RiftMcpOperationJournal
 ) {
@@ -52,7 +52,7 @@ class RiftMcpRelayClient(
     private val cliEventListener: (JSONObject) -> Unit = { event -> sendCliEvent(event) }
 
     init {
-        cliEvents.addListener(cliEventListener)
+        mcpEvents.addListener(cliEventListener)
     }
 
     fun start() {
@@ -100,7 +100,7 @@ class RiftMcpRelayClient(
             .put("connectedAt", connectedAt)
             .put("attempts", attempts)
             .put("cliLastAckSequence", lastCliAckSequence)
-            .put("cliEvents", cliEvents.status())
+            .put("cliEvents", mcpEvents.status())
     }
 
     private fun open(config: RiftRelayConfig) {
@@ -350,7 +350,7 @@ class RiftMcpRelayClient(
     }
 
     private fun sendCliReplay(webSocket: WebSocket, afterSequence: Long) {
-        val replay = cliEvents.replayAfter(afterSequence)
+        val replay = mcpEvents.replayAfter(afterSequence)
         debug(
             operation = "cli.replay.send",
             outcome = "start",

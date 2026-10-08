@@ -149,7 +149,7 @@ const buildInstaller = read(`${kotlinDir}/RiftBuildInstaller.kt`);
 if (!buildInstaller.includes('class RiftBuildInstallReceiver : BroadcastReceiver()')) fail('RiftBuild manifest receiver source is missing');
 const headless = read(`${kotlinDir}/RiftHeadlessJsRuntime.kt`);
 const runtime = read(`${kotlinDir}/RiftMcpRuntime.kt`);
-const cliEvents = read(`${kotlinDir}/RiftCliEventBus.kt`);
+const cliEvents = read(`${kotlinDir}/RiftMcpEventBus.kt`);
 const relayClient = read(`${kotlinDir}/RiftMcpRelayClient.kt`);
 const relayWorker = read('relay/src/index.js');
 const browserWindow = read(`${kotlinDir}/RiftBrowserWindow.kt`);
@@ -159,12 +159,9 @@ const riftosJs = read('src/riftos.js');
 const desktop = read(`${kotlinDir}/RiftNativeDesktop.kt`);
 const workspaceApps = read(`${kotlinDir}/RiftNativeWorkspaceApps.kt`);
 const browserBridge = read(`${kotlinDir}/RiftBrowserMcpAppBridge.kt`);
-const cliHost = read(`${kotlinDir}/RiftCliHost.kt`);
 const toolHost = read(`${kotlinDir}/RiftToolHost.kt`);
 const toolSandbox = read(`${kotlinDir}/RiftToolSandbox.kt`);
 const cliCmake = read('android/app/src/main/cpp/CMakeLists.txt');
-const cliCore = read('android/app/src/main/cpp/riftcli/rift_cli_core.cpp');
-const cliJni = read('android/app/src/main/cpp/riftcli/rift_cli_jni.cpp');
 
 for (const retired of [
   'RiftShellBridge.kt', 'RiftSystemDump.kt', 'AndroidWebViewBrowserEngine.kt',
@@ -181,112 +178,41 @@ if (!main.includes('add("mcp", "Rift MCP", "⇄")')) fail('Rift MCP launcher ent
 if (!main.includes('if (id == "mcp")') || !main.includes('startActivity(Intent(this, RiftMcpActivity::class.java))')) fail('Rift MCP launcher does not open the existing RiftMcpActivity');
 if (!desktop.includes('LauncherApp("mcp", "Rift MCP", "⇄")')) fail('Rift MCP is missing from the native desktop fallback launcher');
 
-if (!cliHost.includes('System.loadLibrary("riftcli")') || !cliHost.includes('private external fun nativeExecute')) {
-  fail('RiftCLI Kotlin host is not a thin JNI loader');
-}
-if (!nativeShell.includes('RiftCliHost.executeShell(args, cwd)')) fail('RiftShell does not route rift-cli into the native C++ host');
-if (!gradle.includes('ndkVersion = "28.2.13676358"') ||
-    !gradle.includes('abiFilters += listOf("arm64-v8a", "armeabi-v7a")') ||
-    !gradle.includes('path = file("src/main/cpp/CMakeLists.txt")')) fail('RiftCLI pinned dual-ABI native Gradle wiring is missing');
-if (!cliCmake.includes('add_library(') || !cliCmake.includes('riftcli') || !cliCmake.includes('SHARED')) {
-  fail('RiftCLI native CMake shared library contract is missing');
-}
-const cliN1CoreContracts = [
-  ['dependency direction', 'external-driver -> MCP/RiftShell -> RiftCLI'],
-  ['authority mode', 'full-riftos-when-enabled'],
-  ['no direct model backend', String.raw`\"directModelBackend\":false`],
-  ['no direct network client', String.raw`\"directNetworkClient\":false`],
-  ['external continuation ownership', String.raw`\"driverContinuationExternalOnly\":true`],
-  ['driver loop cap', 'kMaxDriverLoopSteps = 8'],
-  ['request-id cap', 'kMaxDriverRequestIds = 4096'],
-  ['request-id capacity enum', 'RequestReservation::Capacity'],
-  ['duplicate request-id rejection', 'duplicate-request-id'],
-  ['request-id capacity rejection', 'request-id-capacity'],
-  ['driver replay capacity', String.raw`\"driverReplayCapacity\":`],
-  ['non-evicting replay ids', String.raw`\"driverReplayEviction\":false`],
-  ['process restart replay reset', String.raw`\"driverReplayReset\":\"process-restart-only\"`],
-  ['job-control classification', 'isDriverJobControl'],
-  ['disabled-state job-control allowance', 'if (!on && !jobControl)'],
-  ['job-control reservation bypass', 'jobControl ? RequestReservation::Accepted'],
-  ['push-first job execution', String.raw`\"driverToolExecution\":\"push-first-jobs-with-poll-fallback\"`],
-  ['persistent push steady state', String.raw`\"driverObservationMode\":\"persistent-push-steady-state\"`],
-  ['automatic polling disabled', String.raw`\"automaticPolling\":false`],
-  ['poll fallback only', String.raw`\"pollFallbackOnly\":true`],
-  ['persistent relay push', String.raw`\"driverEventDelivery\":\"persistent-relay-push\"`],
-  ['CLI Batch V2 retired', String.raw`\"batchV2\":false`],
-  ['CLI Batch V2 step cap disabled', String.raw`\"batchV2MaxSteps\":0`],
-  ['direct Local Agent owns batching', String.raw`\"batchOwner\":\"riftos-local-agent\"`],
-];
-for (const [name, fragment] of cliN1CoreContracts) {
-  if (!cliCore.includes(fragment)) fail(`RiftCLI N1 core contract missing: ${name}`);
-}
-if (cliCore.includes('g_recentRequestIds.clear()')) {
-  fail('RiftCLI N1 replay contract drifted: request IDs must not be cleared in-process');
-}
-if (!nativeShell.includes('executeCliCommand(cwd, args)') ||
-    !nativeShell.includes('executeCliShellDispatch') ||
-    !nativeShell.includes('executeCliToolDispatch') ||
-    !nativeShell.includes('private val cliWorker = ThreadPoolExecutor(') ||
-    !nativeShell.includes('rift_cli_job_list') ||
-    !nativeShell.includes('rift_cli_job_poll') ||
-    !nativeShell.includes('rift_cli_job_cancel') ||
-    !nativeShell.includes('origin = "rift-cli-driver"') ||
-    !nativeShell.includes('requestId = cliResult.optString("requestId")') ||
-    !nativeShell.includes('Internal RiftCLI recursion is forbidden') ||
-    nativeShell.includes('CountDownLatch') ||
-    !toolHost.includes('internal fun startCliJob') ||
-    !toolHost.includes('internal fun listCliJobs') ||
-    !toolHost.includes('internal fun pollCliJob') ||
-    !toolHost.includes('internal fun cancelCliJob') ||
-    !toolHost.includes('cancelled_may_have_applied') ||
-    !nativeShell.includes('cancelled_may_have_applied') ||
-    !toolHost.includes('RiftCLI tool lane forbids') ||
-    !toolHost.includes('internal object RiftCliExecutionGate') ||
-    !toolHost.includes('ReentrantLock(true)') ||
-    !toolHost.includes('outstandingJobId = AtomicReference<String?>(null)') ||
-    !toolHost.includes('fun tryReserve(jobId: String)') ||
-    !toolHost.includes('fun release(jobId: String)') ||
-    !nativeShell.includes('RiftCliExecutionGate.tryReserve(jobId)') ||
-    !toolHost.includes('RiftCliExecutionGate.tryReserve(jobId)') ||
-    !nativeShell.includes('cliShellJobSnapshot(it, includeResult = false)') ||
-    !toolHost.includes('cliJobSnapshot(it, includeResult = false)') ||
-    !nativeShell.includes('RiftCliExecutionGate.run {') ||
-    !toolSandbox.includes('RiftCliExecutionGate.run {') ||
-    !toolSandbox.includes('internal fun submitCliJob(') ||
-    !toolSandbox.includes('executeRequest(raw, "rift-cli")') ||
-    nativeShell.includes('"rift_cli_batch" -> startCliBatch') ||
-    !nativeShell.includes('"rift_cli_batch" -> throw IllegalStateException') ||
-    !nativeShell.includes('RiftCLI Batch V2 is retired') ||
-    !toolHost.includes('"rift_local_agent_batch"') ||
+// Retired RiftCLI must not regain native, shell, ToolHost or sandbox authority.
+for (const obsolete of [
+  `${kotlinDir}/RiftCliHost.kt`,
+  'android/app/src/main/cpp/riftcli/rift_cli_core.cpp',
+  'android/app/src/main/cpp/riftcli/rift_cli_core.h',
+  'android/app/src/main/cpp/riftcli/rift_cli_jni.cpp',
+]) if (exists(obsolete)) fail(`retired RiftCLI source returned: ${obsolete}`);
+if (gradle.includes('RiftCliHost.kt') || gradle.includes('libriftcli') ||
+    cliCmake.includes('riftcli') ||
+    nativeShell.includes('rift-cli') ||
+    toolHost.includes('RiftCliExecutionGate') ||
+    toolSandbox.includes('RiftCliExecutionGate') ||
+    toolSandbox.includes('submitCliJob(') ||
+    toolSandbox.includes('executeCliBatchRequest(')) fail('retired RiftCLI execution surface returned');
+if (!toolHost.includes('"rift_local_agent_batch"') ||
     !localAgentBatch.includes('MAX_STEPS = 16') ||
     !localAgentBatch.includes('RiftLocalAgentExecutionGate') ||
-    !localAgentBatch.includes('RiftOsLocalAgent.execute(executionContext, request, job.id)')) fail('RiftCLI N1 dispatcher / Local Agent batch ownership boundary drifted');
-if (!gradle.includes('RiftCliEventBus.kt') ||
-    !runtime.includes('fun cliEvents(): RiftCliEventBus') ||
+    !localAgentBatch.includes('RiftOsLocalAgent.execute(executionContext, request, job.id)') ||
+    !toolSandbox.includes('executeLocalAgentBatchRequest')) fail('Local Agent batch execution boundary drifted');
+if (!gradle.includes('RiftMcpEventBus.kt') ||
+    !runtime.includes('fun mcpEvents(): RiftMcpEventBus') ||
+    !runtime.includes('RiftMcpEventBus(debugHub())') ||
     !runtime.includes('RiftMcpRelayClient(') ||
-    !runtime.includes('server(context)') ||
-    !runtime.includes('cliEvents()') ||
-    !runtime.includes('debugHub()') ||
-    !cliEvents.includes('SCHEMA = "rift.cli-event/1"') ||
+    !cliEvents.includes('class RiftMcpEventBus(') ||
     !cliEvents.includes('MAX_EVENTS = 256') ||
+    !cliEvents.includes('MAX_EVENT_BYTES = 96 * 1024') ||
     !cliEvents.includes('stepKey = extra?.optString("stepId")') ||
-    !cliEvents.includes('debugHub?.sink("riftcli.event-bus")') ||
-    !cliEvents.includes('operation = "event.created"') ||
-    !relayClient.includes('cliEvents.addListener(cliEventListener)') ||
+    !cliEvents.includes('debugHub?.sink("mcp.event-bus")') ||
+    !relayClient.includes('mcpEvents.addListener(') ||
     !relayClient.includes('debugHub?.sink("mcp.relay")') ||
-    !relayClient.includes('operation = "cli.event.send"') ||
-    !relayClient.includes('operation = "relay.ready"') ||
-    !relayClient.includes('operation = "cli.replay.request"') ||
-    !relayClient.includes('operation = "cli.replay.send"') ||
-    !relayClient.includes('operation = "cli.ack"') ||
     !relayClient.includes('"cli.replay.request"') ||
     !relayClient.includes('"cli.ack"') ||
     !relayWorker.includes('acceptWebSocket(server, ["driver"])') ||
-    !relayWorker.includes('notifications/riftcli/event') ||
-    relayWorker.includes('ctx.storage')) fail('RiftCLI N1.5 persistent push wiring drifted');
-if (cliJni.includes('GetStringUTFChars') || cliJni.includes('NewStringUTF') ||
-    !cliJni.includes('GetStringChars') || !cliJni.includes('utf8ToUtf16')) fail('RiftCLI JNI UTF boundary drifted');
-
+    relayWorker.includes('ctx.storage')) fail('MCP bounded relay event bus contract drifted');
+// The relay's cli.* envelope/schema keys are external wire compatibility, not RiftCLI execution.
 const allowedWebKitOwners = new Set([
   'RiftBrowserAndroidWebViewEngine.kt', 'RiftBrowserWindow.kt', 'RiftBrowserMcpAppBridge.kt',
   'RiftBrowserAppHost.kt', 'RiftBrowserPreviewActivity.kt', 'RiftBrowserRendererCrashGuard.kt',

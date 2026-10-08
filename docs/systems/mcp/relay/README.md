@@ -80,7 +80,7 @@ That relay request id is the only stable retry key supplied to server idempotenc
 
 ## RiftCLI push events
 
-The client subscribes to the process-wide `RiftCliEventBus` owned by `RiftMcpRuntime`. New events are wrapped as `cli.event` and sent over the already-open device WSS; no second device connection or rapid poll loop is created.
+The client subscribes to the process-wide `RiftMcpEventBus` owned by `RiftMcpRuntime`. New events are wrapped as `cli.event` and sent over the already-open device WSS; no second device connection or rapid poll loop is created.
 
 On `relay.ready`, the client reads `cliResumeAfter` and replays retained device events after that sequence. The relay may later request another replay with `cli.replay.request`. `cli.ack` advances the client's observed acknowledgement high-water mark. The event ring itself remains on-device.
 
@@ -90,7 +90,7 @@ The event bus is bounded to 256 events, 96 KiB per event and 48 KiB inline resul
 
 The process-wide RiftDebugHub observes this transport beside the execution path.
 
-`RiftCliEventBus` emits `event.created` metadata under component `riftcli.event-bus`.
+`RiftMcpEventBus` emits `event.created` metadata under component `mcp.event-bus`.
 
 `RiftMcpRelayClient` emits bounded metadata under component `mcp.relay` for:
 - `socket.connect`;
@@ -104,7 +104,7 @@ The process-wide RiftDebugHub observes this transport beside the execution path.
 These signals contain no MCP payload body, CLI result body, relay endpoint URL, Authorization header or pairing token. They grant no transport or execution authority.
 
 This gives the installed-device promotion test three separate evidence points:
-1. `event.created` proves the local CLI event exists;
+1. `event.created` proves the local MCP relay event exists;
 2. `cli.event.send: queued` proves OkHttp accepted it for the current device WebSocket;
 3. matching `cli.ack` proves the Cloudflare relay received and acknowledged that sequence.
 
@@ -176,7 +176,7 @@ Relay settings were tightened from a prefix-only WSS check to actual URI validat
 - one bounded reconnect schedule;
 - relay request id forwarded for server retry dedupe;
 - local forwarding terminates within 70 seconds, before the public relay's 75-second timeout;
-- RiftCLI events use the process-wide bounded device ring and the existing WSS;
+- RiftMCP relay events use the process-wide bounded device ring and the existing WSS;
 - reconnect replay is sequence-based and does not give the relay execution authority;
 - debugger instrumentation remains passive and metadata-only;
 - local event creation, WSS queueing and relay acknowledgement remain separately observable;
@@ -193,7 +193,7 @@ Relay settings were tightened from a prefix-only WSS check to actual URI validat
 - same relay request duplicates mutation -> Server/relay request-id regression;
 - RiftCLI progress requires rapid polling despite an active relay WSS -> push-channel regression;
 - replay request/ACK handling regresses or event replay escapes the bounded device ring -> event-recovery regression;
-- a connected relay queues a CLI event but no matching ACK is observed -> device-to-relay delivery failure/unproven state;
+- a connected relay queues a MCP relay event but no matching ACK is observed -> device-to-relay delivery failure/unproven state;
 - debugger signals expose endpoint URLs, Authorization values, pairing tokens or CLI/MCP payload bodies -> diagnostics privacy regression.
 
 ## Fix map

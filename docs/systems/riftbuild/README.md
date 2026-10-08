@@ -1,5 +1,12 @@
 # RiftBuild platform boundary
 
+## Verification status
+
+**VERIFIED AGAINST CURRENT SOURCE — 2026-10-07.**
+
+This verifies the documented separation of generic RiftOS platform capabilities from external RiftBuild provider semantics. It does not certify the pending post-RiftCLI-removal Builder APK or device install.
+
+
 RiftBuild application semantics are external to RiftOS.
 
 The device-proven hosted provider owns the build recipe:
@@ -223,3 +230,27 @@ From this point forward:
 - no duplicate fallback path is maintained;
 - no legacy compiler/preparer/packer/signer is kept “just in case”;
 - a boundary extension requires real proof that the missing primitive is reusable beyond one provider or language.
+
+## Source ownership
+
+- Generic compiler execution: `RiftLocalBuildCapability.kt`, `RiftBuildManagedToolchains.kt`, `RiftManagedJvmToolService.kt`, `RiftNativeBufferCompilerService.kt`.
+- Generic DEX, signature verification, installation and shell access: `RiftJvmDexService.kt`, `RiftApkV2Verifier.kt`, `RiftBuildInstaller.kt`, `RiftBuildPlatformTools.kt`.
+- Hosted effects and app lifecycle: `RiftRappCapabilityBroker.kt`, `RiftRappManager.kt`, `RiftRappHost.kt`.
+- Provider-specific compiler choice, preflight, ZIP/APK packing and APK-v2 signing-block construction: external `workspace/RiftBuild-Hosted`, not this repository.
+- APK build and final artifact gates: external RiftOS Builder; the user manually dispatches Builder builds.
+
+## Failure signatures
+
+- A missing external provider artifact is not permission to restore a hardwired compiler/packer path inside RiftOS.
+- `RiftBuildLocalExecutor`, `RiftApkV2Signer`, or retired clang payload requirements in source or Builder gates indicate legacy architecture regression.
+- A `build.local` implementation with direct ZIP/APK pack/sign/install semantics violates the generic boundary.
+- An APK that fails signature verification must never be handed to PackageInstaller.
+- A successful source smoke or Builder compilation alone is not installed-device app behavior proof.
+
+## Fix map
+
+1. Locate the owning source, external provider contract and specific failing regression before editing.
+2. Correct generic host capability defects in RiftOS; correct compiler/preflight/pack/sign recipes in external Hosted.
+3. Preserve `RiftApkV2Verifier` as independent, keyless verification and `RiftBuildInstaller` as user-confirmed platform install.
+4. Run source ownership, wiring, transport, architecture and package verification gates; require real installed-device proof before promoting changes.
+5. Do not trigger or alter the user's manual RiftOS Builder workflow.

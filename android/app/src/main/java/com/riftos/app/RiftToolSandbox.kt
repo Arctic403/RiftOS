@@ -147,7 +147,7 @@ internal class RiftToolSandbox(context: Context) {
                 rawPaths = provenanceMutationPaths(method, args)
             )
             val value = dispatch(method, args) ?: JSONObject.NULL
-            if (origin != "rift-cli") RiftDeadline.check("$origin sandbox request")
+            RiftDeadline.check("$origin sandbox request")
             patchSession?.let { runCatching { RiftPatchSessions.commit(appContext, it) } }
             JSONObject()
                 .put("id", requestId)
@@ -192,22 +192,6 @@ internal class RiftToolSandbox(context: Context) {
     }
 
     /**
-     * RiftCLI live-poll lane.
-     *
-     * No fixed wall-clock timeout is imposed here. The returned Future is the cancellation
-     * authority; deep filesystem/runtime loops remain cooperative through RiftDeadline.check(),
-     * which also observes thread interruption. Normal MCP calls retain their bounded timeout.
-     */
-    /**
-     * Synchronous RiftCLI Batch V2 tool step.
-     *
-     * The batch owner already holds RiftCliExecutionGate for the entire plan, so this path must
-     * not reserve or queue a nested CLI job. Per-step provenance is still recorded by executeRequest.
-     */
-    internal fun executeCliBatchRequest(raw: String): String =
-        executeRequest(raw, "rift-cli-batch")
-
-    /**
      * Synchronous Local Agent engineering-batch step.
      *
      * This intentionally reuses the canonical workspace sandbox dispatch so Local Agent batch
@@ -223,28 +207,6 @@ internal class RiftToolSandbox(context: Context) {
             future.cancel(true)
             throw error
         }
-    }
-
-    internal fun submitCliJob(
-        raw: String,
-        onStart: () -> Unit,
-        reply: (String) -> Unit
-    ): Future<*> = executor.submit {
-        val id = runCatching { JSONObject(raw).optString("id") }.getOrDefault("")
-        val response = try {
-            RiftCliExecutionGate.run {
-                runCatching { onStart() }
-                executeRequest(raw, "rift-cli")
-            }
-        } catch (error: Throwable) {
-            RiftDeadline.clearInterrupt()
-            JSONObject()
-                .put("id", id)
-                .put("ok", false)
-                .put("error", error.message ?: error.javaClass.simpleName)
-                .toString()
-        }
-        runCatching { reply(response) }
     }
 
     internal fun candidateImpactAsync(reply: (JSONObject) -> Unit) {

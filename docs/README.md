@@ -52,7 +52,6 @@ Changing relevant source invalidates the affected document's trusted status unti
 | Rift++ Core | **VERIFIED** | [`systems/riftpp-core/README.md`](systems/riftpp-core/README.md) | 0.9.0 source candidate: Gate 1A frozen + Gate 1B UTF-16 text/numeric audit; device proof pending |
 | RiftShell | **VERIFIED** | [`systems/shell/README.md`](systems/shell/README.md) | process/filesystem/transaction/MCP-authority audit |
 | Semnexis QuickJS bootstrap | **0.6 DEVICE VERIFIED / 0.6.1 HARDENING SOURCE VERIFIED / 0.7 SNIRV7 ARENA + BOUNDED-RECURSION SOURCE/MACHINE VERIFIED; APK PROMOTION PENDING** | [`systems/semnexis-bootstrap/README.md`](systems/semnexis-bootstrap/README.md) | device-proven 0.6 baseline; current 0.7 source/machine proof reaches SNIRV7 Arena state, typed AST load/store, record stack ABI, bounded native recursion and recursive-descent Arena AST parsing/evaluation; next installed gate is `semnexis-bootstrap-self-test/17` |
-| Native RiftCLI | **BOOTSTRAP-0** | [`systems/riftcli/README.md`](systems/riftcli/README.md) | C++ core + thin Kotlin JNI host; ARM64 + ARM32; zero mutation/model/network authority |
 | RiftGit | **VERIFIED** | [`systems/git/README.md`](systems/git/README.md) | native GitHub/metadata/push/pull/rollback audit |
 | RiftRepo | **VERIFIED** | [`systems/riftrepo/README.md`](systems/riftrepo/README.md) | verified inactive/retained local-checkpoint design |
 | RiftVault | **VERIFIED** | [`systems/riftvault/README.md`](systems/riftvault/README.md) | verified inactive/retained backup design |
@@ -107,7 +106,6 @@ Every subsystem not listed in the verified set above remains **UNVERIFIED** unti
 | RiftVM engine | **VERIFIED** | [`systems/riftrt/engines/rift-vm/README.md`](systems/riftrt/engines/rift-vm/README.md) | live VM/headless-host/import-boundary audit |
 | Rift++ Core | **VERIFIED** | [`systems/riftpp-core/README.md`](systems/riftpp-core/README.md) | 0.9.0 source candidate: Gate 1A frozen + Gate 1B UTF-16 text/numeric audit; device proof pending |
 | RiftShell | **VERIFIED** | [`systems/shell/README.md`](systems/shell/README.md) | process/filesystem/transaction/MCP-authority audit |
-| Native RiftCLI | **BOOTSTRAP-0** | [`systems/riftcli/README.md`](systems/riftcli/README.md) | C++ core + thin Kotlin JNI host; ARM64 + ARM32; zero mutation/model/network authority |
 | RiftGit | **VERIFIED** | [`systems/git/README.md`](systems/git/README.md) | native GitHub/metadata/push/pull/rollback audit |
 | RiftRepo | **VERIFIED** | [`systems/riftrepo/README.md`](systems/riftrepo/README.md) | verified inactive/retained local-checkpoint design |
 | RiftVault | **VERIFIED** | [`systems/riftvault/README.md`](systems/riftvault/README.md) | verified inactive/retained backup design |
