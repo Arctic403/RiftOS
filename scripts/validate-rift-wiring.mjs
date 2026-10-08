@@ -178,6 +178,14 @@ if (!main.includes('add("mcp", "Rift MCP", "⇄")')) fail('Rift MCP launcher ent
 if (!main.includes('if (id == "mcp")') || !main.includes('startActivity(Intent(this, RiftMcpActivity::class.java))')) fail('Rift MCP launcher does not open the existing RiftMcpActivity');
 if (!desktop.includes('LauncherApp("mcp", "Rift MCP", "⇄")')) fail('Rift MCP is missing from the native desktop fallback launcher');
 
+// C0.1: editor command proxies are third-party project code, not OS services.
+// An orphaned client must be removed, not exempted from manifest reachability.
+for (const legacyClient of ['RiftCodynexEditorBridgeClient.kt', 'RiftppEditorBridgeClient.kt']) {
+  if (exists(`${kotlinDir}/${legacyClient}`) || gradle.includes(legacyClient)) {
+    fail(`retired project editor bridge client returned: ${legacyClient}`);
+  }
+}
+
 // Retired RiftCLI must not regain native, shell, ToolHost or sandbox authority.
 for (const obsolete of [
   `${kotlinDir}/RiftCliHost.kt`,

@@ -62,7 +62,7 @@ Package visibility queries are declared for:
 - `com.riftpp.editor`;
 - `com.samsung.android.honeyboard`.
 
-These are package-visibility declarations for the fixed Vortex/RiftLLM/Codynex/Rift++ editor-bridge/keyboard integration lanes. The Rift++ editor entry exists so RiftOS can resolve the exported Binder bridge of the single permanent Rift++ editor used by `RiftppEditorBridgeClient`. Generic RiftBuild install/launch still does not pin Rift++ proof, adapter or runtime package identities; it derives package identity from the verified APK and binds launch to install status. Visibility does not itself grant launch, Binder, install or diagnostic authority.
+These are package-visibility declarations inherited from Vortex/RiftLLM/Codynex/Rift++ editor and keyboard integration lanes. C0.1 removed the two editor-specific shell Binder clients; editor package visibility can be reconsidered when mirrored payloads are removed in C0.2. Generic RiftBuild install/launch derives package identity from the verified APK and binds launch to install status. Visibility does not itself grant launch, Binder, install or diagnostic authority.
 
 Application flags:
 - `android:allowBackup="true"`;
@@ -224,7 +224,7 @@ MainActivity registers on:
 
 On `onDestroy`, unregistering clears the weak reference only if it still points at that exact Activity instance. That prevents an old Activity from clearing a newer replacement instance.
 
-While the Android process remains alive, `RiftMcpRuntime` singletons for native shell, MCP host/server/relay, native Git and Vortex bridge are not destroyed by MainActivity teardown. The current Codynex Editor bridge is shell-owned through `RiftCodynexEditorBridgeClient`, not an `RiftMcpRuntime` singleton.
+While the Android process remains alive, `RiftMcpRuntime` singletons for native shell, MCP host/server/relay, native Git and Vortex bridge are not destroyed by MainActivity teardown. C0.1 removed the project-specific Codynex/Rift++ editor shell clients; no editor bridge is now a native-shell singleton.
 
 ### Activity-owned teardown
 

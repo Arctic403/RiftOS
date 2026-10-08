@@ -25,7 +25,7 @@ This inventory separates live packaged authority from retained reference/compati
 
 | Surface | Owner | Purpose |
 | --- | --- | --- |
-| Codynex Editor transport | `RiftCodynexEditorBridgeClient.kt`, `CodynexEditorBridgeService.kt`, `RiftNativeShell.kt` | Explicit Binder transport from RiftOS into `com.codynex.editor`; supports bounded file/folder transfer plus editor-owned compile, preview/native proof, and fresh-compile-before-pack/sign APK builds. RiftOS has no Codynex compiler/provider authority. |
+| Codynex Editor mirrored payload (pending removal) | `CodynexEditorBridgeService.kt` and `com/codynex/editorapp/` | C0.1 removed the shell command and OS-side Binder client. The mirrored editor implementation remains packaged temporarily and is slated for removal at C0.2; it is not an OS shell or platform API. |
 | Codynex Editor compiler/runtime | `CodynexEditorToolchainPort.kt`, `CodynexCompilerRuntime.kt`, `CodynexRuntimeBridge.kt`, `codynex_editor_vm` | The editor owns bounded compiler execution and preview. Compiler semantics come from the editor-owned payload API, with `.codynex/toolchains/compiler.js` as the hot override and bundled `codynex_compiler.js` as fallback; RiftOS only mirrors/gates the generic host/runtime payload. |
 
 ## Live RiftBrowser page surfaces

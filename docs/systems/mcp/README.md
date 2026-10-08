@@ -31,7 +31,7 @@ Related narrow owners:
 
 ## Process ownership
 
-`RiftMcpRuntime` lazily owns singletons for native shell, tool host, MCP server, persistent MCP operation journal, relay, native Git and Vortex bridge. Codynex editor control is routed through the shell-owned bounded `RiftCodynexEditorBridgeClient`, not an MCP-runtime compiler/bridge singleton.
+`RiftMcpRuntime` lazily owns singletons for native shell, tool host, MCP server, persistent MCP operation journal, relay, native Git and Vortex bridge. C0.1 removed the Codynex/Rift++ project editor shell commands and their Binder clients; independent editors no longer have a hard-coded RiftShell transport.
 
 MainActivity registration is a weak UI reference only.
 

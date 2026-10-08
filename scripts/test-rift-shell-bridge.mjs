@@ -11,7 +11,6 @@ const shell = read(k + 'RiftNativeShell.kt');
 const shellExecutor = read(k + 'RiftShellExecutor.kt');
 const toolHost = read(k + 'RiftToolHost.kt');
 const managedJvmTool = read(k + 'RiftManagedJvmToolService.kt');
-const riftppEditorClient = read(k + 'RiftppEditorBridgeClient.kt');
 const runtime = read(k + 'RiftMcpRuntime.kt');
 const headless = read(k + 'RiftHeadlessJsRuntime.kt');
 const vmBridge = read('android/app/src/main/java/com/codynex/editorapp/CodynexRuntimeBridge.kt');
@@ -35,7 +34,8 @@ assert.ok(toolHost.includes('"auto", "exec", "submit", "status", "result", "canc
 assert.ok(managedJvmTool.includes('RUN_TIMEOUT_SECONDS = 10 * 60L'), 'managed JVM compiler window must not regress to 60 seconds');
 assert.ok(managedJvmTool.includes('putString("status", "cancelled")') && managedJvmTool.includes('Process.killProcess(remotePid)'), 'managed JVM cancellation must terminate the isolated compiler process');
 assert.doesNotMatch(shell, /Rift\+\+ legacy editor development bridge|\[LEGACY EDITOR BINDER BRIDGE\]/);
-assert.doesNotMatch(riftppEditorClient, /bridge-enabled legacy editor/);
+assert.equal(fs.existsSync(k + 'RiftppEditorBridgeClient.kt'), false, 'retired Rift++ editor client must remain outside OS');
+assert.equal(fs.existsSync(k + 'RiftCodynexEditorBridgeClient.kt'), false, 'retired Codynex editor client must remain outside OS');
 assert.equal((shell.match(/private fun tokenize\(/g) || []).length, 1, 'native shell must expose exactly one tokenizer helper');
 assert.equal((shell.match(/private fun resolveFile\(/g) || []).length, 1, 'native shell must expose exactly one confined file resolver');
 assert.match(shell, /private fun normalizeDisplay\(raw: String\): String =\s*RiftVolumePaths\.normalizeDisplay\(raw\)/);

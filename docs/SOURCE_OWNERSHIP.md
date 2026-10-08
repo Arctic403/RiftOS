@@ -109,11 +109,9 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftNativeWorkspaceApps.kt` | `docs/systems/files-app/README.md` + `docs/systems/settings/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/workspace/live/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeDevLab.kt` | `docs/systems/dev-lab/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftMcpEventBus.kt` | `docs/systems/mcp/relay/README.md` + `docs/systems/relay-service/README.md` + `docs/systems/debugger/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCodynexEditorBridgeClient.kt` | `docs/PUBLIC_SURFACES.md` + `docs/systems/shell/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/codynex/editorapp/CodynexEditorBridgeService.kt` | `docs/PUBLIC_SURFACES.md` + `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/codynex/editorapp/CodynexEditorToolchainPort.kt` | `docs/PUBLIC_SURFACES.md` + `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/codynex/editorapp/CodynexCompilerRuntime.kt` | `docs/PUBLIC_SURFACES.md` + `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftppEditorBridgeClient.kt` | `docs/systems/riftpp-core/README.md` + `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/cpp/CMakeLists.txt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftTrainDataTaskRunner.kt` | `docs/systems/riftllm-bridge/README.md` + `docs/systems/shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftToolHost.kt` | `docs/systems/mcp/tool-host/README.md` + `docs/systems/engine/README.md` |

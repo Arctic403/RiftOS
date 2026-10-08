@@ -90,7 +90,7 @@ Build/runtime boundary:
 
 No HTML page, JavaScript boot chain, `RiftAndroid` bridge or shell WebView participates in live OS boot.
 
-During same-process MainActivity destruction/recreation, `RiftMcpRuntime` keeps native shell, MCP host/server/relay, native Git and Vortex bridge independent of browser renderer/Activity lifetime. Codynex Editor transport is shell-owned through `RiftCodynexEditorBridgeClient`, not retained as an `RiftMcpRuntime` singleton. This does **not** survive Android process death: process death destroys those in-memory singletons and a new process reconstructs them lazily.
+During same-process MainActivity destruction/recreation, `RiftMcpRuntime` keeps native shell, MCP host/server/relay, native Git and Vortex bridge independent of browser renderer/Activity lifetime. C0.1 removed project-specific editor Binder clients from the shell. This does **not** survive Android process death: process death destroys those in-memory singletons and a new process reconstructs them lazily.
 
 ## Logical process model
 

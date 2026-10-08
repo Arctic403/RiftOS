@@ -99,8 +99,6 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftBuildManagedToolchains.kt",
         "src/main/java/com/riftos/app/RiftChatHandoff.kt",
         "src/main/java/com/riftos/app/RiftMcpEventBus.kt",
-        "src/main/java/com/riftos/app/RiftCodynexEditorBridgeClient.kt",
-        "src/main/java/com/riftos/app/RiftppEditorBridgeClient.kt",
         "src/main/java/com/riftos/app/RiftDiffEngineV2.kt",
         "src/main/java/com/riftos/app/RiftFileIdentityV2.kt",
         "src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt",

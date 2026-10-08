@@ -35,7 +35,7 @@ Android launches MainActivity
  -> start process-owned outbound MCP relay client
 ```
 
-`RiftMcpRuntime` lazily creates native shell, tool host, MCP server, relay client, native Git and Vortex bridge and keeps them outside WebView ownership. Codynex Editor transport is created separately by the native shell through `RiftCodynexEditorBridgeClient`.
+`RiftMcpRuntime` lazily creates native shell, tool host, MCP server, relay client, native Git and Vortex bridge outside WebView ownership. C0.1 removed the Codynex/Rift++ editor Binder clients and shell commands; editor-specific operation must be owned by independently installed software, not RiftShell.
 
 ## Android components
 
