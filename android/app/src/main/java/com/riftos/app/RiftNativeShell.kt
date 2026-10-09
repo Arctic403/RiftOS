@@ -402,7 +402,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "help" -> ShellOutcome(
                 "Native RiftShell core\n" +
                     "help  pwd  cd  home  drives  df  sysinfo  native  uptime  version\n" +
-                    "ps  kill <window-id>  apps  permissions [list|revoke <app-id> [capability|all]]\n" +
+                    "ps  kill <window-id>  apps  permissions [list|policy|audit|revoke <app-id> [capability|all]]\n" +
                     "ls [path]  tree [path]  stat <path>  cat <file>  head <file> [n]  tail <file> [n]\n" +
                     "write <file> <text>  touch <file>  mkdir <dir>  cp|mv <from> <to> [--force]  rm <path>\n" +
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
@@ -715,6 +715,13 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     private fun killCommand(cwd: String, args: MutableList<String>): ShellOutcome {
         val id = args.firstOrNull()?.trim().orEmpty()
         require(id.isNotBlank()) { "usage: kill <window-id>" }
+        if (id in setOf("kernel", "desktop", "shell")) {
+            // This terminal command cannot carry trusted administrator
+            // consent or a system-process elevation. Keep denying it.
+            RiftCoreSystemCapabilities.recordDenied(
+                appContext, "native-shell", "process.protected.kill"
+            )
+        }
         require(id !in setOf("kernel", "desktop", "shell")) { "protected native process cannot be terminated: $id" }
         val remote = RiftCoreShellWindowBridge.status()
         if (remote.optBoolean("online")) {
@@ -788,6 +795,15 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     private fun permissionsCommand(cwd: String, args: MutableList<String>): ShellOutcome {
         val prefs = appContext.getSharedPreferences("rift-native", Context.MODE_PRIVATE)
         val sub = args.removeFirstOrNull()?.lowercase() ?: "list"
+        if (sub == "policy" || sub == "audit") {
+            require(args.isEmpty()) { "usage: permissions [list|policy|audit|revoke <app-id> [capability|all]]" }
+            val value = if (sub == "policy") {
+                RiftCoreSystemCapabilities.status(appContext)
+            } else {
+                RiftCoreSystemCapabilities.audit(appContext)
+            }
+            return ShellOutcome(value.toString(2), cwd, value)
+        }
         if (sub == "revoke") {
             val appId = args.removeFirstOrNull()?.trim().orEmpty()
             require(appId.matches(Regex("^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$"))) {

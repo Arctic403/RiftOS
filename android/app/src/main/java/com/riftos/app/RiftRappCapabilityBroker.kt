@@ -555,6 +555,14 @@ class RiftRappCapabilityBroker(context: Context) {
                             )
                     )
 
+        if (!allowed) {
+            // C1.4-A: an ordinary fs.read/fs.write grant is never an
+            // admin grant. Audit attempted escapes; retain existing deny.
+            RiftCoreSystemCapabilities.recordDenied(
+                appContext, "rapp:$appId",
+                if (write) "system.fs.write" else "system.fs.read"
+            )
+        }
         require(allowed) {
             if (write) {
                 "Program writes are restricted to D: user/project data and this app's AppData"

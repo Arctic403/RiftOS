@@ -821,6 +821,41 @@ if (productionShell.includes('Process.killProcess(') ||
   fail('C1.3-E accidental graphical recovery Core process death or RAPP stop');
 }
 
+// C1.4-A: Core-only fail-closed system/admin capability policy.
+// This gate does NOT grant elevated operations; it preserves existing sandbox
+// boundaries and adds bounded durable denial audit introspection.
+const c14Policy = read(`${kotlinDir}/RiftCoreSystemCapabilities.kt`);
+const c14Broker = read(`${kotlinDir}/RiftRappCapabilityBroker.kt`);
+if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreSystemCapabilities.kt"')) {
+  fail('C1.4-A mandatory Core system policy source missing from Gradle');
+}
+for (const marker of [
+  'const val SCHEMA = "riftos.core.system-capabilities/1"',
+  'const val AUDIT_SCHEMA = "riftos.core.system-capability-audit/1"',
+  '"system.fs.read"', '"system.fs.write"', '"software.install"',
+  '"runtime.register"', '"process.protected.kill"',
+  'fun recordDenied(context: Context, actor: String, operation: String)',
+  'fun requireElevated(', 'throw SecurityException(',
+  '"adminElevationEnabled", false', '"defaultDecision", "deny"',
+  'MAX_ENTRIES = 64', 'MAX_SERIALIZED_BYTES = 24 * 1024',
+  '.commit()', 'fun audit(context: Context, limit: Int = 16)'
+]) if (!c14Policy.includes(marker)) {
+  fail(`C1.4-A Core admin deny/audit policy missing: ${marker}`);
+}
+if (!coreRuntime.includes('"systemCapabilities", RiftCoreSystemCapabilities.status(context)') ||
+    !c14Broker.includes('RiftCoreSystemCapabilities.recordDenied(') ||
+    !nativeShell.includes('RiftCoreSystemCapabilities.recordDenied(') ||
+    !nativeShell.includes('RiftCoreSystemCapabilities.status(appContext)') ||
+    !nativeShell.includes('RiftCoreSystemCapabilities.audit(appContext)')) {
+  fail('C1.4-A restricted system paths/processes require Core denial/audit/status');
+}
+if (c14Policy.includes('fun grant(') ||
+    c14Policy.includes('adminElevationEnabled", true') ||
+    c14Policy.includes('Runtime.getRuntime().exec(') ||
+    c14Policy.includes('android.app.Activity')) {
+  fail('C1.4-A policy must not introduce untrusted elevation or duplicate graphical consent');
+}
+
 // Historical Core/alternate client invariants remain; C1.3-D extends them.
 
 // C1.2-B2-B2: Core lease authorization gates admission AND queued delivery.

@@ -104,6 +104,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftCoreShellCapabilityRequests.kt",
         "src/main/java/com/riftos/app/RiftCorePackageEvents.kt",
         "src/main/java/com/riftos/app/RiftCorePackageGrants.kt",
+        "src/main/java/com/riftos/app/RiftCoreSystemCapabilities.kt",
         "src/main/java/com/riftos/app/RiftBrowserAndroidWebViewEngine.kt",
         "src/main/java/com/riftos/app/RiftBrowserAppHost.kt",
         "src/main/java/com/riftos/app/RiftBrowserEngine.kt",

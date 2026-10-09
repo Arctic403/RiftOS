@@ -126,6 +126,7 @@ object RiftCoreRuntime {
             .put("appSurfaces", surfaces(context).list())
             .put("coreApps", lifecycle(context).status())
             .put("shellRecovery", RiftCoreShellRecovery.status())
+            .put("systemCapabilities", RiftCoreSystemCapabilities.status(context))
             .put("desktopRequired", false)
             .put("shellRequired", false)
             .put("appExecutionIndependentOfDesktop", true)
