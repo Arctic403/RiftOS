@@ -582,6 +582,29 @@ for (const marker of [
   '"ipc-view"'
 ]) if (!nativeShell.includes(marker)) fail(`C1.3-A IPC control command missing: ${marker}`);
 
+// C1.3-B: isolated remote-shell process loss test. Refuse any
+// termination unless real distinct Core PID and exact :riftShellProbe name.
+for (const marker of [
+  'Terminate isolated shell probe (test)',
+  'private var lastVerifiedCorePid: Int = -1',
+  'isEnabled = false',
+  'lastVerifiedCorePid > 0 && pid != lastVerifiedCorePid',
+  'isExactRemoteProbeProcess()',
+  'Process.killProcess(pid)',
+  'terminateProbe.isEnabled = false',
+  'if (separate && present) corePid else -1',
+  'private fun isExactRemoteProbeProcess(): Boolean',
+  'File("/proc/self/cmdline")',
+  'packageName + ":riftShellProbe"'
+]) if (!remoteShell.includes(marker)) fail(`C1.3-B remote-only process termination guard missing: ${marker}`);
+for (const marker of ['Process.killProcess(', 'Process.sendSignal(']) {
+  if (coreIpcProvider.includes(marker) ||
+      nativeShell.includes(marker) ||
+      coreRuntime.includes(marker)) {
+    fail(`C1.3-B process termination must be isolated to test shell Activity: ${marker}`);
+  }
+}
+
 // C1.2-B2-B2: Core lease authorization gates admission AND queued delivery.
 // Input tickets capture the original focus revision so a refocus cannot
 // revive an input that was pending while another window owned focus.

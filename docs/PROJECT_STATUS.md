@@ -16,6 +16,16 @@ From `android/app/build.gradle.kts`:
 - version `0.11.11-relay-client`;
 - release minification disabled.
 
+## 2026-10-08 — C1.3-B remote process-loss proof SOURCE-only
+
+Remote read-only `:riftShellProbe` viewer now has a disabled-by-default test button that calls `Process.killProcess(Process.myPid())` **only** after authentic Core snapshot returns a distinct positive Core PID and the current Android process name exactly matches `packageName + ":riftShellProbe"`. Error paths disable it. No production Core or GUI kill path, no arbitrary PID input. Builder/source validator enforce guards. User-manual APK is required to prove Core PID/session/surface survive remote process termination, then explicit `core ipc-view` launches a new remote PID viewing the same Core RAPP. This is not auto reconnect, full RiftShell process migration or any Core crash proof.
+
+## 2026-10-08 — C1.3-A separate-process Binder IPC DEVICE PASS; B restart proof SOURCE next
+
+Manual RiftOS Builder #652/`37871709393`, source `e7ceae80`, Core PID 13231. Core-only disposable RAPP gen1/revision1, normal baseline 3 originals. `core ipc-view` launched remote shell probe with PID **15670**, different from Core PID **13231**; actual Android UI showed `Separate Android processes: true`, READY and typed Core nodes through read-only Binder IPC. Closing IPC viewer left Core RAPP running. Main graphical GUI persisted ACTION count1 and TEXT_INPUT `IPC_C13A`, remote IPC viewer reopened and rendered latest gen1/revision5, Core/shell PIDs unchanged. Closing remote left main GUI handling ACTION count2; main GUI close and disposable uninstall cleaned Core sessions/surfaces/queue, Core PID still 13231 and all three original RAPPs intact. **C1.3-A cross-process read-only IPC normal-path DEVICE PASS**, but process death and rebind untested.
+
+C1.3-B source candidate aims to deliberately terminate **only** validated remote `:riftShellProbe` process and confirm that main Core PID, RAPP gen, surface, state survive; subsequent explicit `core ipc-view` should relaunch remote viewer and read same Core frame. Not production full RiftShell process isolation, automatic recovery or writable IPC.
+
 ## 2026-10-08 — C1.3-A read-only Android Binder IPC remote shell SOURCE candidate
 
 C1.2-D2 was device-proven on user-manual RiftOS Builder #651, signed source `4e8ea83f`, PID 8312: Core-only disposable RAPP generation1/rev1 rendered in alternate graphical Activity, closing it kept Core app running, original graphical client accepted ACTION/TEXT_INPUT D2_GRAPHIC, remote D2 viewer reopened showing generation1 and updated rev5 frame, closing remote view left GUI functional (second ACTION count2). Normal GUI close and uninstall left Core apps/sessions/surfaces/queues zero, original three untouched.

@@ -12,6 +12,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import org.json.JSONObject
+import java.io.File
 
 /**
  * C1.3-A: read-only proof shell Activity in the :riftShellProbe process.
@@ -31,6 +32,8 @@ class RiftRemoteShellProbeActivity : Activity() {
     private lateinit var selectedAppId: String
     private lateinit var state: TextView
     private lateinit var content: LinearLayout
+    private lateinit var terminateProbe: Button
+    private var lastVerifiedCorePid: Int = -1
     private var visible = false
     private var renderedKey = ""
 
@@ -69,6 +72,21 @@ class RiftRemoteShellProbeActivity : Activity() {
             text = "Close IPC viewer"
             setOnClickListener { finish() }
         })
+        terminateProbe = Button(this).apply {
+            text = "Terminate isolated shell probe (test)"
+            isEnabled = false
+            setOnClickListener {
+                val pid = Process.myPid()
+                // Never terminate main RiftOS/Core or a process not exactly
+                // registered as this disposable, isolated proof shell.
+                check(lastVerifiedCorePid > 0 && pid != lastVerifiedCorePid &&
+                    isExactRemoteProbeProcess()) {
+                    "Remote shell termination refused: unverified process boundary"
+                }
+                Process.killProcess(pid)
+            }
+        }
+        root.addView(terminateProbe)
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val scroll = ScrollView(this).apply { addView(content) }
         root.addView(scroll, LinearLayout.LayoutParams(
@@ -98,6 +116,8 @@ class RiftRemoteShellProbeActivity : Activity() {
             JSONObject(reply.getString(RiftCoreSurfaceIpcProvider.RESULT_JSON)
                 ?: error("Core IPC reply missing JSON"))
         }.getOrElse { failure ->
+            lastVerifiedCorePid = -1
+            terminateProbe.isEnabled = false
             state.text = "Core IPC unavailable: " +
                 (failure.message ?: failure.javaClass.simpleName)
             return
@@ -109,6 +129,8 @@ class RiftRemoteShellProbeActivity : Activity() {
         val shellPid = Process.myPid()
         val separate = corePid > 0 && shellPid > 0 && corePid != shellPid
         val present = result.optBoolean("present", false)
+        lastVerifiedCorePid = if (separate && present) corePid else -1
+        terminateProbe.isEnabled = lastVerifiedCorePid > 0 && isExactRemoteProbeProcess()
         val revision = result.optLong("revision", -1L)
         val generation = result.optLong("attachmentGeneration", -1L)
         state.text = "app=" + selectedAppId + "\n" +
@@ -142,6 +164,17 @@ class RiftRemoteShellProbeActivity : Activity() {
             content.addView(nodeText(label))
         }
     }
+
+    /** Guard against ever terminating the main Core/desktop process. */
+    private fun isExactRemoteProbeProcess(): Boolean = runCatching {
+        File("/proc/self/cmdline").inputStream().use { stream ->
+            val bytes = ByteArray(256)
+            val count = stream.read(bytes)
+            count > 0 &&
+                String(bytes, 0, count, Charsets.UTF_8)
+                    .substringBefore('\u0000') == packageName + ":riftShellProbe"
+        }
+    }.getOrDefault(false)
 
     private fun nodeText(label: String): TextView = TextView(this).apply {
         text = label
