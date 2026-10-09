@@ -1048,6 +1048,51 @@ if (c14Registry.includes('PackageInstaller(') ||
   fail('C1.4-C2-A MUST remain a no-provider reversible registry proof');
 }
 
+// C1.4-C2-B1: READ-ONLY Android-attested runtime candidate discovery.
+// Enrollment and signer-pinned registry mutations are intentionally NOT
+// authorized by this checkpoint; actual B2 admission needs new exact tickets.
+const c14Discover = read(`${kotlinDir}/RiftExternalRuntimeProviders.kt`);
+const c14DiscoveryBody = c14Discover.split('fun discoverCandidates(): JSONObject')[1]
+  ?.split('private fun installedSignerSha256(')[0] ?? '';
+for (const marker of [
+  'fun discoverCandidates(): JSONObject',
+  'PackageManager.GET_META_DATA',
+  'meta.getString("riftos.runtime.provider.id")',
+  'meta.getString("riftos.runtime.executor.kind")',
+  'kind !in RiftAppExecutionKind.SUPPORTED',
+  'installedSignerSha256(pkg)', 'verifyInstalled(provider)',
+  'joinToString("\\u0000")',
+  '"admissionTarget", "core://runtime-providers/admit/$digest"',
+  'require(found.size <= MAX_PROVIDERS)',
+  '"enrollmentEnabled", false',
+  '"registryModified", false'
+]) if (!c14Discover.includes(marker)) {
+  fail(`C1.4-C2-B1 bounded read-only runtime candidate discovery missing: ${marker}`);
+}
+if (c14DiscoveryBody.includes('writeText(') ||
+    c14DiscoveryBody.includes('FileOutputStream(') ||
+    c14DiscoveryBody.includes('PackageInstaller(') ||
+    c14DiscoveryBody.includes('bindService(') ||
+    c14DiscoveryBody.includes('registerProvider(')) {
+  fail('C1.4-C2-B1 discovery must not mutate or execute an installed provider');
+}
+for (const marker of [
+  '"discover-providers" -> RiftCoreAdminConsent.discoverProviderCandidates(ctx, caller)',
+  'fun discoverProviderCandidates(context: Context, callerPid: Int)',
+  'authenticated(context, callerPid)',
+  'RiftCoreRuntime.runtimes(context).discoverCandidates()',
+  'extras?.getString("action") == "discover-providers"',
+  '"riftos.core.runtime-candidates/1"',
+  'Discover installed runtime candidates (read-only)',
+  'client.adminConsent("discover-providers")'
+]) if (!(coreIpcProvider + c14Tickets + productionClient + c14AdminUi)
+  .includes(marker)) {
+  fail(`C1.4-C2-B1 trusted read-only Core discovery/native UI gate missing: ${marker}`);
+}
+if (!adminUiAllowedActions.includes('"discover-providers"')) {
+  fail('C1.4-C2-B1 native admin action allowlist excludes read-only discovery');
+}
+
 // Historical Core/alternate client invariants remain; C1.3-D extends them.
 
 // C1.2-B2-B2: Core lease authorization gates admission AND queued delivery.

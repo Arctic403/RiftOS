@@ -1,5 +1,13 @@
 # RiftOS Roadmap
 
+## 2026-10-09 — LOCKED: major-milestone device validation; C1.4-C2-B1 READ-ONLY source checkpoint
+
+**User-directed cadence:** no forced user manual signed APK installs for every small C1.4/C1.5 patch. Run focused source/security/regression and ownership checks each patch; group integration; perform USER-triggered comprehensive signed Android tests at finished **C1.4-C2**, **C1.4-C3**, and **C1.5**, with an earlier device test **only** where Android-specific Binder, process, real provider binding/installation, privileged filesystem or rollback safety requires proof. All SOURCE/BUILD/DEVICE labels stay distinct. Only user dispatches Builder and installs signed RiftOS.
+
+**C1.4-C2-B1 staged SOURCE ONLY:** add read-only Android PackageManager discovery of independently installed generic runtime services advertising `com.riftos.runtime.EXECUTE_V1`. Each candidate must be exported/enabled, declare `riftos.runtime.provider.id` and `riftos.runtime.executor.kind` metadata, have a supported current execution kind, one installed Android signer, a verified fully qualified package/service and a pinned future admission target derived from identity+signer. Only authenticated production RiftShell may request the list via native Admin Approvals `discover-providers`. This checkpoint NEVER registers/enables/binds/executes a runtime or mutates `registry.json`; `enrollmentEnabled:false, registryModified:false` are explicit. **C2-B2 must implement independently authorized real enrollment and safe rollback/restore** before C2 full signed-device acceptance. C1.4-C2-A empty-registry transaction is still source only, not hardware-proven. Latest independently device-proven milestone remains C1.4-C1 (#669).
+
+
+
 ## 2026-10-09 — C1.4-C1 fully DEVICE PASS; C1.4-C2-A Core registry rollback SOURCE CANDIDATE
 
 **C1.4-C1 fully signed/device-proven on USER-built Builder #669.** Core real fixed temporary C: write/verify/rollback, Deny/Cancel, ticket replay, WRITE-scope expiry, native window-close revocation and a USER-approved actual production `:riftShell` PID 24499→1647 replacement all passed. Core PID24544 survived; the unused WRITE ticket was audited `revoked / shell-replaced`; temporary typed probe was cleaned and the original four protected RAPPs remained. No Core-root or blanket administrator access.

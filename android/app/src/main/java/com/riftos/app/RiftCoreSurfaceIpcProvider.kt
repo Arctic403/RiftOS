@@ -215,6 +215,7 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
                     "execute-registry-proof" -> RiftCoreAdminConsent.executeRegistryProof(
                         ctx, caller, bearer, operation, target)
                     "window-closed" -> RiftCoreAdminConsent.revokeForWindowClose(ctx, caller)
+                    "discover-providers" -> RiftCoreAdminConsent.discoverProviderCandidates(ctx, caller)
                     "status" -> RiftCoreAdminConsent.status(ctx)
                     else -> error("Core admin consent action not supported")
                 }.put("corePid", Process.myPid())

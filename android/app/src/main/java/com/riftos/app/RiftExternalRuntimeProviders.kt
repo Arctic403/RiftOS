@@ -156,6 +156,98 @@ class RiftExternalRuntimeProviders(context: Context) {
         return component
     }
 
+    /**
+     * C1.4-C2-B1: READ-ONLY installed external runtime discovery.
+     *
+     * A provider must advertise the normal generic Binder action AND declare
+     * exact service metadata keys. Its package/signer/service are obtained from
+     * Android PackageManager, never from an untrusted RAPP or supplied path.
+     * This does not enroll, enable, replace, launch or bind a provider.
+     *
+     * Later C2-B admission must re-resolve the installed signer and immutable
+     * target digest immediately before an authorized registry transaction.
+     */
+    fun discoverCandidates(): JSONObject {
+        val pm = app.packageManager
+        @Suppress("DEPRECATION")
+        val visible = pm.queryIntentServices(
+            Intent(PROVIDER_ACTION),
+            PackageManager.GET_META_DATA
+        )
+        require(visible.size <= 128) { "External runtime discovery exceeded bound" }
+        val found = LinkedHashMap<String, JSONObject>()
+        for (match in visible) {
+            val service = match.serviceInfo ?: continue
+            if (!service.enabled || !service.exported ||
+                service.packageName == app.packageName) continue
+            val meta = service.metaData ?: continue
+            val id = meta.getString("riftos.runtime.provider.id") ?: continue
+            val kind = meta.getString("riftos.runtime.executor.kind") ?: continue
+            val pkg = service.packageName
+            val name = service.name
+            if (!id.matches(SAFE_ID) || !kind.matches(SAFE_ID) ||
+                kind !in RiftAppExecutionKind.SUPPORTED ||
+                !pkg.matches(SAFE_PACKAGE) || !name.matches(SAFE_SERVICE) ||
+                !name.startsWith(pkg + ".")) continue
+            val signer = runCatching { installedSignerSha256(pkg) }.getOrNull()
+                ?: continue
+            val provider = Provider(id, kind, pkg, name, signer)
+            if (runCatching { verifyInstalled(provider) }.isFailure) continue
+            // Delimiter cannot appear in validated identity fields; target
+            // binds exact installed signer, package, component and kind.
+            val descriptor = listOf(id, kind, pkg, name, signer).joinToString("\u0000")
+            val digest = sha256(descriptor.toByteArray(Charsets.UTF_8))
+            val key = pkg + "/" + name
+            found[key] = JSONObject()
+                .put("id", id)
+                .put("executorKind", kind)
+                .put("package", pkg)
+                .put("service", name)
+                .put("signerSha256", signer)
+                .put("admissionTarget", "core://runtime-providers/admit/$digest")
+        }
+        require(found.size <= MAX_PROVIDERS) {
+            "Too many discovered external runtime candidates"
+        }
+        val ordered = JSONArray()
+        for (key in found.keys.sorted()) ordered.put(found.getValue(key))
+        return JSONObject()
+            .put("schema", "riftos.core.runtime-candidates/1")
+            .put("authority", "riftos-core")
+            .put("count", ordered.length())
+            .put("candidates", ordered)
+            .put("enrollmentEnabled", false)
+            .put("registryModified", false)
+    }
+
+    /**
+     * Reuses the same installed signer policy as provider execution. The
+     * certificate pin always comes from Android, not service metadata.
+     */
+    @Suppress("DEPRECATION")
+    private fun installedSignerSha256(packageName: String): String {
+        val pm = app.packageManager
+        val info = if (Build.VERSION.SDK_INT >= 33) {
+            pm.getPackageInfo(
+                packageName,
+                PackageManager.PackageInfoFlags.of(
+                    PackageManager.GET_SIGNING_CERTIFICATES.toLong()
+                )
+            )
+        } else {
+            pm.getPackageInfo(
+                packageName,
+                if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES
+                else PackageManager.GET_SIGNATURES
+            )
+        }
+        val certificates = if (Build.VERSION.SDK_INT >= 28) {
+            info.signingInfo?.apkContentsSigners?.map { it.toByteArray() }.orEmpty()
+        } else info.signatures?.map { it.toByteArray() }.orEmpty()
+        require(certificates.size == 1) { "Runtime provider signer ambiguous" }
+        return sha256(certificates.single())
+    }
+
     fun status(): JSONObject {
         val entries = JSONArray()
         for (p in providers()) {

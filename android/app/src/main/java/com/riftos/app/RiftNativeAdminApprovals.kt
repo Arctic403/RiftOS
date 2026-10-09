@@ -102,6 +102,7 @@ internal class RiftNativeAdminApprovals(
         button("Execute Core write and rollback once") { executeRollbackProof() }
         button("Execute Core empty registry and rollback once") { executeRegistryProof() }
         button("Revoke current approval") { revoke() }
+        button("Discover installed runtime candidates (read-only)") { discoverProviders() }
         button("Refresh Core ticket status") { refresh() }
         // More distinct test modes must remain reachable on small phones.
         desktop.attachContent("admin-permissions", ScrollView(activity).apply {
@@ -295,6 +296,36 @@ internal class RiftNativeAdminApprovals(
                 activity.runOnUiThread { if (currentTicket == ticket) currentTicket = null }
                 "Core revoked the ticket. No privileged effect executed."
             } else "Core rejected revocation."
+        }
+    }
+
+    /**
+     * C2-B1 never requests or approves runtime.register and never edits the
+     * registry. This is a Core-attested read-only inventory from Android PM.
+     */
+    private fun discoverProviders() {
+        val client = core ?: run { show("No authenticated Core IPC."); return }
+        perform {
+            val response = client.adminConsent("discover-providers")
+            val candidates = response.getJSONArray("candidates")
+            if (candidates.length() == 0) {
+                "No eligible external runtime services installed; zero registrations."
+            } else {
+                buildString {
+                    append("Eligible installed runtime services: ")
+                    append(candidates.length())
+                    append(". No registration performed. ")
+                    for (index in 0 until minOf(4, candidates.length())) {
+                        val item = candidates.getJSONObject(index)
+                        append("\n")
+                        append(item.getString("id")).append(" · ")
+                        append(item.getString("executorKind")).append(" · ")
+                        append(item.getString("package")).append("/")
+                        append(item.getString("service"))
+                    }
+                    if (candidates.length() > 4) append("\n…more available")
+                }
+            }
         }
     }
 

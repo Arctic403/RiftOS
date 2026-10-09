@@ -1,5 +1,13 @@
 # RiftOS Core ↔ RiftShell — canonical architecture (C1 series)
 
+## 2026-10-09 — C2-B1 installed runtime candidates, read-only Core authority SOURCE checkpoint
+
+Latest C1.4-C1 user-built #669 is DEVICE PASS. C1.4-C2-A source adds a reversible Core signer-stamped EMPTY registry proof, not actual provider enrollment. C2-B1 now adds `RiftExternalRuntimeProviders.discoverCandidates` to inspect independent Android-installed exported/enabled Binder runtime services advertising `com.riftos.runtime.EXECUTE_V1` with `riftos.runtime.provider.id` and `riftos.runtime.executor.kind` metadata. The installed PackageManager signer must be unique and the component must pass the same `verifyInstalled` validation used by runtime execution. Candidate result binds `id`, `kind`, `package`, `service`, `signerSha256` to a SHA-256 future enrollment target; length and provider count are bounded. Only the OS-attested production graphical Shell may invoke read-only `discover-providers` via Core admin Binder; Shell validates `riftos.core.runtime-candidates/1` and displays a strictly informational native Admin Approvals list. **No registration, ticket, runtime binding, APK installation or registry mutation** is available from discovery, and currently only `native-buffer-v1`/`quickjs-v1` executor kinds are admissible until generic expansion later.
+
+**Milestone test policy:** keep source/regression/preflight validation per patch, group C2-A/B1/B2 source checkpoints, and perform full physical signed C2 acceptance after implementation; early Android tests required only for unproven high-risk OS/security boundaries. Never infer device pass from source markers, and user controls Builder.
+
+
+
 ## 2026-10-09 — C1.4-C1 signed-device full acceptance; C1.4-C2-A registry canary SOURCE ONLY
 
 On USER-signed Builder #669, exact `system.fs.write` C1.4-C1 isolated rollback action and all consent negatives passed. With explicit USER permission, one guarded physical kill of OS-attested production RiftShell PID24499 caused automatic new shell PID1647; Core PID24544 and Core-owned disposable RAPP gen1 survived, and durable admin audit reported `revoked / shell-replaced` on previously approved unused WRITE ticket. Probe was cleaned; four protected RAPPs and Core remained intact. **C1.4-C1 fully device-proven; do not repeat**.

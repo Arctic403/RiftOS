@@ -1,5 +1,9 @@
 # RiftOS Patch History
 
+## 2026-10-09 — Major-milestone Android device testing policy and C1.4-C2-B1 source checkpoint
+
+User-approved test cadence now requires source/security/regression/ownership checks for each small patch but reserves manual signed physical-device acceptance for complete C1.4-C2, C1.4-C3 and C1.5 milestones, with earlier Android testing when high-risk Binder/process/package/rollback interfaces require proof. Only user dispatches Builder. Current C1.4-C1 is fully proven on signed #669; C2-A empty registry transaction is source-only and was blocked in last manual source-check by an ownership map omission fixed in `ff84000f`. This change introduces read-only external runtime service candidate discovery in Core (Android PackageManager id/kind/service/export/signer checks), authenticated Shell `discover-providers` action and dedicated `riftos.core.runtime-candidates/1` reply, native Admin Approvals inspection button, RiftOS+Builder source contracts and signed schema verifier. **No runtime registry writer/admission or new provider activation was introduced in C2-B1.** Validation at this checkpoint: 20/20 focused static textual interface/negative-effect checks and local RiftOS/Builder project audits; no npm full suite, Kotlin/Gradle build, signed APK, device proof or actual provider service bind. C2-B2 remains next, then combined C2 major acceptance.
+
 ## Historical provenance — not current execution authority
 
 **RiftCLI retired permanently during the October 7, 2026 cleanup.** Earlier RiftCLI JNI/C++, jobs, Batch V2, native build, N0/N1/N1.5/N1.6 gates and tests described below are historical evidence only. They are not installed/source requirements or valid instructions. Current authority belongs to the live source, bounded MCP/Local Agent, generic host boundaries, and the external RiftBuild Hosted provider. Relay `cli.*` event/ack/replay keys remain intentionally compatible wire protocol names, not the CLI runtime.

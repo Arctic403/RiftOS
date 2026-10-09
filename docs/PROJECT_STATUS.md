@@ -1,5 +1,11 @@
 # RiftOS Project Status
 
+## 2026-10-09 — Milestone device-test cadence LOCKED; C2-B1 candidate discovery SOURCE ONLY
+
+User approved batching small C1.4-C2/C3/C1.5 source patches and deferring routine signed-device acceptance until major milestones, with early real-device proof for changed Android/security-critical boundaries. User alone dispatches Builder and installs. C2-A current source implementation remains a zero-provider temporary registry transaction; NOT yet device-proven. C2-B1 now exposes ONLY read-only Core-backed Android PackageManager discovery of already installed external `com.riftos.runtime.EXECUTE_V1` services with metadata id/kind and Android-attested singleton signing certificate, service/export/intent validation and candidate digest. It neither issues administrator authorization nor registers/updates the runtime registry; no external provider execution was tested. Authenticated Shell/Core admin consent uses `discover-providers` with dedicated response `riftos.core.runtime-candidates/1`; native Admin Approvals has a read-only discovery button. C2-B2 real verified registration and atomic replace/restore is NEXT. Both C2-A and C2-B1 remain SOURCE ONLY with signed major C2 device acceptance pending.
+
+
+
 ## 2026-10-09 — Signed #669 C1.4-C1 COMPLETE; C1.4-C2-A isolated runtime-registry proof SOURCE ONLY
 
 User-authorized production RiftShell PID restart device-proved exact Core ticket revocation (`system.fs.write`, reason `shell-replaced`) while Core PID24544 and four protected RAPPs survived. Earlier C1.4-C1 canary effect/rollback/replay/deny/window close/expiry also passed; C1.4-C1 is FULL DEVICE PASS. Temporary disposable QA probe was stopped/uninstalled; final packages4, Core apps0, admin tickets0/grants0, canary absent, journal clear.

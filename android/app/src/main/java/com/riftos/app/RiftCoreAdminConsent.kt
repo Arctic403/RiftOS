@@ -308,6 +308,16 @@ internal object RiftCoreAdminConsent {
         }
     }
 
+    /**
+     * C1.4-C2-B1 diagnostic only: the exact remote production Shell asks Core
+     * to enumerate Android-attested runtime candidates. No token is granted,
+     * no package or runtime is installed, and no registry file is changed.
+     */
+    fun discoverProviderCandidates(context: Context, callerPid: Int): JSONObject {
+        authenticated(context, callerPid)
+        return RiftCoreRuntime.runtimes(context).discoverCandidates()
+    }
+
     fun status(context: Context): JSONObject = synchronized(lock) {
         expire(context)
         JSONObject().put("schema", SCHEMA)

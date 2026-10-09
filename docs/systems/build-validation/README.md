@@ -1,5 +1,13 @@
 # Build and Validation System
 
+## 2026-10-09 — Source-per-patch and major device acceptance; C2-B1 READ-ONLY checkpoint
+
+User locked a lower-friction workflow: source/security/ownership regression checks on each patch, appropriate integration checks, user-triggered signed/device acceptance for completed C1.4-C2, C1.4-C3, C1.5, plus early Android tests when a dangerous OS boundary requires proof. **Do not require device install after every small C2 source change**, and never represent source checks as Kotlin compilation or signed-device proof.
+
+C2-B1 source adds read-only Android-attested provider candidate enumeration via existing registered generic runtime service contract, authenticated production Shell `discover-providers` Binder action, `riftos.core.runtime-candidates/1` schema and native read-only Admin Approvals UI. RiftOS source validator, Builder preflight/self-tests and signed artifact schema checks require the new distinct discovery contract while forbidding registry/package mutation in this discovery path. C2-A zero-provider write/rollback remains independent; C2-B2 must implement real provider transaction/recovery. Both C2-A/B1 **SOURCE ONLY** until combined C2 milestone signed-device acceptance. User alone manually runs Builder and installs.
+
+
+
 ## 2026-10-09 — C1.4-C2-A signed-build preflight source candidate
 
 C1.4-C1 full signed-device acceptance on USER-built #669 includes one OS-attested real production RiftShell process restart and old unused WRITE approval revoked `shell-replaced`, with Core/four RAPPs preserved and disposable probe cleaned. New **C1.4-C2-A** source is **not yet compiled or device-proven**: Core journalled signer-stamped EMPTY runtime registry publish + mandatory restore, only if registry absent. The ordinary installed provider catalog remains untouched; zero external providers actually registered. RiftOS source validator and Builder shell preflight pin new Gradle Kotlin source, exact Core native consent action, Shell versioned response, restricted `providers: []`, audit, recovery and no general install/registration. Signed APK verifier requires the distinct `riftos.core.admin-registry-proof/1` marker. User manually runs Builder and installs APK; never auto-run the Builder.

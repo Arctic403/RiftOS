@@ -4,6 +4,19 @@
 
 **VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**
 
+## Device testing cadence — major-milestone acceptance (user decision 2026-10-09)
+
+**Default new policy:** Do not require a separately installed Android APK for every small patch, small subgate, documentation correction or source-only checkpoint. During C1.4-C2 and later C1.4-C3/C1.5, use explicit validation tiers:
+
+1. **Every source patch:** run focused source/contract regressions, security checks, dependency/source-ownership/docs validation and git diff. Fail closed on broken contracts. Report exactly which checks were *actually run*; source-marker inspection cannot be called executable regression or Kotlin compilation.
+2. **Integration checkpoints:** group tightly coupled patches and run the full available repository checks and **compile/preflight checks through the existing Builder flow only when appropriate and explicitly user-dispatched**. No background automatic release, APK installation or assistant-dispatched Builder; reserve unproven Android behavior as BUILD/DEVICE PENDING.
+3. **Major milestone signed-device acceptance:** after all **C1.4-C2-A/B** features are integrated, use one comprehensive user-manual signed build/install and C2 test matrix. Repeat per completed **C1.4-C3**, and **C1.5**, then final end-to-end acceptance. Record the exact installed source SHA, device evidence, Core/Shell/RAPP invariants, positive/negative permissions, recovery and rollback; intermediate source passes NEVER become DEVICE PASS.
+4. **Risk-based exception:** test earlier on real Android when changing a boundary whose safety or feasibility requires actual hardware/OS proof—e.g., Binder authentication, process/recovery identity, native foreground lifecycle, Android PackageInstaller, actual provider binding, privileged filesystem effects, signing, or destructive rollback. Fail closed until proven; do not stack critical changes on a known unsupported assumption.
+
+C2-A signer-stamped **EMPTY** runtime registry transaction is source-only, not an installed provider. C2-B1 read-only Android PackageManager candidate discovery is an integration checkpoint, not full C2 admission. C2-B2 actual signer-pinned registration and transactional restore is required before major **C2 DEVICE PASS**. Do not preemptively build a new RiftOS image just because a source checkpoint was pushed; user decides when to run Builder.
+
+**Preserve authority boundaries:** production Core owns app execution and policy, Shell owns graphical UI, RAPPs never receive implicit admin, legacy build paths remain prohibited, and every external provider remains signer/identity checked. RiftOS-Dev.rapp is separately LOCKED for after C1.4 and C1.5 and must not bypass milestone proofs.
+
 ## Owner-first capability rule
 
 If an active RiftOS subsystem is the canonical owner for a workflow and real development exposes a missing capability, extend that owner instead of routing around it through ad-hoc shell logic, MCP duplication, temporary files or another subsystem.
@@ -78,8 +91,9 @@ During Bootstrap-0, substantial AI-assisted repository work uses the existing Ri
    - final APK checks must validate packaged native/runtime assets.
 
 9. **Device/E2E**
-   - install the exact built APK when runtime behavior changed;
-   - retest the original request plus negative/failure paths.
+   - install the exact user-built signed APK at a defined major milestone or earlier when a changed Android/security-critical boundary requires physical proof;
+   - at interim source checkpoints, record DEVICE PENDING rather than demanding a reinstall for every small patch;
+   - retest the milestone's original requirements plus negative/failure paths.
 
 10. **Promote only with evidence**
    - distinguish source-validated, build-validated and device-proven states;
@@ -95,8 +109,8 @@ A small manual source fix may use the same narrow safe sequence:
 2. patch the smallest proven cause;
 3. update owner README/validator if the contract changed;
 4. source audit/diff;
-5. external Builder when native/package behavior changes;
-6. device abuse where runtime behavior changed.
+5. user-only external Builder at integration or risk-triggered/major milestone gates;
+6. signed-device validation at major milestones or where Android/security-critical risk requires it.
 
 Do not falsely mark source-only checks as Android build/device proof.
 
