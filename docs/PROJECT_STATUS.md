@@ -16,6 +16,10 @@ From `android/app/build.gradle.kts`:
 - version `0.11.11-relay-client`;
 - release minification disabled.
 
+## 2026-10-08 — C1.3-B guarded remote shell process loss DEVICE PASS (#653)
+
+Manual RiftOS Builder #653/`37875375661` signed source `31f4a8d4` installed, Core PID **19386**. Only disposable RAPP installed for test alongside original three. `core app-start` running gen1, immutable Core surface rev1. `core ipc-view` launched separate `:riftShellProbe` PID **20026**; actual Android UI tree showed Core PID19386, separate=true, READY, enabled remote-only termination button. Clicking it completed; Core PID19386 survived, running app gen1, one Core session, unchanged rev1 surface, no focus/queue. Explicit relaunch via `core ipc-view` yielded **new remote PID20077** and SAME Core PID19386, same gen1/rev1/READY frame. Closed remote viewer normally; `core app-stop` cleaned Core session/surface and disposable uninstall returned cleanupComplete=true. Final Core apps/sessions/surfaces/events zero, PID19386 unchanged, original three RAPPs untouched. **C1.3-B DEVICE PASS for isolated remote test shell process termination and manual reattach.** Full RiftShell still inside main process; production shell migration and automatic process recovery remain unproven C1.3 tasks.
+
 ## 2026-10-08 — C1.3-B remote process-loss proof SOURCE-only
 
 Remote read-only `:riftShellProbe` viewer now has a disabled-by-default test button that calls `Process.killProcess(Process.myPid())` **only** after authentic Core snapshot returns a distinct positive Core PID and the current Android process name exactly matches `packageName + ":riftShellProbe"`. Error paths disable it. No production Core or GUI kill path, no arbitrary PID input. Builder/source validator enforce guards. User-manual APK is required to prove Core PID/session/surface survive remote process termination, then explicit `core ipc-view` launches a new remote PID viewing the same Core RAPP. This is not auto reconnect, full RiftShell process migration or any Core crash proof.

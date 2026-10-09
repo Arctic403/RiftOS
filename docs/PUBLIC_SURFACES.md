@@ -21,6 +21,10 @@ This inventory separates live packaged authority from retained reference/compati
 | Vortex bridge/agents | `RiftVortexBridgeClient.kt`, `RiftVortexLocalAgent.kt` | Fixed local Binder/accessibility development surfaces. |
 | RiftLLM Dev/training service | `RiftLlmDevClient.kt`, `RiftTrainDataTaskRunner.kt`, `RiftNativeShellServices.kt` | Fixed bounded standalone RiftLLM API/training commands, including fixed frozen-B2 priming, no-argument RiftPack qualification start/status, and fixed no-argument real process-death recovery start/status. |
 
+## C1.3-B — Remote IPC client process termination/relaunch verified (#653)
+
+Signed manually built RiftOS source `31f4a8d4`, Builder #653, demonstrated that `:riftShellProbe` PID20026 can terminate itself through its explicitly guarded UI control while Core PID19386 and the disposable RAPP's Core generation1/revision1 READY frame survive. The user-triggered control only kills the exact validated remote-process PID, never Core. Explicit `core ipc-view` relaunched a new remote PID20077 and rendered the SAME Core frame/generation/revision over private Binder. Closed remote, stopped/uninstalled disposable; Core clean and original 3 RAPPs intact. **DEVICE PASS for manual remote shell-probe process recovery**, not production RiftShell migration, automatic recovery, Core death survival or writable/authenticated IPC.
+
 ## C1.3-A — Separate-process Core snapshot IPC device verification (#652)
 
 Manual Builder #652 source `e7ceae80` device-proved read-only Binder Core snapshot transport. Core PID13231 and different `:riftShellProbe` PID15670 rendered READY frame gen1/rev1; remote close did not stop Core-owned disposable app, normal GUI ACTION/TEXT_INPUT persisted `IPC_C13A`; reopened remote IPC viewer rendered gen1/rev5 updated text. Closing viewer did not stop GUI; further ACTION accepted count2. Core session/surface cleanup and uninstall succeeded with three originals intact. **DEVICE PASS for read-only separate-process frame IPC**, not full shell process crash recovery or authenticated input channel.
