@@ -103,6 +103,18 @@ class RiftShellRappHost(
         return true
     }
 
+    /**
+     * C1.3-E: restore a visual surface only if the original Core generation
+     * is still running. There is no executable BOOT in this path.
+     */
+    fun openFromRecovery(id: String, generation: Long): Boolean {
+        if (generation <= 0L || !handlesInstalled(id)) return false
+        return runCatching {
+            open(id, generation)
+            true
+        }.getOrDefault(false)
+    }
+
     fun onDesktopClosed(id: String): Boolean {
         val session = sessions.remove(id) ?: return false
         session.onFrame = null
@@ -120,7 +132,7 @@ class RiftShellRappHost(
         // Losing the shell Activity must NEVER stop Core execution.
     }
 
-    private fun open(id: String) {
+    private fun open(id: String, recoveryGeneration: Long? = null) {
         val packages = core.installed()
         val app = (0 until packages.length()).map { packages.getJSONObject(it) }
             .firstOrNull { it.optString("id") == id }
@@ -131,7 +143,8 @@ class RiftShellRappHost(
         require(adapter.presentation == app.getString("presentation")) {
             "RAPP adapter presentation mismatch"
         }
-        val state = core.start(id)
+        val state = if (recoveryGeneration == null) core.start(id)
+            else core.reattach(id, recoveryGeneration)
         val session = Session(id, app.getString("name"), adapter,
             state.getLong("attachmentGeneration"))
         sessions[id]?.onFrame = null

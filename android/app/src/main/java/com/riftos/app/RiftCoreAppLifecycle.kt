@@ -121,6 +121,22 @@ class RiftCoreAppLifecycle(context: Context) {
     fun openForShell(id: String): JSONObject = start(id)
 
     /**
+     * C1.3-E: a restarted graphical process may only reattach to an already
+     * executing Core session at the exact old generation. NEVER runs BOOT.
+     */
+    @Synchronized
+    fun reattachForShell(id: String, expectedGeneration: Long): JSONObject {
+        require(expectedGeneration > 0L) { "Recovery generation invalid" }
+        val existing = active[id] ?: error("Recovery cannot BOOT a stopped app")
+        require(existing.attachment.token == expectedGeneration &&
+            sessions.isAttached(existing.attachment)) {
+            "Recovery rejected stale or unattached Core generation"
+        }
+        return entryJson(existing).put("accepted", false)
+            .put("reason", "already-started").put("recoveryOnly", true)
+    }
+
+    /**
      * Core-only input endpoint for an attached generation. All authorization,
      * event ordering, queued-lease rechecks and execution remain within Core.
      * No caller-supplied callbacks, Activity, View or desktop state are kept.

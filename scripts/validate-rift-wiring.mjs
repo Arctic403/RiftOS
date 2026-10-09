@@ -740,6 +740,87 @@ if (!coreApplication.includes('RiftMcpRuntime.relayClient(this).start()') ||
   fail('C1.3-D Core process bootstrap must delegate remote-shell WebKit suffix to RiftBrowser owner');
 }
 
+// C1.3-E: REAL production shell process recovery is Core-owned. Only a
+// named PID authenticated via Binder may claim the old window snapshot;
+// actual Core RAPPs must be reattached to the same generation, never BOOTed.
+// Device promotion remains separate from these source-only checks.
+const coreShellRecovery = read(`${kotlinDir}/RiftCoreShellRecovery.kt`);
+const localAgent = read(`${kotlinDir}/RiftVortexLocalAgent.kt`);
+if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreShellRecovery.kt"') ||
+    !coreApplication.includes('RiftCoreShellRecovery.initialize(this)')) {
+  fail('C1.3-E Core-owned remote-shell recovery watchdog missing from compiled default process');
+}
+for (const required of [
+  'const val SCHEMA = "riftos.core.shell-recovery/1"',
+  'fun noteReport(pid: Int, state: JSONObject)',
+  'fun claim(pid: Int, context: Context): JSONObject',
+  'private const val MAX_ATTEMPTS = 3',
+  'private const val ATTEMPT_COOLDOWN_MS = 5_000L',
+  'if (!hasSeenShell || !foreground || ownerPid <= 0) return',
+  'if (processAlive(context, ownerPid))',
+  'RiftCoreRuntime.sessions(context).requestFocusFromShell(null)',
+  'context.startActivity(intent)',
+  'it.processName == context.packageName + ":riftShell"',
+  'fun killShellForProof(context: Context, disposableId: String)',
+  'disposableId == "c12b2a-input-probe-20261008"',
+  'Process.killProcess(old)',
+  'attempts >= MAX_ATTEMPTS',
+  'now - connectedSince >= 15_000L'
+]) if (!coreShellRecovery.includes(required)) {
+  fail(`C1.3-E bounded production shell crash recovery missing: ${required}`);
+}
+for (const required of [
+  'METHOD_SHELL_RECOVERY_CLAIM',
+  'METHOD_SHELL_REATTACH',
+  'RiftCoreShellRecovery.claim(',
+  'RiftCoreShellRecovery.noteReport(',
+  'reattachForShell(id, expected)'
+]) if (!coreIpcProvider.includes(required)) {
+  fail(`C1.3-E authenticated Core recovery/reattach Binder method missing: ${required}`);
+}
+if (!coreAppLifecycle.includes('fun reattachForShell(id: String, expectedGeneration: Long)') ||
+    !coreAppLifecycle.includes('Recovery cannot BOOT a stopped app')) {
+  fail('C1.3-E restoration may never BOOT a stale or stopped RAPP');
+}
+for (const required of [
+  'core.claimRecovery()',
+  'restoreDesktopWindows(restorePlan)',
+  'rapps.openFromRecovery(id, gen)',
+  'desktop.window.recoverBounds',
+  '.put("riftShellForeground", active && hasWindowFocus())',
+  '.put("riftShellForeground", false)'
+]) if (!productionShell.includes(required)) {
+  fail(`C1.3-E real shell snapshot and explicit background lifecycle missing: ${required}`);
+}
+for (const required of [
+  'fun openFromRecovery(id: String, generation: Long)',
+  'core.reattach(id, recoveryGeneration)',
+  'core.stop(id, session.generation)'
+]) if (!productionRappHost.includes(required)) {
+  fail(`C1.3-E Core generation-only graphical reattach missing: ${required}`);
+}
+for (const required of [
+  'RiftCoreSurfaceIpcProvider.METHOD_SHELL_RECOVERY_CLAIM',
+  'fun claimRecovery(): JSONObject',
+  'RiftCoreSurfaceIpcProvider.METHOD_SHELL_REATTACH',
+  'fun reattach(id: String, generation: Long)'
+]) if (!productionClient.includes(required)) {
+  fail(`C1.3-E versioned Core shell recovery IPC client missing: ${required}`);
+}
+if (!desktop.includes('"desktop.window.recoverBounds" -> recoverBounds(args)') ||
+    !desktop.includes('record.bounds = clampBounds(')) {
+  fail('C1.3-E native window restoration must clamp safe-zone bounds');
+}
+if (!coreRuntime.includes('.put("shellRecovery", RiftCoreShellRecovery.status())') ||
+    !localAgent.includes('kill-real-riftshell-process-proof')) {
+  fail('C1.3-E Core-only observability and guarded real PID crash proof missing');
+}
+if (productionShell.includes('Process.killProcess(') ||
+    productionRappHost.includes('Process.killProcess(') ||
+    coreShellRecovery.includes('RiftCoreRuntime.lifecycle(context).stop(')) {
+  fail('C1.3-E accidental graphical recovery Core process death or RAPP stop');
+}
+
 // Historical Core/alternate client invariants remain; C1.3-D extends them.
 
 // C1.2-B2-B2: Core lease authorization gates admission AND queued delivery.

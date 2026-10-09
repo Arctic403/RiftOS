@@ -92,6 +92,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftCoreShellLaunchQueue.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCoreShellRemoteUiBroker.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCoreShellWindowBridge.kt` | `docs/systems/core-shell/README.md` + `docs/systems/desktop/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftCoreShellRecovery.kt` | `docs/systems/core-shell/README.md` + `docs/systems/desktop/README.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRemoteShellExecutor.kt` | `docs/systems/core-shell/README.md` + `docs/systems/shell/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRemoteShellUiClient.kt` | `docs/systems/core-shell/README.md` + `docs/systems/browser/README.md` + `docs/PUBLIC_SURFACES.md` |
 | `android/app/src/main/java/com/riftos/app/RiftShellActivity.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/README.md` + `docs/systems/desktop/README.md` + `docs/systems/build-validation/README.md` |

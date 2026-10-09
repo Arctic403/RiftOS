@@ -27,6 +27,7 @@ class RiftCoreApplication : Application() {
         }
         if (currentProcess == applicationInfo.processName) {
             RiftCoreRuntime.initialize(this)
+            RiftCoreShellRecovery.initialize(this)
             // C1.3-D: MCP/relay belongs to the default Core Android process.
             RiftMcpRuntime.relayClient(this).start()
         } else if (currentProcess == packageName + ":riftShell" && Build.VERSION.SDK_INT >= 28) {

@@ -150,6 +150,7 @@ class RiftNativeDesktop(
         "desktop.window.maximize" -> maximize(args.optString("id"), "maximize")
         "desktop.window.restore" -> restore(args.optString("id"), "restore")
         "desktop.window.title" -> setTitle(args)
+        "desktop.window.recoverBounds" -> recoverBounds(args)
         "desktop.window.showDesktop" -> showDesktop()
         "desktop.window.state" -> stateObject("state", sequence)
         "desktop.launcher.update" -> updateLauncher(args)
@@ -543,6 +544,33 @@ class RiftNativeDesktop(
         focusInternal(record)
         syncTaskbar()
         return publish(reason)
+    }
+
+    /**
+     * C1.3-E native-only layout restoration from Core's authenticated
+     * previous desktop snapshot. All coordinates clamp to current safe zone.
+     * Never issues application launch or a Core stop.
+     */
+    private fun recoverBounds(args: JSONObject): JSONObject {
+        val id = args.optString("id")
+        val record = windows[id] ?: return stateObject("recover-bounds", sequence)
+        val rect = args.optJSONObject("framePx")
+            ?: return stateObject("recover-bounds", sequence)
+        val left = rect.optInt("left")
+        val top = rect.optInt("top")
+        val width = rect.optInt("width").coerceAtLeast(1)
+        val height = rect.optInt("height").coerceAtLeast(1)
+        require(width in 1..16384 && height in 1..16384 &&
+            kotlin.math.abs(left.toLong()) < 32768 &&
+            kotlin.math.abs(top.toLong()) < 32768) {
+            "Recovered desktop bounds outside bounded coordinate range"
+        }
+        record.maximized = false
+        record.minimized = false
+        record.bounds = clampBounds(Rect(left, top, left + width, top + height))
+        record.restoreBounds = null
+        applyRecordLayout(record)
+        return publish("recover-bounds")
     }
 
     private fun setTitle(args: JSONObject): JSONObject {

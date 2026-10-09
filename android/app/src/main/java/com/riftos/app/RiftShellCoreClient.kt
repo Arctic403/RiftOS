@@ -49,6 +49,8 @@ class RiftShellCoreClient(context: Context) {
                 RiftCoreShellRemoteUiBroker.SCHEMA
             RiftCoreSurfaceIpcProvider.METHOD_SHELL_DESKTOP_REPORT ->
                 RiftCoreShellWindowBridge.SCHEMA
+            RiftCoreSurfaceIpcProvider.METHOD_SHELL_RECOVERY_CLAIM ->
+                RiftCoreShellRecovery.SCHEMA
             else -> SCHEMA
         }
         require(json.getString("schema") == schema) { "Core IPC schema mismatch" }
@@ -70,6 +72,13 @@ class RiftShellCoreClient(context: Context) {
     fun start(id: String): JSONObject =
         call(RiftCoreSurfaceIpcProvider.METHOD_SHELL_START, id).getJSONObject("app")
 
+    fun reattach(id: String, generation: Long): JSONObject {
+        require(generation > 0L) { "Recovery Core generation invalid" }
+        return call(RiftCoreSurfaceIpcProvider.METHOD_SHELL_REATTACH, id,
+            Bundle().apply { putLong("attachmentGeneration", generation) })
+            .getJSONObject("app")
+    }
+
     fun stop(id: String, generation: Long): JSONObject {
         require(generation > 0L) { "Shell close attachment generation invalid" }
         return call(RiftCoreSurfaceIpcProvider.METHOD_SHELL_STOP, id,
@@ -83,6 +92,9 @@ class RiftShellCoreClient(context: Context) {
 
     fun pollUi(): JSONObject =
         call(RiftCoreSurfaceIpcProvider.METHOD_SHELL_UI_POLL)
+
+    fun claimRecovery(): JSONObject =
+        call(RiftCoreSurfaceIpcProvider.METHOD_SHELL_RECOVERY_CLAIM)
 
     fun reportDesktop(state: JSONObject): JSONObject =
         call(RiftCoreSurfaceIpcProvider.METHOD_SHELL_DESKTOP_REPORT,

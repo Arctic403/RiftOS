@@ -691,6 +691,20 @@ object RiftOsLocalAgent {
         if (op == "devlab") {
             val request = args.optJSONObject("request")
                 ?: throw IllegalArgumentException("Dev Lab request is required")
+            if (request.optString("action") == "kill-real-riftshell-process-proof") {
+                // EXPLICIT signed-device QA only: target the OS-attested
+                // production :riftShell PID with a live disposable probe.
+                // Never target Core, read-only :riftShellProbe or four
+                // protected installed production RAPPs.
+                val appContext = context.applicationContext
+                require(android.os.Build.VERSION.SDK_INT >= 28 &&
+                    android.app.Application.getProcessName() ==
+                    appContext.applicationInfo.processName) {
+                    "Real shell kill proof must execute inside default Core process"
+                }
+                return RiftCoreShellRecovery.killShellForProof(
+                    appContext, request.optString("appId"))
+            }
             if (request.optString("action") == "recreate-main-activity-proof") {
                 // Generic QA-only lifecycle control. Must target the real
                 // foreground RiftOS Activity, never Core or a remote process.

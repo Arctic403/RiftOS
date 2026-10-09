@@ -1,5 +1,10 @@
 # RiftOS Roadmap
 
+## Active 2026-10-09 — C1.3-E real production graphical shell death/restart SOURCE CANDIDATE (not device proven)
+
+C1.3-C (#655) and C1.3-D (#660) are separately **DEVICE PASS**. E adds Core-owned bounded `:riftShell` heartbeat/process watcher, automatic relaunch attempt, authenticated old window snapshot claim, safe-zone geometry/z/min/max/focus reconstruction, Core exact-attachment-generation no-BOOT RAPP reattach, and guarded disposable-only live graphical process-kill QA. Native shell remains a separate Android process with Core RAPP execution/state in default Core. **Android background Activity launch can be restricted**; actual signed-device automatic recovery must be proved rather than assumed. E must receive its own user-run manual Builder and live PID/generation/window/GUI/input/cleanup evidence; do not promote based on source checks or manual relaunch. Preserve all FOUR installed production RAPPs. C1.4 and C1.5 later. D remains promoted independent of any E failure.
+
+
 ## 2026-10-09 — C1.3-D DEVICE PASS; C1.3-E NEXT, independently gated
 
 **C1.3-C signed Builder #655 DEVICE PASS. C1.3-D signed Builder #660 DEVICE PASS.** Actual Android default launcher desktop, taskbar, native window manager and graphical RAPP renderer now run in real separate `:riftShell` process, distinct Core PID25396 and shell PID25436 (user-built #660 executable source `d43a30e`). Device-proven remote Core package/UI IPC, Core-only app BOOT gen1 → remote-shell rendering/input ACTION+TEXT_INPUT without duplicate BOOT, generation-scoped GUI close/cleanup, native Files and RiftBrowser WebView, and final user manual native RiftShell terminal `ps` output showing kernel/desktop/shell/focused terminal. Four protected RAPPs untouched. No new build needed for D.

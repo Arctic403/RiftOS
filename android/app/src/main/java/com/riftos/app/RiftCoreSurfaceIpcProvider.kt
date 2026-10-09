@@ -31,6 +31,7 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
         const val METHOD_SNAPSHOT = "snapshot"
         const val METHOD_SHELL_APPS = "shell.apps"
         const val METHOD_SHELL_START = "shell.start"
+        const val METHOD_SHELL_REATTACH = "shell.reattach"
         const val METHOD_SHELL_STOP = "shell.stop"
         const val METHOD_SHELL_FOCUS = "shell.focus"
         const val METHOD_SHELL_EVENT = "shell.event"
@@ -40,6 +41,7 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
         const val METHOD_SHELL_UI_POLL = "shell.ui.poll"
         const val METHOD_SHELL_UI_REPLY = "shell.ui.reply"
         const val METHOD_SHELL_DESKTOP_REPORT = "shell.desktop.report"
+        const val METHOD_SHELL_RECOVERY_CLAIM = "shell.recovery.claim"
         const val RESULT_JSON = "coreSnapshotJson"
         private const val MAX_APP_ID = 128
         private const val MAX_FRAME_NODES = 256
@@ -145,6 +147,16 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
                     .put("corePid", Process.myPid())
                     .put("app", state)
             }
+            METHOD_SHELL_REATTACH -> {
+                require(id.isNotBlank() && id.length <= MAX_APP_ID) {
+                    "Core recovery app ID invalid"
+                }
+                val expected = extras?.getLong("attachmentGeneration", -1L) ?: -1L
+                JSONObject().put("schema", "riftos.core.shell-control/1")
+                    .put("corePid", Process.myPid())
+                    .put("app", RiftCoreRuntime.lifecycle(ctx)
+                        .reattachForShell(id, expected))
+            }
             METHOD_SHELL_STOP -> {
                 require(id.isNotBlank() && id.length <= MAX_APP_ID) { "Core IPC app ID invalid" }
                 val expected = extras?.getLong("attachmentGeneration", -1L) ?: -1L
@@ -164,10 +176,15 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
                 .put("corePid", Process.myPid())
                 .put("launches", RiftCoreShellLaunchQueue.drain())
                 .put("commands", RiftCoreShellWindowBridge.drainCommands(Binder.getCallingPid()))
-            METHOD_SHELL_DESKTOP_REPORT -> RiftCoreShellWindowBridge.report(
-                Binder.getCallingPid(), extras?.getString("desktopState")
-                    ?: error("Core IPC desktop state missing"))
-                .put("corePid", Process.myPid())
+            METHOD_SHELL_RECOVERY_CLAIM -> RiftCoreShellRecovery.claim(
+                Binder.getCallingPid(), ctx)
+            METHOD_SHELL_DESKTOP_REPORT -> {
+                val state = extras?.getString("desktopState")
+                    ?: error("Core IPC desktop state missing")
+                val result = RiftCoreShellWindowBridge.report(Binder.getCallingPid(), state)
+                RiftCoreShellRecovery.noteReport(Binder.getCallingPid(), JSONObject(state))
+                result.put("corePid", Process.myPid())
+            }
             METHOD_SHELL_UI_REPLY -> RiftCoreShellRemoteUiBroker.respond(
                 extras ?: error("Core shell UI reply envelope missing"))
                 .put("corePid", Process.myPid())

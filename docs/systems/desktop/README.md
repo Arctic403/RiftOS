@@ -1,5 +1,10 @@
 # RiftDesktop Window Manager
 
+## 2026-10-09 — C1.3-E native graphical desktop snapshot/reconstruction SOURCE CANDIDATE
+
+C1.3-D signed Builder #660 DEVICE PASS established `RiftNativeDesktop` in real `:riftShell` Android process, distinct from Core, with native taskbar and window manager. C1.3-E source makes each foreground desktop state report include a shell lifecycle bit and allows default Core's `RiftCoreShellRecovery` to preserve the latest bounded 32-window observed state. A replacement shell claims that snapshot through authenticated Binder **before its first desktop report**; it reconstructs permitted built-in windows and only still-running exact-generation Core RAPP windows, ordered by saved z, with bounds clamped to current native workspace, minimized/maximized state and focus. New `desktop.window.recoverBounds` replays geometry but cannot launch/stop Core programs itself. `RiftShellRappHost.openFromRecovery` invokes generation-scoped no-BOOT Core reattach. Native transient browser page/form/editor UI history is not guaranteed restored from generic window metadata. This is an unbuilt/unproven C1.3-E candidate; Android background Activity start restrictions may prevent automatic shell restoration and must be evaluated with a separate manually installed signed APK and actual production process death, preserving four protected RAPPs. Do not confuse Activity recreation or the read-only diagnostic probe with actual graphical process recovery.
+
+
 ## Verification status
 
 **VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**

@@ -98,6 +98,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftRemoteShellUiClient.kt",
         "src/main/java/com/riftos/app/RiftCoreShellRemoteUiBroker.kt",
         "src/main/java/com/riftos/app/RiftCoreShellWindowBridge.kt",
+        "src/main/java/com/riftos/app/RiftCoreShellRecovery.kt",
         "src/main/java/com/riftos/app/RiftCoreShellLaunchQueue.kt",
         "src/main/java/com/riftos/app/RiftCoreAppExecutor.kt",
         "src/main/java/com/riftos/app/RiftCoreShellCapabilityRequests.kt",

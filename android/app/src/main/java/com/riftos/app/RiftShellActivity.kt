@@ -21,11 +21,13 @@ import org.json.JSONObject
  *
  * The Core singleton and Core app execution are forbidden in this process:
  * every RAPP launch/stop/focus/input/frame flows via RiftShellCoreClient.
- * Real-shell crash auto restart is a later C1.3-E gate.
+ * C1.3-E Core recovery claims an old real-shell window snapshot before
+ * this process publishes its new desktop; installed-device proof remains pending.
  */
 class RiftShellActivity : Activity() {
     companion object {
         const val EXTRA_OPEN_APP_ID = "riftos.shell.open-app-id"
+        const val EXTRA_RECOVERY_RESTART = "riftos.shell.recovery-restart"
     }
     private lateinit var core: RiftShellCoreClient
     private lateinit var desktop: RiftNativeDesktop
@@ -44,6 +46,7 @@ class RiftShellActivity : Activity() {
         override fun run() {
             if (ready && active && !isFinishing && !isDestroyed) {
                 val state = desktop.handle("desktop.window.state", JSONObject())
+                    .put("riftShellForeground", active && hasWindowFocus())
                 runCatching { stateReporter.execute {
                     runCatching { core.reportDesktop(state) }
                 } }
@@ -79,6 +82,9 @@ class RiftShellActivity : Activity() {
         Thread({ runCatching { workspaceWatcher.start() } },
             "rift-shell-workspace-watcher").apply { isDaemon = true }.start()
         core = RiftShellCoreClient(applicationContext)
+        // Claim before publishing any state: a new PID must read Core's old
+        // window snapshot before the replacement overwrites that lease.
+        val restorePlan = runCatching { core.claimRecovery() }.getOrNull()
         desktop = RiftNativeDesktop(
             activity = this, host = host,
             appOpenSink = ::openDesktopApp,
@@ -105,6 +111,11 @@ class RiftShellActivity : Activity() {
             JSONObject().put("apps", nativeLauncherEntries()))
         desktop.handle("desktop.window.bootstrap", JSONObject())
         ready = true
+        // Recreate graphical windows only; executable RAPPs are reattached
+        // to their existing Core-issued generation, NEVER restarted.
+        if (restorePlan?.optBoolean("restore") == true) {
+            restoreDesktopWindows(restorePlan)
+        }
         mainHandler.post(reportTick)
         refreshLauncher()
         intent?.getStringExtra(EXTRA_OPEN_APP_ID)
@@ -222,6 +233,45 @@ class RiftShellActivity : Activity() {
         }
     }
 
+    /**
+     * C1.3-E bounded native desktop reconstruction after real shell PID loss.
+     * The Core process contains the only authoritative RAPP execution state.
+     */
+    private fun restoreDesktopWindows(plan: JSONObject) {
+        val saved = plan.optJSONArray("windows") ?: return
+        val items = (0 until saved.length().coerceAtMost(32)).mapNotNull {
+            saved.optJSONObject(it)
+        }.sortedBy { it.optLong("z") }
+        for (item in items) {
+            val id = item.optString("id")
+            if (id.isBlank() || id.length > 128) continue
+            val gen = item.optLong("attachmentGeneration", -1L)
+            val opened = if (gen > 0L) {
+                // A stale generation is rejected by Core; cannot invoke BOOT.
+                rapps.openFromRecovery(id, gen)
+            } else {
+                runCatching { openDesktopApp(id); true }.getOrDefault(false)
+            }
+            if (!opened) continue
+            runCatching {
+                val frame = item.optJSONObject("framePx")
+                if (frame != null) desktop.handle("desktop.window.recoverBounds",
+                    JSONObject().put("id", id).put("framePx", frame))
+                if (item.optBoolean("maximized")) {
+                    desktop.handle("desktop.window.maximize", JSONObject().put("id", id))
+                }
+                if (item.optBoolean("minimized")) {
+                    desktop.handle("desktop.window.minimize", JSONObject().put("id", id))
+                }
+            }
+        }
+        val selected = plan.optString("activeId")
+        if (selected.isNotBlank() && selected != "null") {
+            runCatching { desktop.handle("desktop.window.focus",
+                JSONObject().put("id", selected)) }
+        }
+    }
+
     private fun restoreFocus() {
         if (!ready || !active || !hasWindowFocus()) return
         val state = desktop.handle("desktop.window.state", JSONObject())
@@ -261,6 +311,13 @@ class RiftShellActivity : Activity() {
         active = false
         if (ready) {
             runCatching { core.focus(null) }
+            // A normal Home/app switch is NOT a shell crash. Report its
+            // background lifecycle before Core's heartbeat watchdog fires.
+            val state = desktop.handle("desktop.window.state", JSONObject())
+                .put("riftShellForeground", false)
+            runCatching { stateReporter.execute {
+                runCatching { core.reportDesktop(state) }
+            } }
             browser.onPause()
             browserApps.onPause()
             uiEffects.pause()

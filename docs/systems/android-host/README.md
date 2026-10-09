@@ -1,5 +1,10 @@
 # Android Host
 
+## 2026-10-09 — C1.3-E Core-owned remote shell recovery SOURCE CANDIDATE
+
+After C1.3-D signed Builder #660 DEVICE PASS, the real desktop belongs to Android `:riftShell` while Core remains in the app's default process. C1.3-E adds `RiftCoreShellRecovery` from `RiftCoreApplication.onCreate` ONLY for that default Core process; the graphical Activity never owns Core's process watchdog. A reported foreground, OS-verified dead `:riftShell` process triggers at most three Android `startActivity` requests, spaced at least five seconds, with a 15-second healthy replacement requirement before crash budget reset. Ordinary `onPause`/Home reports background rather than initiating recovery. The default Core process continues RAPP executable sessions. Android may block background Activity launches even when `startActivity` returns without a visible new Activity; C1.3-E will not be device-promoted without automatic real shell PID change and desktop/window restoration in a new USER-manual signed build. A Core-side local QA hook targets only the exact known disposable input probe and OS-attested graphical shell PID, never Core or four protected installed apps. Existing `:riftShellProbe` remains read-only diagnostic. No real process has been killed during source editing.
+
+
 ## Verification status
 
 **VERIFIED AGAINST CURRENT SOURCE — 2026-09-30.**
