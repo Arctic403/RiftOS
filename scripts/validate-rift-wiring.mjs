@@ -634,6 +634,8 @@ const remoteUiClient = read(`${kotlinDir}/RiftRemoteShellUiClient.kt`);
 const coreUiBroker = read(`${kotlinDir}/RiftCoreShellRemoteUiBroker.kt`);
 const coreWindowBridge = read(`${kotlinDir}/RiftCoreShellWindowBridge.kt`);
 const coreLaunchQueue = read(`${kotlinDir}/RiftCoreShellLaunchQueue.kt`);
+const rappManager = read(`${kotlinDir}/RiftRappManager.kt`);
+const nativeSystemApps = read(`${kotlinDir}/RiftNativeSystemApps.kt`);
 for (const file of [
   'RiftShellActivity.kt', 'RiftShellRappHost.kt', 'RiftShellCoreClient.kt',
   'RiftRemoteShellExecutor.kt', 'RiftRemoteShellUiClient.kt',
@@ -780,8 +782,6 @@ for (const required of [
 // C1.1-P: package manager is Core authority; graphical Installed Apps is only a client.
 const corePackageEvents = read(`${kotlinDir}/RiftCorePackageEvents.kt`);
 const corePackageGrants = read(`${kotlinDir}/RiftCorePackageGrants.kt`);
-const rappManager = read(`${kotlinDir}/RiftRappManager.kt`);
-const nativeSystemApps = read(`${kotlinDir}/RiftNativeSystemApps.kt`);
 for (const required of [
   'object RiftCorePackageEvents', 'riftos.core.packages.change/1',
   'fun subscribe(', 'fun unsubscribe(', 'fun publish(',
