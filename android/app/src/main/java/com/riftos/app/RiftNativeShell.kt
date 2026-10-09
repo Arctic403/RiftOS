@@ -676,7 +676,10 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         protectedProcess("shell", "Native RiftShell")
 
         val activity = RiftMcpRuntime.activeActivity()
-        val state = activity?.nativeDesktopStateForShell()
+        val remote = RiftCoreShellWindowBridge.status()
+        val remoteOnline = remote.optBoolean("online")
+        val state = if (remoteOnline) remote.optJSONObject("state")
+            else activity?.nativeDesktopStateForShell()
         val windows = state?.optJSONArray("windows") ?: JSONArray()
         for (index in 0 until windows.length()) {
             val row = windows.optJSONObject(index) ?: continue
@@ -704,7 +707,8 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             cwd,
             nativeResult("ps")
                 .put("processes", processes)
-                .put("activityAvailable", activity != null)
+                .put("activityAvailable", remoteOnline || activity != null)
+                .put("remoteShellPid", remote.opt("shellPid"))
         )
     }
 
@@ -712,8 +716,21 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val id = args.firstOrNull()?.trim().orEmpty()
         require(id.isNotBlank()) { "usage: kill <window-id>" }
         require(id !in setOf("kernel", "desktop", "shell")) { "protected native process cannot be terminated: $id" }
+        val remote = RiftCoreShellWindowBridge.status()
+        if (remote.optBoolean("online")) {
+            val windows = remote.getJSONArray("windows")
+            require((0 until windows.length()).any {
+                windows.optJSONObject(it)?.optString("id") == id
+            }) { "window task not found in remote shell: $id" }
+            require(RiftCoreShellWindowBridge.offer("close", id)) {
+                "Real RiftShell cannot accept a bounded close request"
+            }
+            return ShellOutcome("requested close $id", cwd,
+                nativeResult("kill").put("id", id)
+                    .put("queuedForRemoteShell", true))
+        }
         val activity = RiftMcpRuntime.activeActivity()
-            ?: throw IllegalStateException("RiftOS activity is not available")
+            ?: throw IllegalStateException("RiftOS desktop is not available")
         val before = activity.nativeDesktopStateForShell().optJSONArray("windows") ?: JSONArray()
         require((0 until before.length()).any { before.optJSONObject(it)?.optString("id") == id }) {
             "window task not found: $id"
@@ -1183,9 +1200,17 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
 
     private fun browserCommand(cwd: String, args: MutableList<String>): ShellOutcome {
         val url = args.joinToString(" ").trim().ifBlank { "https://chatgpt.com" }
-        val activity = RiftMcpRuntime.activeActivity() ?: throw IllegalStateException("RiftOS activity is not available")
-        activity.openBrowserFromNativeShell(url)
-        return ShellOutcome("opened RiftBrowser window · $url", cwd, nativeResult("browser").put("url", url))
+        val activity = RiftMcpRuntime.activeActivity()
+        if (activity != null) {
+            activity.openBrowserFromNativeShell(url)
+        } else {
+            require(RiftCoreShellWindowBridge.offer("browser", url.take(2048))) {
+                "Remote RiftShell desktop is not available"
+            }
+        }
+        return ShellOutcome("requested RiftBrowser window · $url", cwd,
+            nativeResult("browser").put("url", url)
+                .put("remoteShell", activity == null))
     }
 
     private fun openCommand(cwd: String, args: MutableList<String>): ShellOutcome {
@@ -1194,9 +1219,18 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val builtins = setOf("files", "workspace-live", "terminal", "browser", "editor", "devlab", "tasks", "settings")
         val normalized = rawId.lowercase()
         val id = if (normalized in builtins) normalized else rawId
-        val activity = RiftMcpRuntime.activeActivity() ?: throw IllegalStateException("RiftOS activity is not available")
-        activity.openAppFromNativeShell(id)
-        return ShellOutcome("opened $id", cwd, nativeResult("open").put("id", id))
+        val activity = RiftMcpRuntime.activeActivity()
+        if (activity != null) {
+            activity.openAppFromNativeShell(id)
+        } else {
+            require(id.length <= 128 &&
+                RiftCoreShellWindowBridge.offer("open", id)) {
+                "Remote RiftShell desktop is not available or launch ID invalid"
+            }
+        }
+        return ShellOutcome("requested $id", cwd,
+            nativeResult("open").put("id", id)
+                .put("remoteShell", activity == null))
     }
 
     private fun copyConfined(source: File, target: File) {

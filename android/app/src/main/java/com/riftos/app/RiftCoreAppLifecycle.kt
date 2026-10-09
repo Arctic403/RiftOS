@@ -198,6 +198,23 @@ class RiftCoreAppLifecycle(context: Context) {
         }
     }
 
+    /**
+     * C1.3-D: an old graphical attachment must not terminate a newer Core
+     * generation following reattach, package change or late Binder dispatch.
+     */
+    @Synchronized
+    fun stopForShell(id: String, expectedGeneration: Long): JSONObject {
+        require(expectedGeneration > 0L) { "Shell stop generation invalid" }
+        val entry = active[id] ?: return JSONObject()
+            .put("schema", SCHEMA).put("id", id).put("stopped", false)
+            .put("state", "not-running")
+        require(entry.attachment.token == expectedGeneration &&
+            sessions.isAttached(entry.attachment)) {
+            "Shell stop rejected: Core app generation is stale"
+        }
+        return stop(id)
+    }
+
     /** An explicit user close/stop is a Core operation, not UI destruction. */
     @Synchronized
     fun stop(id: String): JSONObject {

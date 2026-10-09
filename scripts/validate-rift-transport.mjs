@@ -20,6 +20,7 @@ const localAgentBatch = read(k + 'RiftLocalAgentBatch.kt');
 const services = read(k + 'RiftNativeShellServices.kt');
 const headless = read(k + 'RiftHeadlessJsRuntime.kt');
 const main = read(k + 'MainActivity.kt');
+const productionShell = read(k + 'RiftShellActivity.kt');
 const desktop = read(k + 'RiftNativeDesktop.kt');
 const workspaceApps = read(k + 'RiftNativeWorkspaceApps.kt');
 const devLab = read(k + 'RiftNativeDevLab.kt');
@@ -63,7 +64,7 @@ const checks = [
   ['RiftBrowser owns file chooser and WebView app surfaces', browserWindow.includes('WebChromeClient.FileChooserParams') && browserWindow.includes('FILE_CHOOSER_REQUEST') && browserHost.includes('WebViewCompat.addWebMessageListener') && browserHost.includes('appOrigin(app.id)') && browserHost.includes('https://app-$token.riftos.local')],
   ['browser renderer crashes stay browser-scoped', crashGuard.includes('destroyDeadWebView') && crashGuard.includes('MAX_EVENTS = 16') && crashGuard.includes('MAX_EVENT_STORE_BYTES = 32 * 1024') && !crashGuard.includes('requestShellRecovery') && !crashGuard.includes('MainActivity')],
   ['browser compatibility bridge has no shell authority', !browserBridge.includes('RiftShellBridge') && !browserBridge.includes('rift_shell_result') && !adapter.includes('RiftShellMcp')],
-  ['native desktop and built-ins are Android-owned', main.includes('RiftNativeDesktop(') && main.includes('RiftNativeSystemApps(') && main.includes('RiftNativeWorkspaceApps(') && desktop.includes('class RiftNativeDesktop')],
+  ['native desktop and built-ins belong to real separate-process RiftShell', productionShell.includes('RiftNativeDesktop(') && productionShell.includes('RiftNativeSystemApps(') && productionShell.includes('RiftNativeWorkspaceApps(') && productionShell.includes('RiftShellRappHost(') && !productionShell.includes('RiftCoreRuntime.') && manifest.includes('android:process=":riftShell"') && desktop.includes('class RiftNativeDesktop')],
   ['native Files owns persisted SAF mounts', workspaceApps.includes('Intent.ACTION_OPEN_DOCUMENT_TREE') && workspaceApps.includes('takePersistableUriPermission') && workspaceApps.includes('FLAG_GRANT_READ_URI_PERMISSION') && workspaceApps.includes('FLAG_GRANT_WRITE_URI_PERMISSION') && workspaceApps.includes('isReadPermission') && workspaceApps.includes('isWritePermission') && workspaceApps.includes('DocumentFile.fromTreeUri') && workspaceApps.includes('releasePersistableUriPermission')],
   ['native Files external editor is bounded and rollback-protected', workspaceApps.includes('MAX_EDITOR_BYTES') && workspaceApps.includes('MAX_FILES_ROWS') && workspaceApps.includes('readDocumentBytes') && workspaceApps.includes('writeDocumentBytes') && workspaceApps.includes('writeDocumentBytes(document, display, original)') && workspaceApps.includes('Android provider write verification failed') && workspaceApps.includes('Android save failed and rollback was incomplete') && workspaceApps.includes('Editor target is not a file') && workspaceApps.includes('Editor save failed and previous file could not be restored')],
   ['Dev Lab is native and browser execution is explicitly separated', devLab.includes('object RiftNativeDevLab') && services.includes('Web execution/HTML preview is owned by RiftBrowser') && !hasWebKitDependency(workspaceApps)],

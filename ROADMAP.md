@@ -1,5 +1,10 @@
 # RiftOS Roadmap
 
+## Active 2026-10-09 — C1.3-D implementation underway (SOURCE ONLY, no signed device pass)
+
+C1.3-C signed Builder #655 is DEVICE PASS. **C1.3-D now migrates the default desktop/window manager and graphical RAPP client to a real independent `:riftShell` process**, connected to Core-owned execution via authenticated versioned bounded Binder IPC and distinct Core/shell PIDs. The new source also bridges Core-issued UI permissions, native terminal/installed packages, desktop window state and Core-first app launches while keeping the read-only `:riftShellProbe` separate. Update both RiftOS and Builder tests/docs together; follow normal user-manual Builder and real Android device gate. Do not infer success from sources alone. **C1.3-E NOT STARTED**: after D device PASS, separately prove killing/restarting the *actual* shell process leaves Core/RAPP alive and restores desktop/windows automatically. C1.4 capability permission elevation and C1.5 QuickJS retirement remain later.
+
+
 ## 2026-10-09 — C1.3-C DEVICE PASS; C1.3-D NEXT as separate gate
 
 User-manual signed Builder #655 installed source `8d7608f`. On-device disposable Core-only RAPP gen1 survived real `MainActivity.recreate()`, preserved PID7528/session/surface, reattached GUI and accepted manual ACTION/TEXT_INPUT `C13C_MANUAL_655`; Core terminal view confirmed committed text and advancing surface revision. Focus settled null in background, Core stop/uninstall fully cleaned test app and original three RAPPs remained. **C1.3-C device-proven**. **C1.3-D not started:** migrate actual desktop, taskbar, graphical windows/input and application surface rendering into its own real `:riftShell` process, while Core/RAPP execution remains independent; add versioned bounded authenticated Core↔shell transport; do not equate the existing remote diagnostic probe with real RiftShell. Build and device prove D separately, then C1.3-E real RiftShell process death/automatic restart + Core/RAPP survival proof as another separate gate. Manual Android Builder remains USER ONLY.

@@ -29,7 +29,8 @@ import kotlin.math.roundToInt
 class RiftNativeSystemApps(
     private val activity: Activity,
     private val desktop: RiftNativeDesktop,
-    private val shell: RiftShellExecutor
+    private val shell: RiftShellExecutor,
+    private val remoteCore: RiftShellCoreClient? = null
 ) {
     companion object {
         private const val MAX_TERMINAL_CHARS = 200_000
@@ -71,9 +72,9 @@ class RiftNativeSystemApps(
     private var terminal: TerminalState? = null
     private var tasks: TaskState? = null
     private var installedApps: InstalledAppsState? = null
-    private val corePackages by lazy {
-        RiftCoreRuntime.packages(activity.applicationContext)
-    }
+    private fun installedPackages(): JSONArray =
+        remoteCore?.installed()
+            ?: RiftCoreRuntime.packages(activity.applicationContext).listInstalled()
 
     private fun handles(id: String): Boolean = id.trim().lowercase() in NATIVE_IDS
 
@@ -430,10 +431,12 @@ class RiftNativeSystemApps(
         ))
         val state = InstalledAppsState(root, summary, rows, artifact, install)
         installedApps = state
-        state.listenerId = RiftCorePackageEvents.subscribe {
-            activity.runOnUiThread {
-                if (installedApps === state && !activity.isDestroyed) {
-                    refreshInstalledApps(state)
+        if (remoteCore == null) {
+            state.listenerId = RiftCorePackageEvents.subscribe {
+                activity.runOnUiThread {
+                    if (installedApps === state && !activity.isDestroyed) {
+                        refreshInstalledApps(state)
+                    }
                 }
             }
         }
@@ -443,7 +446,8 @@ class RiftNativeSystemApps(
                 state.summary.text = "Enter a .rapp artifact path under D:/Builds"
             } else {
                 operateInstalledApps(state) {
-                    RiftCoreRuntime.buildPlatform(activity.applicationContext).installRapp(path)
+                    remoteCore?.installRapp(path)
+                        ?: RiftCoreRuntime.buildPlatform(activity.applicationContext).installRapp(path)
                 }
             }
         }
@@ -453,7 +457,7 @@ class RiftNativeSystemApps(
 
     private fun refreshInstalledApps(state: InstalledAppsState) {
         if (installedApps !== state) return
-        val apps = runCatching { corePackages.listInstalled() }.getOrElse {
+        val apps = runCatching { installedPackages() }.getOrElse {
             state.summary.text = "Unable to read installed apps: ${it.message}"
             return
         }
@@ -503,9 +507,10 @@ class RiftNativeSystemApps(
                         .setNegativeButton("Cancel", null)
                         .setPositiveButton("Uninstall") { _, _ ->
                             operateInstalledApps(state) {
-                                RiftCoreRuntime.buildPlatform(
-                                    activity.applicationContext
-                                ).uninstallRapp(id)
+                                remoteCore?.uninstallRapp(id)
+                                    ?: RiftCoreRuntime.buildPlatform(
+                                        activity.applicationContext
+                                    ).uninstallRapp(id)
                             }
                         }
                         .show()

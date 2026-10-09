@@ -464,6 +464,8 @@ class RiftRappManager(context: Context) {
         val core = RiftCoreRuntime.lifecycle(appContext).start(id)
         val attached = core.getBoolean("attached")
         val presented = attached && RiftCoreAppLaunchRequests.requestLaunch(id)
+        val queuedForRemoteShell = attached && !presented &&
+            RiftCoreShellLaunchQueue.offer(id)
         return JSONObject()
             .put("schema", "riftbuild-rapp-launch-v1")
             .put("requestSchema", RiftCoreAppLaunchRequests.SCHEMA)
@@ -471,6 +473,7 @@ class RiftRappManager(context: Context) {
             .put("accepted", attached)
             .put("core", core)
             .put("presentationDispatched", presented)
+            .put("presentationQueuedForRemoteShell", queuedForRemoteShell)
             .put("state", if (presented) "launch-dispatched" else "core-running")
     }
 

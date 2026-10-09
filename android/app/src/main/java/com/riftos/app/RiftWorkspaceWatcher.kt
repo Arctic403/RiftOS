@@ -1,5 +1,6 @@
 package com.riftos.app
 
+import android.app.Activity
 import android.os.FileObserver
 import android.os.SystemClock
 import org.json.JSONObject
@@ -18,7 +19,7 @@ import java.util.concurrent.atomic.AtomicLong
  * is not the live built-in consumer.
  */
 class RiftWorkspaceWatcher(
-    activity: MainActivity,
+    activity: Activity,
     private val eventSink: (JSONObject) -> Unit,
     private val records: RiftWorkspaceRecords = RiftWorkspaceRecords.get(activity)
 ) {

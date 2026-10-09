@@ -96,8 +96,11 @@
             android:exported="false"
             android:resizeableActivity="true"
             android:windowSoftInputMode="adjustResize" />
+        <!-- C1.3-D: actual desktop/window manager/RAPP renderer reside in
+             :riftShell, NOT in Core or the read-only :riftShellProbe. -->
         <activity
-            android:name=".MainActivity"
+            android:name=".RiftShellActivity"
+            android:process=":riftShell"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|smallestScreenSize|uiMode"
             android:exported="true"
             android:launchMode="singleTask"
@@ -109,5 +112,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Old same-process desktop remains temporarily non-launchable
+             for migration compatibility; remove after D source parity. -->
+        <activity android:name=".MainActivity"
+            android:exported="false"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize" />
     </application>
 </manifest>

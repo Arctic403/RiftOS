@@ -623,6 +623,118 @@ for (const marker of ['Process.killProcess(', 'Process.sendSignal(']) {
   }
 }
 
+// C1.3-D: the PRODUCTION desktop/window manager and RAPP renderer now run
+// in :riftShell. The read-only :riftShellProbe remains a distinct diagnostic.
+// No graphical shell process may instantiate Core app execution singletons.
+const productionShell = read(`${kotlinDir}/RiftShellActivity.kt`);
+const productionRappHost = read(`${kotlinDir}/RiftShellRappHost.kt`);
+const productionClient = read(`${kotlinDir}/RiftShellCoreClient.kt`);
+const remoteExecutor = read(`${kotlinDir}/RiftRemoteShellExecutor.kt`);
+const remoteUiClient = read(`${kotlinDir}/RiftRemoteShellUiClient.kt`);
+const coreUiBroker = read(`${kotlinDir}/RiftCoreShellRemoteUiBroker.kt`);
+const coreWindowBridge = read(`${kotlinDir}/RiftCoreShellWindowBridge.kt`);
+const coreLaunchQueue = read(`${kotlinDir}/RiftCoreShellLaunchQueue.kt`);
+for (const file of [
+  'RiftShellActivity.kt', 'RiftShellRappHost.kt', 'RiftShellCoreClient.kt',
+  'RiftRemoteShellExecutor.kt', 'RiftRemoteShellUiClient.kt',
+  'RiftCoreShellRemoteUiBroker.kt', 'RiftCoreShellWindowBridge.kt',
+  'RiftCoreShellLaunchQueue.kt'
+]) if (!gradle.includes(`"src/main/java/com/riftos/app/${file}"`)) {
+  fail(`C1.3-D production remote shell mandatory Gradle source missing: ${file}`);
+}
+if (!/android:name="\.RiftShellActivity"[\s\S]*?android:process=":riftShell"[\s\S]*?<intent-filter>[\s\S]*?android\.intent\.action\.MAIN[\s\S]*?android\.intent\.category\.LAUNCHER/.test(manifest)) {
+  fail('C1.3-D actual default graphical launcher must run in independent :riftShell');
+}
+if (manifest.includes('android:process=":riftShellProbe"') === false ||
+    !manifest.includes('android:name=".RiftCoreSurfaceIpcProvider"')) {
+  fail('C1.3-D must preserve separate read-only probe and Core Binder provider');
+}
+for (const required of [
+  'class RiftShellActivity : Activity()', 'RiftNativeDesktop(',
+  'RiftNativeSystemApps(', 'RiftNativeWorkspaceApps(',
+  'RiftBrowserWindow(', 'RiftBrowserAppHost(', 'RiftShellRappHost(',
+  'RiftRemoteShellUiClient(', 'RiftShellCoreClient(',
+  'desktop.window.state', 'core.focus(null)', 'core.reportDesktop(state)'
+]) if (!productionShell.includes(required)) {
+  fail(`C1.3-D real graphical shell missing: ${required}`);
+}
+for (const required of [
+  'core.installed()', 'core.start(id)', 'core.snapshot(id)',
+  'core.offerEvent(session.id, session.generation, event)',
+  'core.stop(id, session.generation)', 'RiftRappAbsoluteView('
+]) if (!productionRappHost.includes(required)) {
+  fail(`C1.3-D remote RAPP renderer must delegate execution to Core IPC: ${required}`);
+}
+for (const forbidden of ['RiftCoreRuntime.', 'RiftCoreAppExecutor(', 'RiftRappHost(',
+  'RiftCoreAppSessions(', 'RiftMcpRuntime.relayClient(']) {
+  if (productionShell.includes(forbidden) || productionRappHost.includes(forbidden)) {
+    fail(`C1.3-D production RiftShell retained Core execution ownership: ${forbidden}`);
+  }
+}
+for (const required of [
+  'class RiftShellCoreClient(', 'contentResolver', 'resolver.call(',
+  'attachmentGeneration', 'RiftCoreSurfaceIpcProvider.METHOD_SHELL_EVENT',
+  'RiftCoreSurfaceIpcProvider.METHOD_SHELL_FOCUS',
+  'RiftCoreSurfaceIpcProvider.METHOD_SNAPSHOT',
+  'pid != Process.myPid()'
+]) if (!productionClient.includes(required)) {
+  fail(`C1.3-D authenticated bounded remote Core client missing: ${required}`);
+}
+for (const required of [
+  'Binder.getCallingUid()', 'Binder.getCallingPid()',
+  'uid == ctx.applicationInfo.uid', 'pid != Process.myPid()',
+  'ctx.packageName + ":riftShell"',
+  'RiftCoreRuntime.lifecycle(ctx).offerEvent(id, generation, event)',
+  'RiftCoreRuntime.lifecycle(ctx).stopForShell(id, expected)',
+  'RiftCoreRuntime.sessions(ctx)', 'METHOD_SHELL_DESKTOP_REPORT',
+  'METHOD_SHELL_UI_POLL', 'RiftCoreShellRemoteUiBroker.respond('
+]) if (!coreIpcProvider.includes(required)) {
+  fail(`C1.3-D Core must authenticate, bound and settle cross-process IPC: ${required}`);
+}
+for (const required of [
+  'RiftCoreShellCapabilityRequests.respondConsent(',
+  'RiftCoreShellCapabilityRequests.respondUiEffect(',
+  'private const val MAX_QUEUE = 64', 'fun poll(): JSONObject'
+]) if (!coreUiBroker.includes(required)) {
+  fail(`C1.3-D Core-owned capability tickets were not bridged: ${required}`);
+}
+for (const required of [
+  'ipc.pollUi()', 'ipc.respondConsent(', 'ipc.respondEffect(',
+  'AlertDialog.Builder(activity)', 'dispatchCommand(method, arg)'
+]) if (!remoteUiClient.includes(required)) {
+  fail(`C1.3-D remote shell UI work not delivered: ${required}`);
+}
+for (const required of [
+  'RiftCoreShellWindowBridge.status()', 'RiftCoreShellWindowBridge.offer("close", id)',
+  'RiftCoreShellWindowBridge.offer("open", id)',
+  'RiftCoreShellWindowBridge.offer("browser", url.take(2048))'
+]) if (!nativeShell.includes(required)) {
+  fail(`C1.3-D MCP shell commands still depend on in-process MainActivity: ${required}`);
+}
+for (const required of [
+  'private const val MAX_COMMANDS = 32', 'fun report(callingPid: Int, json: String)',
+  'fun drainCommands(callingPid: Int): JSONArray'
+]) if (!coreWindowBridge.includes(required)) {
+  fail(`C1.3-D Core remote desktop state bridge missing: ${required}`);
+}
+if (!coreLaunchQueue.includes('fun offer(id: String): Boolean') ||
+    !rappManager.includes('RiftCoreShellLaunchQueue.offer(id)')) {
+  fail('C1.3-D Core-first launch must remain independent of shell presentation');
+}
+for (const required of [
+  'private val remoteCore: RiftShellCoreClient? = null',
+  'remoteCore?.installRapp(path)', 'remoteCore?.uninstallRapp(id)',
+  'remoteCore?.installed()'
+]) if (!nativeSystemApps.includes(required)) {
+  fail(`C1.3-D native system window must use remote Core package authority: ${required}`);
+}
+if (!coreApplication.includes('RiftMcpRuntime.relayClient(this).start()') ||
+    !coreApplication.includes('WebView.setDataDirectorySuffix("riftShell")')) {
+  fail('C1.3-D Core relay/default-process ownership or shell WebView process suffix missing');
+}
+
+// Historical Core/alternate client invariants remain; C1.3-D extends them.
+
 // C1.2-B2-B2: Core lease authorization gates admission AND queued delivery.
 // Input tickets capture the original focus revision so a refocus cannot
 // revive an input that was pending while another window owned focus.

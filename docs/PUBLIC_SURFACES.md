@@ -1,5 +1,10 @@
 # RiftOS Public and Cross-Layer Surfaces
 
+## C1.3-D — real `:riftShell` IPC source candidate (2026-10-09, user-manual build/device pending)
+
+Production graphical RiftShell is the default Android launcher Activity `RiftShellActivity` declared with `android:process=":riftShell"`, distinct from the read-only `:riftShellProbe`. The shell owns desktop, taskbar, windows, RAPP rendering and Android input but cannot instantiate `RiftCoreRuntime` or `RiftCoreAppExecutor`. The Core-owned `RiftCoreSurfaceIpcProvider` retains existing read-only snapshot method and adds same-UID/exact-process-name-gated, bounded Core RAPP list/start/stop/focus/event, terminal, package, UI consent and desktop state operations. Public/private protocol schema markers: `riftos.core.shell-control/1`, `riftos.shell.event/1`, `riftos.core.shell-ui/1`, `riftos.shell.desktop-ipc/1`; Core still validates generation/focus and settles single-use effect/consent tickets. Shell can submit only supported graphical/input events (not BOOT or Core effect results); separate Core/UI ownership is verified by manifest/source/Gradle and signed DEX markers. Real installed-device proof needed before calling this public contract stable; C1.3-E automatic shell restart remains distinct and unimplemented.
+
+
 ## 2026-10-09 — C1.3-C DEVICE PASS / same-process Core execution contract
 
 Signed manual Builder #655 source `8d7608f` ran the verified disposable RAPP in Core and survived actual `MainActivity.recreate()` without Core process restart, extra BOOT, or new app generation. User screenshot and separate Core subscriber confirmed working ACTION and `C13C_MANUAL_655` TEXT_INPUT with generation1 and advancing immutable surface revisions. Background Core focus settled to null and cleanup left zero Core runtime state and the original three installed RAPPs. Production process-separated graphical client and IPC are NOT part of this contract: **C1.3-D NEXT** and **C1.3-E AFTER D** require separate user-manual signed device proofs.

@@ -2,6 +2,7 @@ package com.riftos.app
 
 import android.app.Application
 import android.os.Build
+import android.webkit.WebView
 import java.io.File
 
 /**
@@ -27,6 +28,13 @@ class RiftCoreApplication : Application() {
         }
         if (currentProcess == applicationInfo.processName) {
             RiftCoreRuntime.initialize(this)
+            // C1.3-D: MCP/relay belongs to the default Core Android process.
+            RiftMcpRuntime.relayClient(this).start()
+        } else if (currentProcess == packageName + ":riftShell" && Build.VERSION.SDK_INT >= 28) {
+            // Android WebView requires its own browser data directory per
+            // process; otherwise moving the real browser into RiftShell may
+            // fail due to the Core/browser helper process holding the lock.
+            WebView.setDataDirectorySuffix("riftShell")
         }
     }
 }
