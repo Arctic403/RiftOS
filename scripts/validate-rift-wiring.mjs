@@ -860,6 +860,12 @@ if (c14Policy.includes('fun grant(') ||
 // one-use *proof-only* admin consent. No actual privileged effects in B.
 const c14Tickets = read(`${kotlinDir}/RiftCoreAdminConsent.kt`);
 const c14AdminUi = read(`${kotlinDir}/RiftNativeAdminApprovals.kt`);
+// Check required native Core consent actions independently; future gates can
+// add actions without invalidating earlier C1.4 source protection checks.
+const adminUiClientBody = productionClient.split('fun adminConsent(')[1]
+  ?.split('fun claimRecovery(')[0] ?? '';
+const adminUiAllowedActions = adminUiClientBody
+  .split('require(action in setOf(')[1]?.split('))')[0] ?? '';
 for (const source of ['RiftCoreAdminConsent.kt', 'RiftNativeAdminApprovals.kt']) {
   if (!gradle.includes(`"src/main/java/com/riftos/app/${source}"`)) {
     fail(`C1.4-B mandatory source not compiled: ${source}`);
@@ -967,7 +973,8 @@ if (!coreApplication.includes('RiftCoreAdminRollbackProof.recover(this)') ||
     !coreRuntime.includes('"adminRollbackProof", RiftCoreAdminRollbackProof.status(context)') ||
     !coreIpcProvider.includes('"execute-rollback-proof" -> RiftCoreAdminConsent.executeRollbackProof(') ||
     !coreIpcProvider.includes('"window-closed" -> RiftCoreAdminConsent.revokeForWindowClose(') ||
-    !productionClient.includes('"execute-rollback-proof", "window-closed"')) {
+    !adminUiAllowedActions.includes('"execute-rollback-proof"') ||
+    !adminUiAllowedActions.includes('"window-closed"')) {
   fail('C1.4-C1 Core interrupted transaction recovery, authenticated Binder method or introspection missing');
 }
 for (const marker of [
@@ -1024,13 +1031,15 @@ for (const marker of [
   '"execute-registry-proof" -> RiftCoreAdminConsent.executeRegistryProof(',
   'RiftCoreAdminRegistryProof.recover(this)',
   '"adminRegistryProof", RiftCoreAdminRegistryProof.status(context)',
-  '"execute-registry-proof", "window-closed", "status"',
   'Select isolated runtime registry proof scope',
   'Execute Core empty registry and rollback once',
   'client.adminConsent("execute-registry-proof"'
 ]) if (!(coreIpcProvider + coreApplication + coreRuntime +
   productionClient + c14AdminUi).includes(marker)) {
   fail(`C1.4-C2-A trusted Core Binder + native UI or interrupted cleanup missing: ${marker}`);
+}
+if (!adminUiAllowedActions.includes('"execute-registry-proof"')) {
+  fail('C1.4-C2-A native admin allowlist excludes registry proof action');
 }
 if (c14Registry.includes('PackageInstaller(') ||
     c14Registry.includes('killProcess(') ||
