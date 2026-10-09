@@ -1,5 +1,10 @@
 # RiftOS Core ↔ RiftShell — canonical architecture (C1 series)
 
+## 2026-10-09 — C1.3-D actual separate desktop started; exact process-name Binder gate denied #659
+
+User manual Builder #659 run 37889666166 installed source bd6e0b13. Core PID 22863 survived, actual separate graphical desktop and taskbar rendered, but remote Installed Apps showed a failed Core IPC production-shell identity check, and native ps showed no authenticated remote PID. Four protected RAPPs remain intact; C1.3-D NOT device PASS. Authentication update: preserve Binder caller UID/PID positive/different from Core, compare PID and UID to Android ActivityManager running-process records and require exact packageName + ':riftShell' OS processName. If OS omits record, prior exact /proc cmdline check remains fail-closed. Reject wrong registry name and all same-UID-only or caller supplied claims, including read-only riftShellProbe. Generation-scoped Core event and stop validation unchanged. Follow-up requires USER manual Builder + installed-device IPC/native windows/disposable Core RAPP input proof. C1.3-E untouched.
+
+
 ## 2026-10-09 — C1.3-D second manual build source-gate correction: WebKit remains RiftBrowser-owned
 
 Manual Builder run `37887642001` failed before Kotlin/Gradle compilation because `RiftCoreApplication.kt` imported `android.webkit.WebView`, violating the deliberate RiftBrowser-only WebKit owner contract. The same-process Core still detects `:riftShell` during `Application.onCreate`, but now delegates process-specific setup to `RiftBrowserWindow.prepareRemoteShellWebViewDirectory()` (WebKit import and `WebView.setDataDirectorySuffix("riftShell")` live exclusively in allowlisted `RiftBrowserWindow.kt`). Initialization still executes before the `:riftShell` Activity constructs its browser, avoiding WebView data-directory conflicts. No weakening of the source validator or Gradle ownership allowlist. Source/Builder checks synchronized; user-manual signed build and actual Core-vs-production-shell PID/device RAPP proof still pending. **C1.3-E remains untouched.**

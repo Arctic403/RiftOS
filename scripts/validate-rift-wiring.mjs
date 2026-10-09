@@ -686,6 +686,8 @@ for (const required of [
   'Binder.getCallingUid()', 'Binder.getCallingPid()',
   'uid == ctx.applicationInfo.uid', 'pid != Process.myPid()',
   'ctx.packageName + ":riftShell"',
+  'manager.runningAppProcesses', 'process.pid == pid && process.uid == uid',
+  'registryName == expected', 'procName == expected',
   'RiftCoreRuntime.lifecycle(ctx).offerEvent(id, generation, event)',
   'RiftCoreRuntime.lifecycle(ctx).stopForShell(id, expected)',
   'RiftCoreRuntime.sessions(ctx)', 'METHOD_SHELL_DESKTOP_REPORT',

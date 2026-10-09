@@ -1,5 +1,7 @@
 package com.riftos.app
 
+import android.app.ActivityManager
+import android.content.Context
 import android.content.ContentProvider
 import android.content.ContentValues
 import android.database.Cursor
@@ -63,16 +65,38 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
         require(uid == ctx.applicationInfo.uid && pid > 0 && pid != Process.myPid()) {
             "Core IPC shell caller UID/PID rejected"
         }
-        val name = runCatching {
-            File("/proc/$pid/cmdline").inputStream().use { source ->
-                val bytes = ByteArray(256)
-                val count = source.read(bytes)
-                require(count > 0) { "Core IPC shell identity unreadable" }
-                String(bytes, 0, count, Charsets.UTF_8).substringBefore('\u0000')
+        val expected = ctx.packageName + ":riftShell"
+        // On current Android, /proc/<other-pid>/cmdline may be hidden even
+        // for a process sharing this application's UID. Query Android's
+        // process registry for the Binder-provided PID and UID instead.
+        // A real registry record is authoritative and MUST match exactly;
+        // :riftShellProbe and all other same-UID processes fail closed.
+        val manager = ctx.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val registryRecord = runCatching {
+            manager.runningAppProcesses?.firstOrNull { process ->
+                process.pid == pid && process.uid == uid
             }
         }.getOrNull()
-        require(name == ctx.packageName + ":riftShell") {
-            "Core IPC caller is not the production RiftShell process"
+        val registryName = registryRecord?.processName
+        if (registryRecord != null) {
+            require(registryName == expected) {
+                "Core IPC caller is not the production RiftShell process"
+            }
+        } else {
+            // Compatibility fallback if the OS withholds process enumeration:
+            // still require the exact kernel-visible name. Never accept UID
+            // alone, a caller-supplied name or an unauthenticated PID.
+            val procName = runCatching {
+                File("/proc/$pid/cmdline").inputStream().use { source ->
+                    val bytes = ByteArray(256)
+                    val count = source.read(bytes)
+                    require(count > 0) { "Core IPC shell identity unreadable" }
+                    String(bytes, 0, count, Charsets.UTF_8).substringBefore('\u0000')
+                }
+            }.getOrNull()
+            require(procName == expected) {
+                "Core IPC shell identity unavailable or mismatched"
+            }
         }
     }
 

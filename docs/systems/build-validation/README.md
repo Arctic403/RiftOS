@@ -1,5 +1,12 @@
 # Build and Validation System
 
+## 2026-10-09 — C1.3-D #659 successful manual build, real device authentication failure
+
+Manual signed Builder #659 (37889666166) installed RiftOS source bd6e0b13 and rendered real desktop/taskbar/Installed Apps UI. Core PID 22863 had zero Core applications/sessions/surfaces. Installed Apps failed with 'Core IPC caller is not the production RiftShell process' and Core ps returned remoteShellPid null. Runtime proof blocked: D not promoted. All four installed RAPPs protected, including Rift++ Compiler Lab; no disposable installed or modified.
+
+Source correction uses ActivityManager.runningAppProcesses to attest Binder callingPid/callingUid against trusted Android PID+UID and exact production :riftShell process name; if unavailable, old /proc check still requires exact name. Never accept same UID alone, read-only probe or caller-supplied identity. RiftOS wiring, Builder source markers and Builder selftests enforce this fail-closed rule. Focused static validation only; FULL new Kotlin/Gradle/APK and device proof pending USER-MANUAL Builder, followed by Core-vs-shell PIDs, installed-app/terminal/desktop IPC and disposable Core-first RAPP action/text. C1.3-E not started.
+
+
 ## 2026-10-09 — C1.3-D third manual Builder RED: eight source ownership entries corrected
 
 **User-manual Builder run `37888463412`** installed source input **`b9b708a1d4fa7de26166deafe2cc76408209e1b3`** into CI, passed `validate-rift-wiring.mjs` and `validate-rift-transport.mjs` (including real `:riftShell` and strict RiftBrowser-owned WebKit checks), but failed `scripts/validate-rift-docs.mjs` on **exactly eight undocumented Kotlin files**: `RiftCoreShellLaunchQueue.kt`, `RiftCoreShellRemoteUiBroker.kt`, `RiftCoreShellWindowBridge.kt`, `RiftRemoteShellExecutor.kt`, `RiftRemoteShellUiClient.kt`, `RiftShellActivity.kt`, `RiftShellCoreClient.kt`, and `RiftShellRappHost.kt`. The canonical `docs/SOURCE_OWNERSHIP.md` now registers each of those eight maintained C1.3-D sources exactly once, mapped to existing responsible Core-shell, desktop, public-surface, shell, browser, RiftBuild and build-validation READMEs. Source ownership remains separate from build/device proof; the strict validator remains unchanged. Focused ledger-format check: **8/8 exact unique entries PASS**. Full documentation/npm and Kotlin/Gradle checks have **not** been rerun on this corrected source; no C1.3-D APK is signed or installed. User alone dispatches the next manual Builder. C1.3-C #655 remains the last device-pass gate; C1.3-E untouched.
