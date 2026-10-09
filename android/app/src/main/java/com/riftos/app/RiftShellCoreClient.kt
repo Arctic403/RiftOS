@@ -57,6 +57,8 @@ class RiftShellCoreClient(context: Context) {
             RiftCoreSurfaceIpcProvider.METHOD_SHELL_ADMIN_CONSENT ->
                 if (extras?.getString("action") == "execute-rollback-proof") {
                     RiftCoreAdminRollbackProof.SCHEMA
+                } else if (extras?.getString("action") == "execute-registry-proof") {
+                    RiftCoreAdminRegistryProof.SCHEMA
                 } else {
                     RiftCoreAdminConsent.SCHEMA
                 }
@@ -111,7 +113,7 @@ class RiftShellCoreClient(context: Context) {
         operation: String = "", target: String = "", approved: Boolean = false
     ): JSONObject {
         require(action in setOf("request", "decide", "revoke", "consume-proof",
-            "execute-rollback-proof", "window-closed", "status")) {
+            "execute-rollback-proof", "execute-registry-proof", "window-closed", "status")) {
             "Invalid trusted admin UI action"
         }
         return call(RiftCoreSurfaceIpcProvider.METHOD_SHELL_ADMIN_CONSENT,

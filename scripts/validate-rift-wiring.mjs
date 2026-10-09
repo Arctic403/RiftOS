@@ -987,8 +987,56 @@ if (c14Rollback.includes('Process.killProcess(') ||
 // The Core C1.4-C1 effect already executes before its response reaches the
 // client: rejecting its valid dedicated schema would falsely report failure
 // after the one-use ticket is consumed. Preserve both exact response schemas.
-if (!/RiftCoreSurfaceIpcProvider\.METHOD_SHELL_ADMIN_CONSENT\s*->\s*if\s*\(extras\?\.getString\("action"\)\s*==\s*"execute-rollback-proof"\)\s*\{\s*RiftCoreAdminRollbackProof\.SCHEMA\s*\}\s*else\s*\{\s*RiftCoreAdminConsent\.SCHEMA\s*\}/.test(productionClient)) {
+if (!/RiftCoreSurfaceIpcProvider\.METHOD_SHELL_ADMIN_CONSENT\s*->\s*if\s*\(extras\?\.getString\("action"\)\s*==\s*"execute-rollback-proof"\)\s*\{\s*RiftCoreAdminRollbackProof\.SCHEMA\s*\}\s*else\s+if\s*\(extras\?\.getString\("action"\)\s*==\s*"execute-registry-proof"\)\s*\{\s*RiftCoreAdminRegistryProof\.SCHEMA\s*\}\s*else\s*\{\s*RiftCoreAdminConsent\.SCHEMA\s*\}/.test(productionClient)) {
   fail('C1.4-C1 Shell must validate rollback schema only for execute-rollback-proof and retain B consent schema otherwise');
+}
+
+// C1.4-C2-A: fixed empty provider-registry transaction, not a new provider
+// admission path. The real registry is never overwritten, and a Core crash
+// leaves a recoverable journal; no RAPP receives runtime.register authority.
+const c14Registry = read(`${kotlinDir}/RiftCoreAdminRegistryProof.kt`);
+if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreAdminRegistryProof.kt"')) {
+  fail('C1.4-C2-A Core registry proof source missing from Gradle');
+}
+for (const marker of [
+  'const val SCHEMA = "riftos.core.admin-registry-proof/1"',
+  'const val OPERATION = "runtime.register"',
+  'const val TARGET = "core://runtime-providers/registry.json#empty-c2a"',
+  'const val PENDING = "registryPending"',
+  'File(base, "system/runtime-providers/registry.json")',
+  'getPackageInfo(', 'GET_SIGNING_CERTIFICATES',
+  '"providers", JSONArray()', '"installedCoreSignerSha256"',
+  'check(!target.exists() && !scratch.exists())',
+  'prefs.edit().putBoolean(PENDING, true)',
+  'stream.fd.sync()', 'java.nio.file.Files.createLink(target.toPath(), scratch.toPath())',
+  'published.getJSONArray("providers").length() == 0',
+  'check(file.delete())', '.remove(PENDING).remove(DIR_CREATED).commit()',
+  'fun recover(context: Context)', 'fun writeAndRollback(context: Context)',
+  '"providerRegistered", false', '"registryRestored", true',
+  '"generalRuntimeRegistrationEnabled", false'
+]) if (!c14Registry.includes(marker)) fail(`C1.4-C2-A Core signer-stamped empty registry rollback guard missing: ${marker}`);
+for (const marker of [
+  'RiftCoreAdminRegistryProof.OPERATION', 'RiftCoreAdminRegistryProof.TARGET',
+  'fun executeRegistryProof(', 'RiftCoreAdminRegistryProof.writeAndRollback(context)',
+  '"isolated-registry-proof"', '"registry-restored"'
+]) if (!c14Tickets.includes(marker)) fail(`C1.4-C2-A Core ticket/scope/audit guard missing: ${marker}`);
+for (const marker of [
+  '"execute-registry-proof" -> RiftCoreAdminConsent.executeRegistryProof(',
+  'RiftCoreAdminRegistryProof.recover(this)',
+  '"adminRegistryProof", RiftCoreAdminRegistryProof.status(context)',
+  '"execute-registry-proof", "window-closed", "status"',
+  'Select isolated runtime registry proof scope',
+  'Execute Core empty registry and rollback once',
+  'client.adminConsent("execute-registry-proof"'
+]) if (!(coreIpcProvider + coreApplication + coreRuntime +
+  productionClient + c14AdminUi).includes(marker)) {
+  fail(`C1.4-C2-A trusted Core Binder + native UI or interrupted cleanup missing: ${marker}`);
+}
+if (c14Registry.includes('PackageInstaller(') ||
+    c14Registry.includes('killProcess(') ||
+    c14Registry.includes('addProvider(') ||
+    c14Registry.includes('providers", JSONArray().put(')) {
+  fail('C1.4-C2-A MUST remain a no-provider reversible registry proof');
 }
 
 // Historical Core/alternate client invariants remain; C1.3-D extends them.

@@ -31,6 +31,10 @@ class RiftCoreApplication : Application() {
             // fail-closed but does not destroy unrelated Core/RAPP services.
             runCatching { RiftCoreAdminRollbackProof.recover(this) }
                 .onFailure { android.util.Log.e("RiftCoreAdmin", "Rollback recovery failed", it) }
+            // C1.4-C2-A: recover a journalled temporary empty provider registry
+            // before Core runtime discovery; never erase a configured registry.
+            runCatching { RiftCoreAdminRegistryProof.recover(this) }
+                .onFailure { android.util.Log.e("RiftCoreAdmin", "Registry recovery failed", it) }
             RiftCoreRuntime.initialize(this)
             RiftCoreShellRecovery.initialize(this)
             // C1.3-D: MCP/relay belongs to the default Core Android process.

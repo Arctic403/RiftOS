@@ -54,8 +54,9 @@ internal class RiftNativeAdminApprovals(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             }
         addText("RiftOS administrator approvals", 19f).typeface = Typeface.DEFAULT_BOLD
-        addText("C1.4-B/C1 proof: only the fixed temporary C: canary may be written " +
-            "and rolled back. No installs, runtime registrations, or process termination.")
+        addText("C1.4-B/C1/C2-A proofs: fixed temporary C: canary or an isolated " +
+            "EMPTY runtime registry proof; both always roll back. No provider install, " +
+            "real registration, production package change or process termination.")
         scopeText = addText("Test scope: $operation on $target\n" +
             "Core controls the caller, signer, scope, 45-second expiry and one-time use.")
         statusView = addText("No pending administrator request.")
@@ -84,9 +85,22 @@ internal class RiftNativeAdminApprovals(
                 "with mandatory journalled rollback."
             show("Selected fixed test operation $operation; no ticket issued yet.")
         }
+        button("Select isolated runtime registry proof scope") {
+            if (currentTicket != null) {
+                show("Revoke or consume the prior approval before switching scope.")
+                return@button
+            }
+            operation = RiftCoreAdminRegistryProof.OPERATION
+            target = RiftCoreAdminRegistryProof.TARGET
+            scopeText?.text = "Test scope: $operation on $target\n" +
+                "Core may briefly create a signer-stamped EMPTY registry, " +
+                "then must restore the absent registry. No provider is registered."
+            show("Selected isolated empty runtime registry proof. No ticket issued.")
+        }
         button("Request scoped administrator test") { request() }
         button("Consume once — no privileged effect") { consume() }
         button("Execute Core write and rollback once") { executeRollbackProof() }
+        button("Execute Core empty registry and rollback once") { executeRegistryProof() }
         button("Revoke current approval") { revoke() }
         button("Refresh Core ticket status") { refresh() }
         // More distinct test modes must remain reachable on small phones.
@@ -156,6 +170,10 @@ internal class RiftNativeAdminApprovals(
                 val explanation = if (rollback) {
                     "Allow ONE isolated Core C: canary write, verification and " +
                         "mandatory immediate rollback? No production file is changed."
+                } else if (requestedOperation == RiftCoreAdminRegistryProof.OPERATION) {
+                    "Allow ONE Core-only EMPTY runtime registry creation, signer " +
+                        "verification and mandatory rollback? This does NOT " +
+                        "register, enable or install any runtime provider."
                 } else {
                     "Allow ONE no-effect authorization proof? " +
                         "This grants NO system-file access."
@@ -187,6 +205,9 @@ internal class RiftNativeAdminApprovals(
                 if (operation == RiftCoreAdminRollbackProof.OPERATION) {
                     "Core approved ONE fixed C: canary write-and-rollback test. " +
                         "Execute it once before the 45-second expiry, or revoke."
+                } else if (operation == RiftCoreAdminRegistryProof.OPERATION) {
+                    "Core approved ONE empty registry/rollback proof; no provider installation. " +
+                        "Execute before 45-second expiry or revoke."
                 } else "Core approved ONE no-effect ticket. Consume or revoke it before expiry."
             } else "Core denied/cancelled the request; zero elevated privileges."
         }
@@ -231,6 +252,37 @@ internal class RiftNativeAdminApprovals(
             } else {
                 "Core did not verify a completed rollback transaction."
             }
+        }
+    }
+
+    /**
+     * C1.4-C2-A: never allows a caller-supplied provider, registry path or
+     * signer pin. Only the fixed Core journalled empty registry transaction.
+     */
+    private fun executeRegistryProof() {
+        if (operation != RiftCoreAdminRegistryProof.OPERATION ||
+            target != RiftCoreAdminRegistryProof.TARGET) {
+            show("Select the isolated empty runtime registry proof scope first.")
+            return
+        }
+        if (!activity.hasWindowFocus()) {
+            show("Core registry proof requires trusted window foreground.")
+            return
+        }
+        val bearer = currentTicket ?: run { show("No approved registry ticket."); return }
+        val client = core ?: run { show("No Core IPC available."); return }
+        perform {
+            val response = client.adminConsent("execute-registry-proof", bearer,
+                RiftCoreAdminRegistryProof.OPERATION, RiftCoreAdminRegistryProof.TARGET)
+            if (response.optBoolean("transactionCommitted") &&
+                response.optBoolean("rolledBack") &&
+                response.optBoolean("registryRestored") &&
+                !response.optBoolean("providerRegistered", true) &&
+                !response.optBoolean("pendingJournal", true)) {
+                activity.runOnUiThread { if (currentTicket == bearer) currentTicket = null }
+                "Core verified its installed signer, wrote and removed the EMPTY " +
+                    "registry canary. No provider registered, no journal or registry left."
+            } else "Core did not prove complete empty registry rollback."
         }
     }
 

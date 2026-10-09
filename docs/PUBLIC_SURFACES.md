@@ -1,5 +1,11 @@
 # RiftOS Public and Cross-Layer Surfaces
 
+## 2026-10-09 — C1.4-C2-A isolated runtime registry proof surface (SOURCE ONLY)
+
+C1.4-C1 was fully device-proven via USER-signed #669 and actual real RiftShell PID change with old approved system.fs.write ticket audit `revoked / shell-replaced`. Newly staged C2-A reuses the exact native-only `shell.admin.consent` Core Binder gateway with operation `runtime.register` and fixed target `core://runtime-providers/registry.json#empty-c2a`. The new action `execute-registry-proof` returns **`riftos.core.admin-registry-proof/1`**, validated ONLY for that action by `RiftShellCoreClient`; all original B/C1 schemas persist. Core enforces signer/PID/UID, 45-second one-use tickets, foreground lease, durable audit and exact-target match; Core owns a journalled temporary EMPTY registry publish/verify/delete and recovery on startup. Read-only `core status.adminRegistryProof` reports pending journal/existing registry without ticket contents. This is **not** an API for actual provider enrollment or generalized runtime register/install authority: the provider array is always empty and configured registry is never overwritten. No external RAPP or terminal may invoke the administrative Binder mutation. SOURCE ONLY pending user-manual signed build/device QA; C2-B real provider admission, C2/C3 and C1.5 are future gates.
+
+
+
 ## 2026-10-09 — Authenticated admin IPC has action-specific response schemas
 
 The shell.admin.consent request schema stays riftos.shell.admin-consent-request/1. B actions request, decide, revoke, consume-proof, window-closed, and status return riftos.core.admin-consent/1. Only execute-rollback-proof returns riftos.core.admin-rollback-proof/1, including Core PID and fixed transaction result. The Core already produced this schema on signed #668, but Shell was incorrectly requiring admin-consent for all actions. The source correction selects the exact schema from the recognized action and retains existing PID checks; this does not grant any additional authority. C1 effect still lacks signed device proof, and this correction needs a new USER-MANUAL Builder release.

@@ -129,6 +129,7 @@ object RiftCoreRuntime {
             .put("systemCapabilities", RiftCoreSystemCapabilities.status(context))
             .put("adminConsent", RiftCoreAdminConsent.status(context))
             .put("adminRollbackProof", RiftCoreAdminRollbackProof.status(context))
+            .put("adminRegistryProof", RiftCoreAdminRegistryProof.status(context))
             .put("desktopRequired", false)
             .put("shellRequired", false)
             .put("appExecutionIndependentOfDesktop", true)

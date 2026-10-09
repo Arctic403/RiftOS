@@ -1,5 +1,15 @@
 # RiftOS Roadmap
 
+## 2026-10-09 — C1.4-C1 fully DEVICE PASS; C1.4-C2-A Core registry rollback SOURCE CANDIDATE
+
+**C1.4-C1 fully signed/device-proven on USER-built Builder #669.** Core real fixed temporary C: write/verify/rollback, Deny/Cancel, ticket replay, WRITE-scope expiry, native window-close revocation and a USER-approved actual production `:riftShell` PID 24499→1647 replacement all passed. Core PID24544 survived; the unused WRITE ticket was audited `revoked / shell-replaced`; temporary typed probe was cleaned and the original four protected RAPPs remained. No Core-root or blanket administrator access.
+
+**C1.4-C2-A is now SOURCE ONLY; not signed/compiled or device-proven.** The first runtime-management proof deliberately does not register a provider. It adds an exact-scope native `runtime.register` consent for `core://runtime-providers/registry.json#empty-c2a`. After installed-APK-signer attestation and one-use PID/TTL-bound Core ticket consumption, Core may temporarily create a valid **EMPTY** `riftos-runtime-providers/1` registry (`providers: []`) in the previously absent private path, durably journal first, fsync/publish/verify, then obligatorily remove it and restore the initially absent registry/directory. Existing nonempty or even empty registry files are NEVER overwritten, no provider is admitted or activated, and a Core startup recovery only removes exact journalled proof bytes. The ordinary provider resolver retains signer validation and its original external-runtime fallback. All new source/Builder/signed-APK contracts are gated; USER alone dispatches signed Builder. Positive and negative Android proof, crash recovery and four RAPP preservation MUST be checked before promoting C2-A.
+
+**C2-B onward** must actually admit Android installed provider components with trusted signer pinning, exact user-approved service/executor identity, atomic replace/restore and negative tests, then C2/C3 system installer / scoped operations. No assumption that this empty-registry proof alone implements provider registration. C1.5 extracts embedded language engines only AFTER provider admission/rollback proves device-safe.
+
+
+
 ## 2026-10-09 — C1.4-C1 #668 installed; response validation correction awaits device build
 
 Signed Builder #668, manually dispatched and installed, proved Core/Shell processes, four RAPPs and clean C1 status. A deep IPC review uncovered a response-schema mismatch for the single real execute-rollback-proof action, now corrected solely in Shell response validation and guarded by RiftOS/Builder contracts. Original consent actions remain unchanged. Next user-only Builder/install should prove the new APK, then test exact temporary C: write/rollback, ticket replay/deny/revoke/expiry, native close revocation and no lingering journal. Do not promote C1 until hardware proof. C2/C3 and C1.5 remain future gates.

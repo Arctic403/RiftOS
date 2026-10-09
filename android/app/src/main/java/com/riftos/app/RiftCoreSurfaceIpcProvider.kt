@@ -212,6 +212,8 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
                         ctx, caller, bearer, operation, target)
                     "execute-rollback-proof" -> RiftCoreAdminConsent.executeRollbackProof(
                         ctx, caller, bearer, operation, target)
+                    "execute-registry-proof" -> RiftCoreAdminConsent.executeRegistryProof(
+                        ctx, caller, bearer, operation, target)
                     "window-closed" -> RiftCoreAdminConsent.revokeForWindowClose(ctx, caller)
                     "status" -> RiftCoreAdminConsent.status(ctx)
                     else -> error("Core admin consent action not supported")

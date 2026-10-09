@@ -47,7 +47,9 @@ internal object RiftCoreAdminConsent {
     private fun validScope(operation: String, target: String): Boolean =
         (operation == "system.fs.read" && target == "/C:/System") ||
             (operation == RiftCoreAdminRollbackProof.OPERATION &&
-                target == RiftCoreAdminRollbackProof.TARGET)
+                target == RiftCoreAdminRollbackProof.TARGET) ||
+            (operation == RiftCoreAdminRegistryProof.OPERATION &&
+                target == RiftCoreAdminRegistryProof.TARGET)
 
     @Suppress("DEPRECATION")
     private fun installedSigner(context: Context): String {
@@ -227,6 +229,49 @@ internal object RiftCoreAdminConsent {
             } catch (error: Exception) {
                 RiftCoreSystemCapabilities.recordDecision(
                     context, ACTOR, operation, "failed", "transaction-rejected"
+                )
+                throw error
+            }
+        }
+    }
+
+    /**
+     * C1.4-C2-A: exact empty registry format transaction only. This does not
+     * register or execute a provider; the existing live registry is protected.
+     * Consume first and retain all Core signer, Binder PID and TTL checks.
+     */
+    fun executeRegistryProof(
+        context: Context, callerPid: Int, bearer: String,
+        operation: String, target: String
+    ): JSONObject {
+        // Match C1 lock order: sample Shell recovery BEFORE ticket mutex.
+        val shell = RiftCoreShellRecovery.status()
+        require(shell.optInt("shellPid", -1) == callerPid &&
+            shell.optBoolean("foregroundLease", false) &&
+            shell.optString("phase") == "connected") {
+            "Core registry proof requires active foreground production shell"
+        }
+        return synchronized(lock) {
+            val value = ticket(context, callerPid, bearer)
+            require(value.approved && value.operation == operation &&
+                value.target == target &&
+                operation == RiftCoreAdminRegistryProof.OPERATION &&
+                target == RiftCoreAdminRegistryProof.TARGET) {
+                "Core rejected registry proof for unmatched approval scope"
+            }
+            RiftCoreSystemCapabilities.recordDecision(
+                context, ACTOR, operation, "consumed", "isolated-registry-proof"
+            )
+            tickets.remove(bearer)
+            try {
+                val result = RiftCoreAdminRegistryProof.writeAndRollback(context)
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "rolled-back", "registry-restored"
+                )
+                result
+            } catch (error: Exception) {
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "failed", "registry-proof-rejected"
                 )
                 throw error
             }

@@ -1,5 +1,13 @@
 # RiftOS Project Status
 
+## 2026-10-09 — Signed #669 C1.4-C1 COMPLETE; C1.4-C2-A isolated runtime-registry proof SOURCE ONLY
+
+User-authorized production RiftShell PID restart device-proved exact Core ticket revocation (`system.fs.write`, reason `shell-replaced`) while Core PID24544 and four protected RAPPs survived. Earlier C1.4-C1 canary effect/rollback/replay/deny/window close/expiry also passed; C1.4-C1 is FULL DEVICE PASS. Temporary disposable QA probe was stopped/uninstalled; final packages4, Core apps0, admin tickets0/grants0, canary absent, journal clear.
+
+Current new **C1.4-C2-A source candidate**: exact trusted native one-shot `runtime.register` approval only for an internally fixed EMPTY registry write-and-rollback. Core reads the installed APK signing certificate from Android PackageManager, writes only a valid zero-provider `riftos-runtime-providers/1` marker when the live registry is absent, journals first, fsyncs, verifies and deletes marker/temp, rolls back created directory and clears journal, and recovers interrupted proof on Core initialization. An existing configured registry fails closed; no actual provider install, signer-pinned third-party registration, runtime swap or permanent registry mutation has been implemented. Builder/validator markers added. Not signed, not Kotlin-compiled, NOT device-proven; user manually triggers next Builder to confirm compile/Android behavior. C2-B real provider admission, C2/C3 and C1.5 remain future.
+
+
+
 ## 2026-10-09 — Signed #668 installed, C1.4-C1 client schema fix source-only
 
 User-manual signed Builder #668 (run 37982033247, RiftOS 631961bc) installed GREEN: Core PID19417, RiftShell PID19392, four original installed RAPPs, zero sessions/grants, no pending canary or journal. The real C1 write was NOT executed. Native Admin Approvals was opened; a B ticket expired normally before attempted consumption, as confirmed by Core audit. Source inspection found Core effect success uses rollback-proof response schema while Shell wrongly required consent schema. Client action-specific validation plus RiftOS/Builder regression guards are staged, NOT built or installed. C1 remains unpromoted until user manually signs/installs the fix and real effect/rollback/replay/denial/close-with-unused-approval tests pass. No process kill or RAPP mutation authorized.

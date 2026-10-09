@@ -1,5 +1,13 @@
 # Build and Validation System
 
+## 2026-10-09 — C1.4-C2-A signed-build preflight source candidate
+
+C1.4-C1 full signed-device acceptance on USER-built #669 includes one OS-attested real production RiftShell process restart and old unused WRITE approval revoked `shell-replaced`, with Core/four RAPPs preserved and disposable probe cleaned. New **C1.4-C2-A** source is **not yet compiled or device-proven**: Core journalled signer-stamped EMPTY runtime registry publish + mandatory restore, only if registry absent. The ordinary installed provider catalog remains untouched; zero external providers actually registered. RiftOS source validator and Builder shell preflight pin new Gradle Kotlin source, exact Core native consent action, Shell versioned response, restricted `providers: []`, audit, recovery and no general install/registration. Signed APK verifier requires the distinct `riftos.core.admin-registry-proof/1` marker. User manually runs Builder and installs APK; never auto-run the Builder.
+
+Device acceptance for C2-A requires exact native operation/target readback, Deny/Cancel/replay, approved one-use Core empty-registry write/check/rollback, no persistent registry/journal, Core/four production RAPPs unchanged, and rejection if any runtime registry is preconfigured. Follow-on C2-B real signer-pinned provider registration remains separate.
+
+
+
 ## 2026-10-09 — C1.4-C1 dedicated response schema regression checks
 
 User-manual signed Builder #668 (run 37982033247, executable source 631961bc) is GREEN/installed, but C1 real canary write has NOT been tested. The Shell client previously expected the admin-consent response schema for execute-rollback-proof even though Core returns the admin-rollback-proof schema. Minimal action-dependent schema validation is source-patched. RiftOS source wiring validator now requires exact if/else routing; Builder preflight verifies the client branch; Builder selftests require the preflight guard; signed APK verifier still checks both schemas. Existing B response contract, Core authorization, permissions, journalling, rollback and installed apps are unchanged. Next USER-MANUAL signed build/install must precede actual C1 effect and denial/replay/window-close device tests.
