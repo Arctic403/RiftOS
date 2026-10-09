@@ -1,5 +1,10 @@
 # RiftDesktop Window Manager
 
+## 2026-10-09 — C1.4-B trusted Admin Approvals native window SOURCE CANDIDATE
+
+Native desktop launcher now advertises `admin-permissions` / **Admin Approvals** with a genuine native Android window body provided by `RiftNativeAdminApprovals`, not a hosted browser or installed RAPP. User intent is a foreground button plus native `AlertDialog` displaying fixed restricted test scope; Core alone creates time-limited signer/PID-bound ticket, audits decisions and consumes at most once. No system operation is executed, no global admin grant or root is exposed. Native close triggers best-effort ticket revocation; after actual graphical process restart old shell PID tokens are invalid. This does not modify C1.3-E Core/shell crash restoration semantics; generic snapshots do not carry administrator bearer tickets across PID changes. C1.4-B is SOURCE ONLY pending separate manual signed APK and physical UI tests.
+
+
 ## 2026-10-09 — C1.3-E real native desktop/window recovery DEVICE PASS (#661)
 
 Actual Android production `:riftShell` PID **10831** was terminated by Core's guarded disposable-only QA after a known foreground Core lease. The Core-owned recovery watcher automatically started graphical `:riftShell` **PID14251**, preserving Core PID10730 and the still-running disposable RAPP generation1. The replacement real native RiftDesktop reconstructed the desktop/taskbar and the **C1.2 Typed Input Probe** window from Core's previous window snapshot, without manual RiftOS launching, and restored its `C13E_PRECRASH_661` text. After reconnecting, remote GUI ACTION count2 and TEXT_INPUT `C13E_POSTRECOVERY_661` reached the same Core app, surface revision8. Close/uninstall removed only disposable data; the four original RAPPs remained installed, Core runtime/queues/focus empty. Signed user-manual Builder #661 executable source `fc486831`, run `37903041688`, fully **C1.3-E DEVICE PASS** for real process death and native desktop/window reconstruction. Generic snapshot replay does not promise arbitrary browser navigation/history or every transient native view state.

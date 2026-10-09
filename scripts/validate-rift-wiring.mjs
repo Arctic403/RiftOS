@@ -856,6 +856,68 @@ if (c14Policy.includes('fun grant(') ||
   fail('C1.4-A policy must not introduce untrusted elevation or duplicate graphical consent');
 }
 
+// C1.4-B: Core-authorized, exact Binder+OS process and installed signer
+// one-use *proof-only* admin consent. No actual privileged effects in B.
+const c14Tickets = read(`${kotlinDir}/RiftCoreAdminConsent.kt`);
+const c14AdminUi = read(`${kotlinDir}/RiftNativeAdminApprovals.kt`);
+for (const source of ['RiftCoreAdminConsent.kt', 'RiftNativeAdminApprovals.kt']) {
+  if (!gradle.includes(`"src/main/java/com/riftos/app/${source}"`)) {
+    fail(`C1.4-B mandatory source not compiled: ${source}`);
+  }
+}
+for (const marker of [
+  'const val SCHEMA = "riftos.core.admin-consent/1"',
+  'private const val TTL_MS = 45_000L',
+  'private const val MAX_TICKETS = 8',
+  'SecureRandom()', 'Binder.getCallingPid() == pid',
+  'manager.runningAppProcesses?.any', 'context.packageName + ":riftShell"',
+  'PackageManager.GET_SIGNING_CERTIFICATES', 'signingInfo?.apkContentsSigners',
+  'fun request(context: Context, callerPid: Int, operation: String, target: String)',
+  'fun decide(', 'fun revoke(', 'fun consumeProof(',
+  'fun revokeForShellReplacement(', 'validScope(operation, target)',
+  '"system.fs.read" && target == "/C:/System"',
+  'executedPrivilegedEffect', '"grantPersistence", "none"'
+]) if (!c14Tickets.includes(marker)) fail(`C1.4-B Core admin ephemeral PID+signer/scope ticket missing: ${marker}`);
+if (c14Tickets.includes('FileOutputStream(') ||
+    c14Tickets.includes('Process.killProcess(') ||
+    c14Tickets.includes('RiftCoreRuntime.buildPlatform(') ||
+    c14Tickets.includes('Runtime.getRuntime().exec(')) {
+  fail('C1.4-B tickets MUST NOT execute system privileges');
+}
+for (const marker of [
+  'fun recordDecision(', '"requested", "approved", "denied", "revoked", "expired", "consumed"',
+  '.put("outcome", outcome)', '.commit()'
+]) if (!c14Policy.includes(marker)) fail(`C1.4-B Core durable bounded decision audit missing: ${marker}`);
+if (!coreRuntime.includes('"adminConsent", RiftCoreAdminConsent.status(context)') ||
+    !coreShellRecovery.includes('RiftCoreAdminConsent.revokeForShellReplacement(')) {
+  fail('C1.4-B Core admin token status or real shell restart revocation missing');
+}
+for (const marker of [
+  'const val METHOD_SHELL_ADMIN_CONSENT = "shell.admin.consent"',
+  'METHOD_SHELL_ADMIN_CONSENT ->',
+  'RiftCoreAdminConsent.request(ctx, caller, operation, target)',
+  'RiftCoreAdminConsent.decide(ctx, caller, bearer,',
+  'RiftCoreAdminConsent.revoke(ctx, caller, bearer)',
+  'RiftCoreAdminConsent.consumeProof(',
+  'requireProductionShellCaller()'
+]) if (!coreIpcProvider.includes(marker)) fail(`C1.4-B authenticated Binder admin consent missing: ${marker}`);
+for (const marker of [
+  'fun adminConsent(', 'RiftCoreSurfaceIpcProvider.METHOD_SHELL_ADMIN_CONSENT',
+  '"riftos.shell.admin-consent-request/1"'
+]) if (!productionClient.includes(marker)) fail(`C1.4-B native Core consent IPC client missing: ${marker}`);
+for (const marker of [
+  'class RiftNativeAdminApprovals(', 'RiftOS administrator approvals',
+  'Request scoped administrator test', 'Consume once — no privileged effect',
+  'Revoke current approval', '.setPositiveButton("Allow once")',
+  '.setNegativeButton("Deny")', '.setNeutralButton("Cancel")',
+  'activity.hasWindowFocus()', 'client.adminConsent("request"',
+  'client.adminConsent("consume-proof"', 'client.adminConsent("revoke"'
+]) if (!c14AdminUi.includes(marker)) fail(`C1.4-B trusted native UI missing: ${marker}`);
+if (!nativeSystemApps.includes('"admin-permissions"') ||
+    !productionShell.includes('Triple("admin-permissions", "Admin Approvals"')) {
+  fail('C1.4-B administrator proof must be an installed Core-owned native system window');
+}
+
 // Historical Core/alternate client invariants remain; C1.3-D extends them.
 
 // C1.2-B2-B2: Core lease authorization gates admission AND queued delivery.

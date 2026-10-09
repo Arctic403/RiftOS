@@ -1,5 +1,14 @@
 # RiftOS Project Status
 
+## 2026-10-09 — C1.4-B Core exact-PID/signer trusted admin consent SOURCE ONLY (unbuilt)
+
+Latest live user-manual **Builder #664** executable `f3dd5be502ec5e95ab825d22da9a41904c4e99e6`, Core PID5397: unchanged C1.4-A default-deny policy, 0 admin grants, 2 denied audit events; #664 includes docs-only A promotion, **NOT B**. Four original installed production RAPPs preserved.
+
+New C1.4-B mandatory Core `RiftCoreAdminConsent.kt` binds secure 128-bit ephemeral tickets to OS-attested exact real `:riftShell` Binder PID/UID/process name, installed RiftOS APK signing certificate digest, Core-defined actor, exact operation/target and elapsedRealtime 45s expiry. Bound 8 tickets max, never persist tickets or full target; existing durable metadata-only policy audit now records request/approve/deny/revoke/expire/consume. Native `RiftNativeAdminApprovals.kt` graphical system panel offers foreground user-initiated request and Android native **Allow once / Deny / Cancel** confirmation plus explicit revoke and one-time no-effect consume/replay test. A real shell PID replacement revokes prior tokens. New versioned Core Binder endpoint `shell.admin.consent`, schema `riftos.core.admin-consent/1`, read-only Core `adminConsent` counters, Gradle and builder contracts wired. Only demonstration scope `system.fs.read` on `/C:/System` is accepted as a *proof token*, NEVER a real file read. Core `adminElevationEnabled:false`, effective `grantCount:0`, `systemEffectsEnabled:false`; C1.4-A restricted operations remain blocked.
+
+**NOT built, signed, installed or physically tested.** User alone triggers next normal Builder; if green, test all explicit native consent paths including deny/cancel, expiry, revocation and consume/replay, confirm no protected file/process action, Core/shell still separate, four original RAPPs untouched. If Builder fails fix code before A or B promotion; C1.4-A remains independently device PASS. **C1.4-C actual restricted effects, trusted grant execution, rollback NOT STARTED.**
+
+
 ## 2026-10-09 — C1.4-A DEVICE PASS on manually signed Builder #663; Core policy/audit deny-by-default proven
 
 User-manual signed Builder **#663**, run `37918414463`, installed executable RiftOS **`74f2688ebe939682c36a4e0e08be62b4df505cfa`**. Real device Core **PID29992** and real graphical `:riftShell` **PID30093** distinct. Core `systemCapabilities` reported schema `riftos.core.system-capabilities/1`, `adminElevationEnabled:false`, `defaultDecision:"deny"`, `grantCount:0`, and exactly the five declared restricted operation kinds. Native `permissions policy` / `permissions audit` successfully returned read-only policy and bounded audit results.

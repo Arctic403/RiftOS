@@ -34,7 +34,7 @@ class RiftNativeSystemApps(
 ) {
     companion object {
         private const val MAX_TERMINAL_CHARS = 200_000
-        private val NATIVE_IDS = setOf("terminal", "tasks", "installed-apps")
+        private val NATIVE_IDS = setOf("terminal", "tasks", "installed-apps", "admin-permissions")
         private const val BG = 0xff0b1118.toInt()
         private const val PANEL = 0xff111a23.toInt()
         private const val TEXT = 0xffe7eef5.toInt()
@@ -72,6 +72,7 @@ class RiftNativeSystemApps(
     private var terminal: TerminalState? = null
     private var tasks: TaskState? = null
     private var installedApps: InstalledAppsState? = null
+    private val adminApprovals by lazy { RiftNativeAdminApprovals(activity, desktop, remoteCore) }
     private fun installedPackages(): JSONArray =
         remoteCore?.installed()
             ?: RiftCoreRuntime.packages(activity.applicationContext).listInstalled()
@@ -100,6 +101,10 @@ class RiftNativeSystemApps(
                 stopInstalledApps()
                 true
             }
+            "admin-permissions" -> {
+                adminApprovals.close()
+                true
+            }
             else -> false
         }
     }
@@ -108,8 +113,10 @@ class RiftNativeSystemApps(
         terminal = null
         stopTasks()
         stopInstalledApps()
+        if (adminApprovalsInitialized) adminApprovals.destroy()
     }
 
+    private var adminApprovalsInitialized = false
     private fun open(rawId: String) {
         val id = rawId.trim().lowercase()
         require(handles(id)) { "Native system app is unavailable: $rawId" }
@@ -117,6 +124,10 @@ class RiftNativeSystemApps(
             "terminal" -> openTerminal()
             "tasks" -> openTasks()
             "installed-apps" -> openInstalledApps()
+            "admin-permissions" -> {
+                adminApprovalsInitialized = true
+                adminApprovals.open()
+            }
             else -> throw IllegalArgumentException("Native system app is unavailable: $id")
         }
     }

@@ -1,5 +1,12 @@
 # Build and Validation System
 
+## 2026-10-09 — C1.4-B Core trusted one-use admin consent SOURCE/Builder gate
+
+New mandatory Gradle/ownership `RiftCoreAdminConsent.kt` + `RiftNativeAdminApprovals.kt`. Source and Builder checks require SecureRandom 128-bit tickets, 45s TTL, max8 in-memory, OS Binder PID/UID/exact production process identity, RiftOS package signing cert validation, Core-owned no-caller-supplied actor and fixed demonstration `system.fs.read` target `/C:/System`. No Core admin bearer is persisted; no filesystem/install/runtime/process effect code in B. Native Android production window offers real Allow once/Deny/Cancel, revoke and consume/replay proof. Old PID tickets revoked on real shell replacement, Core exposes aggregate state without bearer, existing Core durable audit records bounded non-secret decision metadata. Strict Builder preflight/selftests and signed DEX schema marker `riftos.core.admin-consent/1` required.
+
+**Physical acceptance only AFTER user-manual signed Builder:** Core status still `adminElevationEnabled:false,grantCount:0`; native Admin Approvals UI distinct from RAPP; exact scope visible; user-approved no-effect one-time ticket consumed; second consume rejected; deny/cancel cannot consume; revoke prevents consumption, expired ticket cannot approve/consume; at most 8; old shell PID no grant inheritance; audit decision chronology and no token/target leaked; four protected apps unchanged, no extra Core programs/sessions/queued events. Android root/system privilege not granted. If Builder RED fix first. A still DEVICE PASS; B NOT DEVICE PROMOTED.
+
+
 ## 2026-10-09 — C1.4-A signed Builder #663 negative device qualification PASS
 
 User manual Builder #663/run `37918414463` installed executable source `74f2688ebe939682c36a4e0e08be62b4df505cfa`. Core PID29992, real graphical shell30093, exact four protected production RAPPs pre/post. C1.4-A policy and audit schema and `adminElevationEnabled:false`, `defaultDecision:deny`, `grantCount:0` returned via live Core and native `permissions policy`/`permissions audit`.

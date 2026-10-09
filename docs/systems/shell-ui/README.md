@@ -1,5 +1,12 @@
 # RiftOS Shell UI and Native System Windows
 
+## 2026-10-09 — C1.4-B Admin Approvals native system window SOURCE ONLY
+
+Production `:riftShell` launcher now includes **Admin Approvals** as a genuine native system window owned by `RiftNativeSystemApps` and `RiftNativeAdminApprovals`, not WebView, RAPP execution or a native terminal command. Only an on-screen foreground interaction may request a Core administrative **no-effect proof ticket**. After authenticated Binder request, UI displays the exact Core-authorized `system.fs.read` / `/C:/System` demonstration scope, 45s TTL, and shows Android `AlertDialog` with **Allow once**, **Deny**, **Cancel**. Core stores the signer-/PID-/scope-bound random ticket; the dialog only returns a decision; no elevated system effect occurs. Additional buttons explicitly consume once (replay must fail), revoke, and view aggregate Core ticket counts. Closing the window best-effort revokes the current ticket; PID replacement forcibly invalidates old approvals in Core. Native UI cannot create arbitrary system grants and cannot bypass existing Core admin deny policy.
+
+This is new unbuilt C1.4-B SOURCE ONLY. Revalidate UI text/bounds, dialog decision flow, no Core/RAPP execution side effects and four protected packages on next user-manual signed device build. Previous Sept source-description paragraphs below are historical; this dated section is authoritative.
+
+
 ## Verification status
 
 **VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**

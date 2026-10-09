@@ -55,7 +55,11 @@ object RiftCoreShellRecovery {
     fun noteReport(pid: Int, state: JSONObject) {
         val now = SystemClock.elapsedRealtime()
         if (ownerPid != pid) {
-            if (ownerPid > 0) previousPid = ownerPid
+            if (ownerPid > 0) {
+                // Old shell process cannot leave reusable admin approvals.
+                app?.let { RiftCoreAdminConsent.revokeForShellReplacement(it, ownerPid) }
+                previousPid = ownerPid
+            }
             ownerPid = pid
             connectedSince = now
             // A rapidly crashing new shell may not reset the retry budget.

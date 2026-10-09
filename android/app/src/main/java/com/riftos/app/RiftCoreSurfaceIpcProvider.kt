@@ -40,6 +40,7 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
         const val METHOD_SHELL_UNINSTALL = "shell.uninstall"
         const val METHOD_SHELL_UI_POLL = "shell.ui.poll"
         const val METHOD_SHELL_UI_REPLY = "shell.ui.reply"
+        const val METHOD_SHELL_ADMIN_CONSENT = "shell.admin.consent"
         const val METHOD_SHELL_DESKTOP_REPORT = "shell.desktop.report"
         const val METHOD_SHELL_RECOVERY_CLAIM = "shell.recovery.claim"
         const val RESULT_JSON = "coreSnapshotJson"
@@ -188,6 +189,30 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
             METHOD_SHELL_UI_REPLY -> RiftCoreShellRemoteUiBroker.respond(
                 extras ?: error("Core shell UI reply envelope missing"))
                 .put("corePid", Process.myPid())
+            METHOD_SHELL_ADMIN_CONSENT -> {
+                val request = extras ?: error("Core admin consent request missing")
+                require(request.getString("schema") == "riftos.shell.admin-consent-request/1") {
+                    "Core admin consent request schema mismatch"
+                }
+                require(id.isEmpty()) { "Core admin consent forbids shell-supplied actor" }
+                val caller = Binder.getCallingPid()
+                val bearer = request.getString("ticket").takeIf { it.length <= 64 }.orEmpty()
+                val operation = request.getString("operation")
+                val target = request.getString("target")
+                require(operation.length <= 64 && target.length <= 128) {
+                    "Core admin consent scope exceeds bound"
+                }
+                when (request.getString("action")) {
+                    "request" -> RiftCoreAdminConsent.request(ctx, caller, operation, target)
+                    "decide" -> RiftCoreAdminConsent.decide(ctx, caller, bearer,
+                        request.getBoolean("approved", false))
+                    "revoke" -> RiftCoreAdminConsent.revoke(ctx, caller, bearer)
+                    "consume-proof" -> RiftCoreAdminConsent.consumeProof(
+                        ctx, caller, bearer, operation, target)
+                    "status" -> RiftCoreAdminConsent.status(ctx)
+                    else -> error("Core admin consent action not supported")
+                }.put("corePid", Process.myPid())
+            }
             METHOD_SHELL_EXECUTE -> {
                 val command = id
                 require(command.isNotBlank() &&

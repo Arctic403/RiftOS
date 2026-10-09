@@ -51,6 +51,8 @@ class RiftShellCoreClient(context: Context) {
                 RiftCoreShellWindowBridge.SCHEMA
             RiftCoreSurfaceIpcProvider.METHOD_SHELL_RECOVERY_CLAIM ->
                 RiftCoreShellRecovery.SCHEMA
+            RiftCoreSurfaceIpcProvider.METHOD_SHELL_ADMIN_CONSENT ->
+                RiftCoreAdminConsent.SCHEMA
             else -> SCHEMA
         }
         require(json.getString("schema") == schema) { "Core IPC schema mismatch" }
@@ -92,6 +94,28 @@ class RiftShellCoreClient(context: Context) {
 
     fun pollUi(): JSONObject =
         call(RiftCoreSurfaceIpcProvider.METHOD_SHELL_UI_POLL)
+
+    /**
+     * Only called from the trusted native Admin Approvals window, not the
+     * terminal/RAPP command surface. All decisions remain Core-authoritative.
+     */
+    fun adminConsent(
+        action: String, ticket: String = "",
+        operation: String = "", target: String = "", approved: Boolean = false
+    ): JSONObject {
+        require(action in setOf("request", "decide", "revoke", "consume-proof", "status")) {
+            "Invalid trusted admin UI action"
+        }
+        return call(RiftCoreSurfaceIpcProvider.METHOD_SHELL_ADMIN_CONSENT,
+            extras = Bundle().apply {
+                putString("schema", "riftos.shell.admin-consent-request/1")
+                putString("action", action)
+                putString("ticket", ticket)
+                putString("operation", operation)
+                putString("target", target)
+                putBoolean("approved", approved)
+            })
+    }
 
     fun claimRecovery(): JSONObject =
         call(RiftCoreSurfaceIpcProvider.METHOD_SHELL_RECOVERY_CLAIM)

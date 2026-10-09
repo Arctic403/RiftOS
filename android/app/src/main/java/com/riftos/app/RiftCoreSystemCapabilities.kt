@@ -37,9 +37,24 @@ internal object RiftCoreSystemCapabilities {
      * keys, package payloads or other potentially sensitive arguments.
      * Persist synchronously so revocation/audit failures cannot pass silently.
      */
-    fun recordDenied(context: Context, actor: String, operation: String): JSONObject {
+    /** Existing ordinary RAPP boundary denials remain audited and fail closed. */
+    fun recordDenied(context: Context, actor: String, operation: String): JSONObject =
+        recordDecision(context, actor, operation, "denied", "no-trusted-elevation")
+
+    /**
+     * C1.4-B: bounded durable decision metadata only, never bearer ticket,
+     * signer fingerprint, raw target path, key or effect argument.
+     */
+    fun recordDecision(
+        context: Context, actor: String, operation: String,
+        outcome: String, reason: String
+    ): JSONObject {
         require(SAFE_ACTOR.matches(actor)) { "Core system capability actor invalid" }
         require(operation in RESTRICTED) { "Unknown Core system capability" }
+        require(outcome in setOf(
+            "requested", "approved", "denied", "revoked", "expired", "consumed"
+        )) { "Core admin decision outcome invalid" }
+        require(reason.matches(SAFE_ACTOR)) { "Core admin audit reason invalid" }
         synchronized(LOCK) {
             val prefs = context.applicationContext.getSharedPreferences(
                 PREFS, Context.MODE_PRIVATE
@@ -54,8 +69,8 @@ internal object RiftCoreSystemCapabilities {
                 .put("atMs", System.currentTimeMillis())
                 .put("actor", actor)
                 .put("operation", operation)
-                .put("outcome", "denied")
-                .put("reason", "no-trusted-elevation")
+                .put("outcome", outcome)
+                .put("reason", reason)
             events.put(entry)
             val serialized = events.toString()
             require(serialized.toByteArray(Charsets.UTF_8).size <= MAX_SERIALIZED_BYTES) {

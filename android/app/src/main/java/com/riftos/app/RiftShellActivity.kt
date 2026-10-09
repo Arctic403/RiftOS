@@ -133,6 +133,7 @@ class RiftShellActivity : Activity() {
             Triple("devlab", "Dev Lab", "◇"),
             Triple("tasks", "Tasks", "≡"),
             Triple("installed-apps", "Installed Apps", "▦"),
+            Triple("admin-permissions", "Admin Approvals", "🔒"),
             Triple("settings", "Settings", "⚙"),
             Triple("mcp", "Rift MCP", "⇄")
         )
