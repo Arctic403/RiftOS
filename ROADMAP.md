@@ -1,5 +1,12 @@
 # RiftOS Roadmap
 
+## 2026-10-09 — C1.3-D DEVICE PASS; C1.3-E NEXT, independently gated
+
+**C1.3-C signed Builder #655 DEVICE PASS. C1.3-D signed Builder #660 DEVICE PASS.** Actual Android default launcher desktop, taskbar, native window manager and graphical RAPP renderer now run in real separate `:riftShell` process, distinct Core PID25396 and shell PID25436 (user-built #660 executable source `d43a30e`). Device-proven remote Core package/UI IPC, Core-only app BOOT gen1 → remote-shell rendering/input ACTION+TEXT_INPUT without duplicate BOOT, generation-scoped GUI close/cleanup, native Files and RiftBrowser WebView, and final user manual native RiftShell terminal `ps` output showing kernel/desktop/shell/focused terminal. Four protected RAPPs untouched. No new build needed for D.
+
+**C1.3-E NEXT — NOT STARTED.** It must separately implement and device-prove actual production graphical-shell process crash/kill and restart with Core PID and Core-owned running RAPP generation/state preserved, and automatic desktop/window reconstruction. Do NOT conflate stopping a graphical Activity or the read-only remote probe with real production-shell death. Update source/Builder/docs and user-manually build/sign/install for E, then live-device proof. C1.4/1.5 later as documented.
+
+
 ## Active 2026-10-09 — C1.3-D implementation underway (SOURCE ONLY, no signed device pass)
 
 C1.3-C signed Builder #655 is DEVICE PASS. **C1.3-D now migrates the default desktop/window manager and graphical RAPP client to a real independent `:riftShell` process**, connected to Core-owned execution via authenticated versioned bounded Binder IPC and distinct Core/shell PIDs. The new source also bridges Core-issued UI permissions, native terminal/installed packages, desktop window state and Core-first app launches while keeping the read-only `:riftShellProbe` separate. Update both RiftOS and Builder tests/docs together; follow normal user-manual Builder and real Android device gate. Do not infer success from sources alone. **C1.3-E NOT STARTED**: after D device PASS, separately prove killing/restarting the *actual* shell process leaves Core/RAPP alive and restores desktop/windows automatically. C1.4 capability permission elevation and C1.5 QuickJS retirement remain later.

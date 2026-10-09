@@ -1,5 +1,12 @@
 # RiftOS Core ↔ RiftShell — canonical architecture (C1 series)
 
+## 2026-10-09 — C1.3-D final USER MANUAL terminal smoke PASS; full device gate promoted
+
+On the physical device running user-manual signed Builder **#660**, run `37891844448`, executable source `d43a30e`, Core PID **25396** and real `:riftShell` desktop/window manager PID **25436** were independently verified. Existing four installed RAPPs remained unmodified. Native Installed Apps, Files, browser WebView and real taskbar were functional; verified disposable Core app BOOT gen1 and graphical same-gen action/text `C13D_660_REMOTE` passed through remote Binder, Core surface rev6, close/stop/uninstall left zero Core apps/sessions/surfaces/events and focus null. The user's final screenshot proves **the remote native RiftShell terminal itself typed and executed `ps`**; output enumerates protected kernel, protected desktop, protected shell and focused terminal. A post-screenshot Core `ps` confirms the active remote graphical PID, and Core status confirms clean app state. This resolves the sole pending terminal command smoke check. **C1.3-D DEVICE PASS / PROMOTED**; the actual desktop, window manager, taskbar, renderer and graphical app UI run in the separate process, while Core owns RAPP execution/session/state, bounded IPC events, generation authority and package/capability authorization.
+
+**Next is C1.3-E ONLY IF AUTHORIZED**, a separate source/build/device gate to prove actual `:riftShell` process termination, Core and running RAPP generation survive, and desktop/windows automatically restore. None of those failure/recovery properties have been proven in C1.3-D; read-only `:riftShellProbe` is NOT the production shell. User alone manually triggers builds; no build needed to accept D.
+
+
 ## 2026-10-09 — Builder #660 physical device proved real Core PID vs graphical shell PID, RAPP IPC; terminal smoke pending
 
 Signed installed source `d43a30e`, user-manual Builder #660 run 37891844448. Actual Android Core **25396** and default launcher graphical `:riftShell` **25436** are two distinct healthy processes; Core `ps` reported the remote PID and real window list. Native desktop/taskbar/window manager, Installed Apps listing four protected RAPPs (Core package IPC), Files workspace viewer and RiftBrowser with WebView page loaded. Previous #659 Binder process-name rejection resolved on-device.
