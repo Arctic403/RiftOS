@@ -1,5 +1,10 @@
 # Build and Validation System
 
+## C1.3-C after #654 device discovery — follow-up source gate, not promoted
+
+User-manual #654 installed source 130dea17 and proved Core BOOT, graphical reuse, ACTION/TEXT_INPUT state and cleanup. Android Back backgrounded MainActivity but left Core input focus and GUI subscriber. Following C1.3-C source must revoke focus on pause/window blur, allow focus only for real foreground windows, and restore only non-minimized visible focus on return. A guarded, generic QA-only Local Agent Dev Lab action `recreate-main-activity-proof` requests true Android MainActivity.recreate for one currently running Core RAPP. Require source/Builder tests, signed DEX marker `riftos.qa.activity-recreate/1`, and the user-manual installed-device proof: actual Activity recreation keeps Core PID, generation, surface/state, and no duplicate BOOT. User triggers Builder only. Do not mark C1.3-C passed or begin D/E until proven.
+
+
 ## 2026-10-08 — C1.3-C source / Builder ownership gate (candidate only)
 
 C1.3-C is now a separate implementation and device-proof stage, superseding the earlier proposal to combine C/D/E. `scripts/validate-rift-wiring.mjs` and `scripts/test-riftbuild-native.mjs` must require Core-owned GUI+shell-less RAPP BOOT, queued event dispatch and focus rechecks in `RiftCoreAppLifecycle`, with `RiftRappHost` limited to generic generation-matched surface presentation and Core input requests. The source tests must reject `coreSessions.attach/close/detach/offerEvent`, `executeChained`, pending event callbacks and BOOT/executable payload ownership in the graphical host. `MainActivity` cannot drive RAPP execution from Activity resume/pause; destruction revokes Core focus without stopping Core sessions.

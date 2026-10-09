@@ -78,7 +78,11 @@ class MainActivity : Activity() {
             appOpenSink = ::openNativeDesktopApp,
             windowClosedSink = ::closeNativeDesktopApp,
             focusRequestSink = { id ->
-                RiftCoreRuntime.sessions(applicationContext).requestFocusFromShell(id)
+                // A backgrounded window may render, but it must never hold a
+                // Core input lease until the actual Android UI has focus.
+                RiftCoreRuntime.sessions(applicationContext).requestFocusFromShell(
+                    id.takeIf { hasWindowFocus() && !isFinishing && !isDestroyed }
+                )
             }
         )
         setContentView(rootView)
@@ -357,15 +361,48 @@ class MainActivity : Activity() {
         if (::browserWindow.isInitialized) browserWindow.onResume()
     }
 
+    private fun restoreCoreWindowFocus() {
+        if (!::nativeDesktop.isInitialized) return
+        val state = nativeDesktop.handle("desktop.window.state", JSONObject())
+        val id = state.optString("activeId").takeIf {
+            it.isNotBlank() && it != "null" && !state.optBoolean("desktopVisible", false)
+        }
+        // Only an actually focused, non-minimized desktop window may ask Core
+        // to reacquire its generation-bound input lease after Android resumes.
+        val windows = state.optJSONArray("windows")
+        var eligible = false
+        if (id != null && windows != null) {
+            for (index in 0 until windows.length()) {
+                val window = windows.optJSONObject(index) ?: continue
+                if (window.optString("id") == id && window.optBoolean("focused") &&
+                    !window.optBoolean("minimized")) {
+                    eligible = true
+                    break
+                }
+            }
+        }
+        RiftCoreRuntime.sessions(applicationContext).requestFocusFromShell(
+            if (eligible) id else null
+        )
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
             RiftMcpRuntime.registerActivity(this)
             RiftBuildInstaller.resumePendingConfirmation(this)
+            restoreCoreWindowFocus()
+        } else if (::nativeDesktop.isInitialized) {
+            RiftCoreRuntime.sessions(applicationContext).requestFocusFromShell(null)
         }
     }
 
     override fun onPause() {
+        // Activity pause only revokes the UI input lease; Core RAPP execution,
+        // queued effects, session attachment and immutable frames stay alive.
+        if (::nativeDesktop.isInitialized) {
+            RiftCoreRuntime.sessions(applicationContext).requestFocusFromShell(null)
+        }
         if (::browserWindow.isInitialized) browserWindow.onPause()
         if (::browserAppHost.isInitialized) browserAppHost.onPause()
         super.onPause()

@@ -1,5 +1,10 @@
 # RiftOS Public and Cross-Layer Surfaces
 
+## C1.3-C #654 DEVICE PARTIAL, foreground focus repair pending
+
+Build #654 source 130dea17 verified Core-only BOOT, graphical same-generation ACTION/TEXT_INPUT state, and Core-initiated stop. Android Back backgrounded the Activity but kept a focus lease and graphical subscriber; it did NOT prove Android Activity destruction. The next source corrects focus gating on pause/blur and foreground resume. Authorized Local Agent Dev Lab `recreate-main-activity-proof` (requiring an active disposable Core RAPP and foreground MainActivity) schedules actual Android `Activity.recreate()` without stopping Core. Require new user-manual signed APK/device proof. C1.3-D/E are not started.
+
+
 ## C1.3-C — Core app execution SOURCE CANDIDATE (2026-10-08; device proof pending)
 
 Internal Core app control is `riftos.core.apps/1`: `start(id)`, `openForShell(id)`, `offerEvent(id, currentAttachmentGeneration, genericEvent)`, `stop(id)`, `status()`. Core verifies installed executable, owns BOOT/FIFO/queued focus authorization/executeChained and publishes immutable `riftos.core.app-surfaces/1` frames. RiftRappHost consumes surfaces and submits input with the Core generation only. MainActivity lifecycle events no longer trigger RAPP execution or session detach. Activity disposal revokes GUI focus. This is same-process code, NOT authorized remote Binder input: production separate RiftShell IPC belongs to C1.3-D, and automatic restart to C1.3-E. Manual Builder + installed-device regression remain pending.

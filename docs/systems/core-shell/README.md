@@ -1,5 +1,12 @@
 # RiftOS Core ↔ RiftShell — canonical architecture (C1 series)
 
+## 2026-10-08 — C1.3-C #654 device partial PASS; foreground focus fix and real Activity recreation proof pending
+
+User-manual signed Builder #654 source `130dea17` device confirmed Core PID **4542**, verified disposable RAPP/Core-only BOOT generation1/revision1; normal GUI reused generation1 without BOOT, ACTION count1 and TEXT_INPUT `C13C_CORE_654` persisted by Core rev4. Alternate graphical viewer read the same revision. Core stop closed stale GUI. Android Back placed RiftOS in background with PID still 4542 but `presentationDispatched:true` on later generic launch, proving a GUI subscriber remained; this **does not prove actual MainActivity destruction**. More importantly input focus lease was still active while RiftOS was backgrounded. Explicit graphical close then disposable uninstall `cleanupComplete:true`, Core apps/sessions/surfaces/queue zero, original three intact.
+
+C1.3-C **follow-up source candidate** fixes that input focus leak: `MainActivity` limits focus requests to actual foreground window status, revokes lease on Android `onPause`/window blur, and reacquires only a non-minimized legitimately focused desktop window on Android refocus. It does not stop Core execution. A generic Local Agent `devlab` request `{"action":"recreate-main-activity-proof","appId":"<currently-running-disposable-id>"}` requires live foreground `MainActivity` and matching running Core attachment, then schedules real `MainActivity.recreate()` without process-kill authority. User manual follow-up Builder must verify Core PID, generation, persisted app state, and surface survive actual Android Activity destruction/recreation, and focus correctly revokes/restores across pause/refocus. **Do not promote C1.3-C yet; C1.3-D/E remain untouched.**
+
+
 ## 2026-10-08 — C1.3-C Core execution independence SOURCE CANDIDATE (NOT DEVICE PROMOTED)
 
 **User decision supersedes the old coordinated C/D/E patch:** implement, validate, manually build, device-prove and promote **C1.3-C** individually. Do not start C1.3-D (real RiftShell separate-process migration) or C1.3-E (automatic recovery) until C passes. Pre-C1.3 source/Builder backup archives exist in `workspace/AI-Handoffs/Backups/`; restore testing is separate.

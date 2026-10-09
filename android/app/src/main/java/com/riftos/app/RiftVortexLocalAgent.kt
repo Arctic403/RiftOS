@@ -688,7 +688,49 @@ object RiftOsLocalAgent {
 
     private fun executeUnlocked(context: Context, args: JSONObject): JSONObject {
         val op = args.optString("op").trim().lowercase()
-        if (op == "devlab") return RiftDevLabLocalAgent.execute(context, args)
+        if (op == "devlab") {
+            val request = args.optJSONObject("request")
+                ?: throw IllegalArgumentException("Dev Lab request is required")
+            if (request.optString("action") == "recreate-main-activity-proof") {
+                // Generic QA-only lifecycle control. Must target the real
+                // foreground RiftOS Activity, never Core or a remote process.
+                require(context is MainActivity && context.hasWindowFocus() &&
+                    !context.isFinishing && !context.isDestroyed) {
+                    "MainActivity must be live and foreground for recreation proof"
+                }
+                val id = request.optString("appId").trim()
+                require(id.isNotBlank() && id.length <= 128) {
+                    "Recreation proof requires one current Core RAPP id"
+                }
+                val apps = RiftCoreRuntime.lifecycle(context.applicationContext)
+                    .status().getJSONArray("apps")
+                var generation = 0L
+                for (i in 0 until apps.length()) {
+                    val entry = apps.getJSONObject(i)
+                    if (entry.optString("id") == id && entry.optString("state") == "running" &&
+                        entry.optBoolean("attached")) {
+                        generation = entry.optLong("attachmentGeneration")
+                        break
+                    }
+                }
+                require(generation > 0L) {
+                    "Recreation proof needs a running, attached Core RAPP"
+                }
+                val pid = android.os.Process.myPid()
+                context.runOnUiThread {
+                    if (!context.isFinishing && !context.isDestroyed) context.recreate()
+                }
+                return JSONObject()
+                    .put("schema", "riftos.qa.activity-recreate/1")
+                    .put("status", "requested")
+                    .put("corePidBefore", pid)
+                    .put("appId", id)
+                    .put("attachmentGenerationBefore", generation)
+                    .put("operation", "android-activity-recreate-only")
+                    .put("coreProcessTermination", false)
+            }
+            return RiftDevLabLocalAgent.execute(context, args)
+        }
         if (op == "keyboard") return RiftOsKeyboardAgent.execute(context, args)
         if (op == "browser-inspect") {
             require(context is MainActivity) { "RiftBrowser inspector requires the active RiftOS activity" }

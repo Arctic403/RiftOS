@@ -398,12 +398,25 @@ for (const marker of [
   'focusRequestSink(visibleFocusId)',
   'reason == "open"'
 ]) if (!desktopFocusClient.includes(marker)) fail(`C1.2-B2-B1 shell focus client missing: ${marker}`);
-if (!activityFocusClient.includes('requestFocusFromShell(id)') ||
+if (!activityFocusClient.includes('focusRequestSink = { id ->') ||
+    !activityFocusClient.includes('id.takeIf { hasWindowFocus() && !isFinishing && !isDestroyed }') ||
     !nativeShell.includes('"focus" -> RiftCoreRuntime.sessions(appContext).focusStatus()') ||
     !gradle.includes('"src/main/java/com/riftos/app/RiftCoreInputFocus.kt"') ||
     !coreRuntime.includes('.put("inputFocus", sessions(context).focusStatus())')) {
-  fail('C1.2-B2-B1 Core focus wiring, diagnostic or exact mandatory source missing');
+  fail('C1.3-C foreground-only Core focus client or diagnostic missing');
 }
+for (const marker of [
+  'private fun restoreCoreWindowFocus()', 'override fun onWindowFocusChanged(hasFocus: Boolean)',
+  'restoreCoreWindowFocus()', 'override fun onPause()', 'requestFocusFromShell(null)',
+  'window.optBoolean("focused")', '!window.optBoolean("minimized")'
+]) if (!activityFocusClient.includes(marker)) fail(`C1.3-C Activity focus lifecycle missing: ${marker}`);
+const osLocalAgent = read(`${kotlinDir}/RiftVortexLocalAgent.kt`);
+for (const marker of [
+  'recreate-main-activity-proof', 'context is MainActivity && context.hasWindowFocus()',
+  'RiftCoreRuntime.lifecycle(context.applicationContext)',
+  'entry.optString("state") == "running"', 'context.recreate()',
+  'riftos.qa.activity-recreate/1', 'coreProcessTermination", false'
+]) if (!osLocalAgent.includes(marker)) fail(`C1.3-C controlled Activity recreation proof missing: ${marker}`);
 
 // C1.2-C1: installed RAPP BOOT/stop runs in Core without a RiftShell
 // window, Activity or graphical subscriber. Device proof still pending.
