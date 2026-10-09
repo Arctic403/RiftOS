@@ -1,5 +1,11 @@
 # Build and Validation System
 
+## 2026-10-09 — C2-A build #676 protected registry failure, Android create-only retry and typed diagnostics
+
+USER-signed RiftOS #676 (`30bebf009e88`) booted and passed C2-B1 read-only zero-candidate discovery, but C2-A's already-approved consumed ticket failed Core proof. Audit `consumed → failed/registry-proof-rejected`; absent registry/journal afterward; underlying exception not available in existing IPC. Source fix keeps `Files.createLink` and optional **non-overwriting** Android `Os.link` retry (never use `renameTo`, replacement, or unjournalled direct registry write), stages failures before/during/after filesystem effects, exposes sanitized `lastFailureStage/Type/Errno` in Core status and ensures typed `transactionCommitted:false` result only after no target/scratch/journal remains. Exact signer, foreground Shell PID, one-use ticket, crash journal/recovery and zero-provider invariant unchanged. Source and Builder preflight enforce diagnostic, rollback and security guards; device/signed proof pending. User-only manual Builder and device test for C2-A risk checkpoint before starting C2-B2 despite general major-milestone build policy.
+
+
+
 ## 2026-10-09 — Source-per-patch and major device acceptance; C2-B1 READ-ONLY checkpoint
 
 User locked a lower-friction workflow: source/security/ownership regression checks on each patch, appropriate integration checks, user-triggered signed/device acceptance for completed C1.4-C2, C1.4-C3, C1.5, plus early Android tests when a dangerous OS boundary requires proof. **Do not require device install after every small C2 source change**, and never represent source checks as Kotlin compilation or signed-device proof.

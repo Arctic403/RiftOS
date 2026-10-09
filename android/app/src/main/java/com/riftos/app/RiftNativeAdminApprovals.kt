@@ -283,7 +283,17 @@ internal class RiftNativeAdminApprovals(
                 activity.runOnUiThread { if (currentTicket == bearer) currentTicket = null }
                 "Core verified its installed signer, wrote and removed the EMPTY " +
                     "registry canary. No provider registered, no journal or registry left."
-            } else "Core did not prove complete empty registry rollback."
+            } else {
+                // The approval has already been consumed in Core. Report the
+                // sanitized failure stage instead of hiding Android errors.
+                activity.runOnUiThread { if (currentTicket == bearer) currentTicket = null }
+                val stage = response.optString("failureStage", "unknown").take(48)
+                val kind = response.optString("failureType", "unknown").take(48)
+                val errno = response.optInt("failureErrno", 0)
+                val type = if (errno != 0) "$kind, errno=$errno" else kind
+                "Core C2-A registry transaction FAILED at $stage ($type). " +
+                    "No success claimed; inspect Core registry/journal status."
+            }
         }
     }
 

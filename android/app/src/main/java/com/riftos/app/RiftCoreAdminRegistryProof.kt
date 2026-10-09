@@ -27,6 +27,11 @@ internal object RiftCoreAdminRegistryProof {
     private const val PENDING = "registryPending"
     private const val DIR_CREATED = "registryDirectoryCreated"
     private val lock = Any()
+    // Core-only bounded diagnostics: no paths, signing material or bearer
+    // tokens are exposed to RAPPs or persisted in the runtime registry.
+    private var lastFailureStage = "none"
+    private var lastFailureType = "none"
+    private var lastFailureErrno = 0
 
     private fun root(context: Context): File =
         File(context.applicationContext.filesDir, "riftfs").canonicalFile
@@ -123,7 +128,14 @@ internal object RiftCoreAdminRegistryProof {
     }
 
     fun writeAndRollback(context: Context): JSONObject = synchronized(lock) {
+        lastFailureStage = "none"
+        lastFailureType = "none"
+        lastFailureErrno = 0
+        var stage = "recover"
+        var transactionFailureStage: String? = null
+        try {
         recover(context)
+        stage = "resolve-registry"
         val target = registry(context)
         val scratch = temp(context)
         // A real installed runtime registry is protected even during QA.
@@ -133,25 +145,31 @@ internal object RiftCoreAdminRegistryProof {
         val parent = target.parentFile ?: error("Core C2 parent directory absent")
         val created = !parent.exists()
         // Resolve installed Core signing identity BEFORE creating a journal.
+        stage = "verify-installed-signer"
         val expected = marker(context)
         // Persist directory ownership intent BEFORE any filesystem change;
         // recovery must also handle death after mkdir but before file write.
         val prefs = pending(context)
+        stage = "journal-begin"
         check(prefs.edit().putBoolean(PENDING, true)
             .putBoolean(DIR_CREATED, created).commit()) {
             "Core C2 registry journal persistence failed"
         }
         var verified = false
         try {
+            stage = "prepare-directory"
             if (created) check(parent.mkdirs()) { "Core C2 registry directory unavailable" }
             check(parent.isDirectory && registry(context).path == target.path) {
                 "Core C2 registry directory changed"
             }
+            stage = "create-scratch"
             check(scratch.createNewFile()) { "Core C2 temporary registry exists" }
+            stage = "write-and-fsync-scratch"
             FileOutputStream(scratch).use { stream ->
                 stream.write(expected)
                 stream.fd.sync()
             }
+            stage = "verify-scratch"
             check(scratch.readBytes().contentEquals(expected)) {
                 "Core C2 temporary registry bytes differ"
             }
@@ -159,7 +177,22 @@ internal object RiftCoreAdminRegistryProof {
             // production registry. An atomic hard link is create-only: it
             // fails closed if the live registry exists, without overwriting.
             // Same private directory/filesystem; no Android root is needed.
-            java.nio.file.Files.createLink(target.toPath(), scratch.toPath())
+            stage = "atomic-create-only-publish"
+            // Android's framework syscall has the same non-replacing POSIX
+            // hard-link contract as java.nio; use it only when the Java API
+            // itself is unavailable. An actual filesystem/permission failure
+            // must still fail closed, never fall back to replacing rename.
+            try {
+                java.nio.file.Files.createLink(target.toPath(), scratch.toPath())
+            } catch (unavailable: UnsupportedOperationException) {
+                android.system.Os.link(scratch.absolutePath, target.absolutePath)
+            } catch (failure: java.nio.file.FileSystemException) {
+                // Both routes are create-only and kernel-enforced: retry
+                // Android's native link(2), never rename/replace the target.
+                // EEXIST, permission or filesystem denial still fails closed.
+                android.system.Os.link(scratch.absolutePath, target.absolutePath)
+            }
+            stage = "verify-published-registry"
             check(target.readBytes().contentEquals(expected)) {
                 "Core C2 published registry verification failed"
             }
@@ -171,7 +204,12 @@ internal object RiftCoreAdminRegistryProof {
                 "Core C2 registry schema, empty set or signer mismatched"
             }
             verified = true
+        } catch (failure: Exception) {
+            // Preserve the ORIGINAL failure even after mandatory cleanup.
+            transactionFailureStage = stage
+            throw failure
         } finally {
+            stage = "restore-absent-registry"
             // Remove ONLY exactly matched proof bytes; never delete an unknown
             // file if another actor replaced this private reserved target.
             for (file in listOf(target, scratch)) {
@@ -188,10 +226,12 @@ internal object RiftCoreAdminRegistryProof {
                     "Core C2 registry rollback directory cleanup failed"
                 }
             }
+            stage = "journal-clear"
             check(prefs.edit().remove(PENDING).remove(DIR_CREATED).commit()) {
                 "Core C2 registry rollback journal clear failed"
             }
         }
+        stage = "verify-restored-state"
         check(verified && !target.exists() && !scratch.exists() &&
             !prefs.getBoolean(PENDING, false)) {
             "Core C2 registry proof did not restore its original absent state"
@@ -203,16 +243,34 @@ internal object RiftCoreAdminRegistryProof {
             .put("providerRegistered", false)
             .put("registryRestored", true)
             .put("pendingJournal", false)
+        } catch (failure: Exception) {
+            // Sanitized, exact failing stage and exception type are visible
+            // only through the existing trusted Core admin/status boundary.
+            lastFailureStage = transactionFailureStage ?: stage
+            lastFailureType = failure.javaClass.simpleName.take(48)
+            // Android syscall errno is numeric and safe to expose; never
+            // return arbitrary exception messages or private disk paths.
+            lastFailureErrno =
+                (failure as? android.system.ErrnoException)?.errno ?: 0
+            throw failure
+        }
     }
 
     fun status(context: Context): JSONObject = synchronized(lock) {
-        val file = registry(context)
+        // Read-only diagnostics must still work when the path guard itself
+        // rejected the transaction. Unknown filesystem state fails closed.
+        val files = runCatching { registry(context) to temp(context) }.getOrNull()
         JSONObject().put("schema", SCHEMA)
             .put("operation", OPERATION)
             .put("target", TARGET)
             .put("availableOnlyWhenUnconfigured", true)
             .put("generalRuntimeRegistrationEnabled", false)
             .put("pendingJournal", pending(context).getBoolean(PENDING, false))
-            .put("registryExists", file.exists())
+            .put("pathStatusAvailable", files != null)
+            .put("registryExists", files?.first?.exists() ?: true)
+            .put("temporaryRegistryExists", files?.second?.exists() ?: true)
+            .put("lastFailureStage", lastFailureStage)
+            .put("lastFailureType", lastFailureType)
+            .put("lastFailureErrno", lastFailureErrno)
     }
 }

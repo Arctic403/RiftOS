@@ -1030,6 +1030,17 @@ for (const marker of [
   'stream.fd.sync()', 'java.nio.file.Files.createLink(target.toPath(), scratch.toPath())',
   'published.getJSONArray("providers").length() == 0',
   'check(file.delete())', '.remove(PENDING).remove(DIR_CREATED).commit()',
+  // Android non-replacing hard-link publication must remain fail-closed,
+  // including the API-unavailable Android Os.link fallback.
+  'catch (unavailable: UnsupportedOperationException)',
+  'catch (failure: java.nio.file.FileSystemException)',
+  'android.system.Os.link(scratch.absolutePath, target.absolutePath)',
+  'transactionFailureStage = stage',
+  '"lastFailureStage", lastFailureStage',
+  '"lastFailureType", lastFailureType',
+  '"lastFailureErrno", lastFailureErrno',
+  '"pathStatusAvailable", files != null',
+  '"temporaryRegistryExists", files?.second?.exists() ?: true',
   'fun recover(context: Context)', 'fun writeAndRollback(context: Context)',
   '"providerRegistered", false', '"registryRestored", true',
   '"generalRuntimeRegistrationEnabled", false'
@@ -1037,7 +1048,14 @@ for (const marker of [
 for (const marker of [
   'RiftCoreAdminRegistryProof.OPERATION', 'RiftCoreAdminRegistryProof.TARGET',
   'fun executeRegistryProof(', 'RiftCoreAdminRegistryProof.writeAndRollback(context)',
-  '"isolated-registry-proof"', '"registry-restored"'
+  '"isolated-registry-proof"', '"registry-restored"',
+  'val diagnostic = RiftCoreAdminRegistryProof.status(context)',
+  'diagnostic.optBoolean("pendingJournal", true)',
+  'diagnostic.optBoolean("registryExists", true)',
+  'diagnostic.optBoolean("temporaryRegistryExists", true)',
+  '.put("transactionCommitted", false)',
+  '.put("failureStage", diagnostic.optString("lastFailureStage", "unknown"))',
+  '.put("failureErrno", diagnostic.optInt("lastFailureErrno", 0))'
 ]) if (!c14Tickets.includes(marker)) fail(`C1.4-C2-A Core ticket/scope/audit guard missing: ${marker}`);
 for (const marker of [
   '"execute-registry-proof" -> RiftCoreAdminConsent.executeRegistryProof(',
@@ -1045,7 +1063,8 @@ for (const marker of [
   '"adminRegistryProof", RiftCoreAdminRegistryProof.status(context)',
   'Select isolated runtime registry proof scope',
   'Execute Core empty registry and rollback once',
-  'client.adminConsent("execute-registry-proof"'
+  'client.adminConsent("execute-registry-proof"',
+  'Core C2-A registry transaction FAILED at $stage ($kind)'
 ]) if (!(coreIpcProvider + coreApplication + coreRuntime +
   productionClient + c14AdminUi).includes(marker)) {
   fail(`C1.4-C2-A trusted Core Binder + native UI or interrupted cleanup missing: ${marker}`);

@@ -273,7 +273,24 @@ internal object RiftCoreAdminConsent {
                 RiftCoreSystemCapabilities.recordDecision(
                     context, ACTOR, operation, "failed", "registry-proof-rejected"
                 )
-                throw error
+                val diagnostic = RiftCoreAdminRegistryProof.status(context)
+                // A failed transaction must NEVER be reported as complete.
+                // Only return bounded failure diagnostics when the registry
+                // and journal are safely absent; otherwise preserve the
+                // exception and stop rather than masking cleanup failure.
+                if (diagnostic.optBoolean("pendingJournal", true) ||
+                    diagnostic.optBoolean("registryExists", true) ||
+                    diagnostic.optBoolean("temporaryRegistryExists", true)) throw error
+                JSONObject().put("schema", RiftCoreAdminRegistryProof.SCHEMA)
+                    .put("transactionCommitted", false)
+                    .put("rolledBack", false)
+                    .put("registryRestored", true)
+                    .put("providerRegistered", false)
+                    .put("pendingJournal", false)
+                    .put("failureStage", diagnostic.optString("lastFailureStage", "unknown"))
+                    .put("failureType", diagnostic.optString("lastFailureType", "unknown"))
+                    .put("failureErrno", diagnostic.optInt("lastFailureErrno", 0))
+
             }
         }
     }
