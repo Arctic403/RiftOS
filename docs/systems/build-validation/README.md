@@ -1,5 +1,10 @@
 # Build and Validation System
 
+## 2026-10-09 — C1.3-D third manual Builder RED: eight source ownership entries corrected
+
+**User-manual Builder run `37888463412`** installed source input **`b9b708a1d4fa7de26166deafe2cc76408209e1b3`** into CI, passed `validate-rift-wiring.mjs` and `validate-rift-transport.mjs` (including real `:riftShell` and strict RiftBrowser-owned WebKit checks), but failed `scripts/validate-rift-docs.mjs` on **exactly eight undocumented Kotlin files**: `RiftCoreShellLaunchQueue.kt`, `RiftCoreShellRemoteUiBroker.kt`, `RiftCoreShellWindowBridge.kt`, `RiftRemoteShellExecutor.kt`, `RiftRemoteShellUiClient.kt`, `RiftShellActivity.kt`, `RiftShellCoreClient.kt`, and `RiftShellRappHost.kt`. The canonical `docs/SOURCE_OWNERSHIP.md` now registers each of those eight maintained C1.3-D sources exactly once, mapped to existing responsible Core-shell, desktop, public-surface, shell, browser, RiftBuild and build-validation READMEs. Source ownership remains separate from build/device proof; the strict validator remains unchanged. Focused ledger-format check: **8/8 exact unique entries PASS**. Full documentation/npm and Kotlin/Gradle checks have **not** been rerun on this corrected source; no C1.3-D APK is signed or installed. User alone dispatches the next manual Builder. C1.3-C #655 remains the last device-pass gate; C1.3-E untouched.
+
+
 ## 2026-10-09 — C1.3-D second manual Builder RED: WebKit source ownership fixed, device pending
 
 User-manual Builder run `37887642001` progressed beyond the earlier `rappManager` declaration/grep issues and stopped during source validation with `WebKit ownership escaped RiftBrowser: android/app/src/main/java/com/riftos/app/RiftCoreApplication.kt`. The previous C1.3-D process isolation patch directly imported `android.webkit.WebView` and called `WebView.setDataDirectorySuffix("riftShell")` from Core Application initialization. Both `scripts/validate-rift-wiring.mjs` and Gradle's `validateRiftBrowserWebViewOwnership` rightly restrict the actual WebKit API to named RiftBrowser owners.
