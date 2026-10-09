@@ -1,5 +1,10 @@
 # RiftDesktop Window Manager
 
+## 2026-10-09 — C1.4-B native Admin Approvals window tested on signed #667
+
+The user manually installed signed Builder #667 executable `bba25e69`. Real native launcher opened `admin-permissions` into RiftDesktop, rendered scope and user-consent buttons, and Android native Allow once/Deny/Cancel modal worked on the physical device. B Core accepted one no-effect consent then denied replay, invalidated Deny/Cancel/revoke, and expired unused tickets after 45s. Closing the native window with a direct titlebar tap removed it from the visible desktop; an earlier accessibility click reported success without closing. Optional approval-while-closing hardening proof was not achieved due to Android System UI foreground stabilization. No intentional graphical shell process death was tested in B; PID-change revocation remains source-enforced, device untested. **C1.4-B consent-only DEVICE PASS**; actual elevated effects/rollback not implemented.
+
+
 ## 2026-10-09 — C1.4-B trusted Admin Approvals native window SOURCE CANDIDATE
 
 Native desktop launcher now advertises `admin-permissions` / **Admin Approvals** with a genuine native Android window body provided by `RiftNativeAdminApprovals`, not a hosted browser or installed RAPP. User intent is a foreground button plus native `AlertDialog` displaying fixed restricted test scope; Core alone creates time-limited signer/PID-bound ticket, audits decisions and consumes at most once. No system operation is executed, no global admin grant or root is exposed. Native close triggers best-effort ticket revocation; after actual graphical process restart old shell PID tokens are invalid. This does not modify C1.3-E Core/shell crash restoration semantics; generic snapshots do not carry administrator bearer tickets across PID changes. C1.4-B is SOURCE ONLY pending separate manual signed APK and physical UI tests.
