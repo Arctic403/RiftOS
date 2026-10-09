@@ -1,5 +1,12 @@
 # Build and Validation System
 
+## 2026-10-09 — C1.3-D #660 green/install physical main gate PASS, native terminal acceptance pending
+
+User-manual Builder #660/run 37891844448 produced signed, installed source `d43a30e29ae2d98abbcf7a54ccbe9a8841613e55`. Device showed Core PID25396 vs real production `:riftShell` PID25436, distinct. Previous #659 exact-process Binder auth failed; #660 successfully read four Core-owned installed RAPPs and exposed live remote PID/window state through `ps`. Native Files/Workspace and browser WebView read-only windows worked. Disposable SHA-verified input-probe was Core-only started generation1 and surface rev3; remote graphical launch `already-started`/queued, GUI delivered ACTION target10 count1 and TEXT_INPUT target20 `C13D_660_REMOTE`, Core rev6 unchanged PID/gen; remote graphical close stopped Core RAPP and cleared windows/sessions/surfaces/queue/focus. Disposable uninstall complete; all four original RAPPs protected.
+
+**Only remaining planned C1.3-D smoke:** native RiftShell terminal GUI opened, but accessibility Local Agent could not focus its visible EditText, so it could not submit a read-only command. User manually type `ps` in native RiftShell window and share screenshot; verify Core-backed result. Do not misclassify UI automation focus failure as a Core IPC terminal bug or claim terminal command passed without proof. Do not promote D yet; no additional build required for this manual-only check. C1.3-E separate real shell process crash/restart/auto-restore NOT STARTED.
+
+
 ## 2026-10-09 — C1.3-D #659 successful manual build, real device authentication failure
 
 Manual signed Builder #659 (37889666166) installed RiftOS source bd6e0b13 and rendered real desktop/taskbar/Installed Apps UI. Core PID 22863 had zero Core applications/sessions/surfaces. Installed Apps failed with 'Core IPC caller is not the production RiftShell process' and Core ps returned remoteShellPid null. Runtime proof blocked: D not promoted. All four installed RAPPs protected, including Rift++ Compiler Lab; no disposable installed or modified.
