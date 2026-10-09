@@ -1,5 +1,14 @@
 # Build and Validation System
 
+## 2026-10-09 — C1.4-A signed Builder #663 negative device qualification PASS
+
+User manual Builder #663/run `37918414463` installed executable source `74f2688ebe939682c36a4e0e08be62b4df505cfa`. Core PID29992, real graphical shell30093, exact four protected production RAPPs pre/post. C1.4-A policy and audit schema and `adminElevationEnabled:false`, `defaultDecision:deny`, `grantCount:0` returned via live Core and native `permissions policy`/`permissions audit`.
+
+**Negative proof:** native `kill kernel` rejected with `protected native process cannot be terminated: kernel` and logged denied `process.protected.kill`, PIDs unchanged. Separate disposable QA `c14a-admin-denial-probe-20261009`, packed SHA256 `483ac64746c580690c6e6d0db2d6429bfd7e4e6b1857de2084b0431295876445`, requested fs.write at nonexistent `/C:/System/c14a-policy-negative-denied.txt`. Ordinary permission `fs.write` Allowed in remote graphical consent; Core returned denied effect token44 and audited `system.fs.write` with no new system file. `stat` target absent before/after, Core app gen1 then remote Close stopped Core, uninstalled only disposable, `grantsRevoked:true`/`cleanupComplete:true`, Core apps/sessions/surfaces/queued0 focus null, admin grantCount0, audit entries2 and four originals intact.
+
+**C1.4-A DEVICE PASS**. Signed APK source verified through `rift_info`. Never infer general Android administrator/root or complete C1.4 capability elevation: B trusted one-use consent and C actual restricted-operation rollback still require separate implementations/manual Builder/hardware tests. No new Builder necessary for A; release sign-off docs-only.
+
+
 ## 2026-10-09 — C1.4-A default-deny Core admin policy source/Builder gate
 
 The new mandatory Gradle `RiftCoreSystemCapabilities.kt` defines `riftos.core.system-capabilities/1` and `riftos.core.system-capability-audit/1`: exact allowed policy operation names, all system admin grants disabled, bounded synchronous durable denial metadata audit and Core-only ownership. `RiftCoreRuntime.status` exposes policy status, `RiftRappCapabilityBroker` logs attempts to cross existing fs scope without allowing them, and native RiftShell protected-process `kill` remains forbidden but audited. Read-only `permissions policy/audit` commands do not grant elevation. RiftOS wiring and Builder source checks require this logic and the signed APK verifier checks both schema markers.

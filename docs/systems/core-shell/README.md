@@ -1,5 +1,12 @@
 # RiftOS Core ↔ RiftShell — canonical architecture (C1 series)
 
+## 2026-10-09 — C1.4-A Core policy/denial audit physical DEVICE PASS (#663)
+
+C1.4-A user-built signed Builder #663 source `74f2688e` installed and ran actual Core PID29992 and real shell PID30093. `core status.systemCapabilities` showed exact restricted five system operation families, `adminElevationEnabled=false`, `defaultDecision=deny`, `grantCount=0`. Native read-only `permissions policy` and `permissions audit` worked. Native `kill kernel` denied and logged `native-shell/process.protected.kill/denied` while protected processes stayed healthy. An isolated `c14a-admin-denial-probe-20261009` Core gen1 RAPP asked to write `/C:/System/c14a-policy-negative-denied.txt`; after ordinary `fs.write` consent Allow it still returned `DENIED/FAILED token=44`, target path remained absent, audit logged `rapp:c14a-admin-denial-probe-20261009/system.fs.write/denied`. This proves app-local grant is not system-admin authority.
+
+Remote Close cleaned Core apps/sessions/surfaces/queued/focus to zero. Disposable uninstall completed and revoked its grant, leaving all four original RAPPs intact. **A DEVICE PASS** for default-deny, bounded audit and two forbidden operation paths only. Android root/OS privilege not granted; no general system write permitted; other restricted categories not exhaustively exercised. **B** verified Core-issued narrow trusted user admin consent/grant/expiry/revoke and **C** operation-specific elevated enforcement and rollback remain unimplemented and require independent user-manual signed hardware gates.
+
+
 ## 2026-10-09 — C1.4-A Core admin system-policy foundation SOURCE ONLY
 
 **C1.3-C/D/E remain signed-device PASS.** Next is C1.4, Core-owned generic system capability and administrator consent/authorization, NOT Android root or implicit OS privilege. Existing `RiftRappCapabilityBroker` already enforces manifest declarations, user consent, ordinary app-local persisted grants and narrow RAPP filesystem permissions; `RiftCoreShellCapabilityRequests` owns single-use application consent/effect tickets. Those grants MUST NOT be silently promoted to high-impact system grants.

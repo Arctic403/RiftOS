@@ -1,5 +1,14 @@
 # RiftOS Roadmap
 
+## 2026-10-09 — C1.4-A DEVICE PASS (#663); C1.4-B next independent source/device gate
+
+C1.3-C/D/E remain DEVICE PASS (#655/#660/#661). **C1.4-A DEVICE PASS** on user-manual signed Builder **#663** run `37918414463`, installed executable source `74f2688ebe939682c36a4e0e08be62b4df505cfa`: Core PID29992 separate real shell30093; `systemCapabilities` Core policy default deny/admin elevation disabled/grants0; native `permissions policy` and `permissions audit` read-only. Native `kill kernel` was denied with audited `process.protected.kill`. Isolated disposable `c14a-admin-denial-probe-20261009` received ordinary `fs.write` Allow yet its explicit out-of-scope `/C:/System/c14a-policy-negative-denied.txt` request was denied and audited `system.fs.write`, with file absent before/after. Core session/window/queues zero after close, uninstall cleaned package and revoked ordinary grant, exact four original RAPPs intact.
+
+**C1.4-B NEXT — NOT STARTED:** design verified user-initiated, single-use Core-owned elevated consent tickets bound to exact caller/package signer, operation, target and expiry; trustworthy foreground UI, deny/cancel/timeout and explicit revocation, auditable. Do NOT let ordinary RAPP capabilities or `fs.write` Allow become system admin automatically; do not bypass Android restrictions. Build/sign/install and real negative/positive consent lifecycle proofs as a separate user-manual gate.
+
+**C1.4-C LATER — NOT STARTED:** wire actual narrowly scoped system files, software install, signer-pinned runtime registration and protected process actions behind B policy with atomic rollback. A's category declarations alone do NOT prove those operations. C1.5 subsequent embedded-engine retirement. All manual Builder workflow/user protected apps unchanged.
+
+
 ## Active 2026-10-09 — C1.4 system capability/admin elevation; A SOURCE CANDIDATE, B/C not started
 
 C1.3-C/D/E are **independently DEVICE PASS** (signed user-built #655/#660/#661). **C1.4 is Core policy authorization for RiftOS operations, NOT Android root or a bypass of Android OS permission/security controls.** Do not issue blanket system-write capability grants, grant Android privileges by claiming they exist, or let a RAPP manifest, shell/window UI or same-UID process become administrator.
