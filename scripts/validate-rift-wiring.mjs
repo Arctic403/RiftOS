@@ -994,8 +994,20 @@ if (c14Rollback.includes('Process.killProcess(') ||
 // The Core C1.4-C1 effect already executes before its response reaches the
 // client: rejecting its valid dedicated schema would falsely report failure
 // after the one-use ticket is consumed. Preserve both exact response schemas.
-if (!/RiftCoreSurfaceIpcProvider\.METHOD_SHELL_ADMIN_CONSENT\s*->\s*if\s*\(extras\?\.getString\("action"\)\s*==\s*"execute-rollback-proof"\)\s*\{\s*RiftCoreAdminRollbackProof\.SCHEMA\s*\}\s*else\s+if\s*\(extras\?\.getString\("action"\)\s*==\s*"execute-registry-proof"\)\s*\{\s*RiftCoreAdminRegistryProof\.SCHEMA\s*\}\s*else\s*\{\s*RiftCoreAdminConsent\.SCHEMA\s*\}/.test(productionClient)) {
-  fail('C1.4-C1 Shell must validate rollback schema only for execute-rollback-proof and retain B consent schema otherwise');
+const adminResponse = productionClient
+  .split('RiftCoreSurfaceIpcProvider.METHOD_SHELL_ADMIN_CONSENT ->')[1]
+  ?.split('else -> SCHEMA')[0]?.replace(/\s+/g, ' ') ?? '';
+for (const [action, schema] of [
+  ['execute-rollback-proof', 'RiftCoreAdminRollbackProof.SCHEMA'],
+  ['execute-registry-proof', 'RiftCoreAdminRegistryProof.SCHEMA'],
+  ['discover-providers', '"riftos.core.runtime-candidates/1"']
+]) {
+  if (!adminResponse.includes(`getString("action") == "${action}") { ${schema} }`)) {
+    fail(`C1.4 Core IPC response schema mismatch for ${action}`);
+  }
+}
+if (!adminResponse.includes('} else { RiftCoreAdminConsent.SCHEMA }')) {
+  fail('C1.4 original Core consent response schema fallback missing');
 }
 
 // C1.4-C2-A: fixed empty provider-registry transaction, not a new provider
