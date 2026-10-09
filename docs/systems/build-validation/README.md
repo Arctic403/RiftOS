@@ -1,5 +1,9 @@
 # Build and Validation System
 
+## 2026-10-09 — C1.4-C1 dedicated response schema regression checks
+
+User-manual signed Builder #668 (run 37982033247, executable source 631961bc) is GREEN/installed, but C1 real canary write has NOT been tested. The Shell client previously expected the admin-consent response schema for execute-rollback-proof even though Core returns the admin-rollback-proof schema. Minimal action-dependent schema validation is source-patched. RiftOS source wiring validator now requires exact if/else routing; Builder preflight verifies the client branch; Builder selftests require the preflight guard; signed APK verifier still checks both schemas. Existing B response contract, Core authorization, permissions, journalling, rollback and installed apps are unchanged. Next USER-MANUAL signed build/install must precede actual C1 effect and denial/replay/window-close device tests.
+
 ## 2026-10-09 — C1.4-C1 journalled restricted admin rollback source/Builder gate, signed-device proof pending
 
 New required Core source `RiftCoreAdminRollbackProof.kt` and Gradle/source owner registration. Fail-closed source validator/Builder preflight enforce exact fixed virtual C: target `/C:/RiftOS/.c14c-rollback.txt`, `system.fs.write`, synchronous pending journal commit BEFORE create, bounded fixed contents, fsync/readback verification, mandatory deletion and journal clearing, startup interrupted-operation recovery and Core status introspection. Core approved one-use exact Binder shell ticket requires foreground lease; native Admin Approvals has a distinct test-mode toggle and exact-scope native dialog, one-use execute and close-window revoke-all. Signed APK verifier requires `riftos.core.admin-rollback-proof/1`. Old B read-only/consume-proof and C1.4-A denied/protected routes remain; C1.3-C/D/E device gates untouched.

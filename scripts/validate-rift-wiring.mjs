@@ -984,6 +984,13 @@ if (c14Rollback.includes('Process.killProcess(') ||
   fail('C1.4-C1 must never execute generalized privileged operations');
 }
 
+// The Core C1.4-C1 effect already executes before its response reaches the
+// client: rejecting its valid dedicated schema would falsely report failure
+// after the one-use ticket is consumed. Preserve both exact response schemas.
+if (!/RiftCoreSurfaceIpcProvider\.METHOD_SHELL_ADMIN_CONSENT\s*->\s*if\s*\(extras\?\.getString\("action"\)\s*==\s*"execute-rollback-proof"\)\s*\{\s*RiftCoreAdminRollbackProof\.SCHEMA\s*\}\s*else\s*\{\s*RiftCoreAdminConsent\.SCHEMA\s*\}/.test(productionClient)) {
+  fail('C1.4-C1 Shell must validate rollback schema only for execute-rollback-proof and retain B consent schema otherwise');
+}
+
 // Historical Core/alternate client invariants remain; C1.3-D extends them.
 
 // C1.2-B2-B2: Core lease authorization gates admission AND queued delivery.

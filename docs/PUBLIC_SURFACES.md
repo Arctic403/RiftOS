@@ -1,5 +1,9 @@
 # RiftOS Public and Cross-Layer Surfaces
 
+## 2026-10-09 — Authenticated admin IPC has action-specific response schemas
+
+The shell.admin.consent request schema stays riftos.shell.admin-consent-request/1. B actions request, decide, revoke, consume-proof, window-closed, and status return riftos.core.admin-consent/1. Only execute-rollback-proof returns riftos.core.admin-rollback-proof/1, including Core PID and fixed transaction result. The Core already produced this schema on signed #668, but Shell was incorrectly requiring admin-consent for all actions. The source correction selects the exact schema from the recognized action and retains existing PID checks; this does not grant any additional authority. C1 effect still lacks signed device proof, and this correction needs a new USER-MANUAL Builder release.
+
 ## 2026-10-09 — C1.4-C1 fixed Core-only virtual C: rollback transaction API SOURCE
 
 Authenticated Core `shell.admin.consent` now permits two additional strictly validated actions: `execute-rollback-proof` requires Core-issued approved exact-scope `system.fs.write` one-use token, live OS-attested production real-shell PID/signature and Core foreground lease, and performs ONLY a fixed virtual C: canary write/fsync/readback/delete with durable crash journal; `window-closed` revokes unused tickets for that exact real shell PID without trusting UI bearer bookkeeping. New Core `riftos.core.admin-rollback-proof/1` status `adminRollbackProof` reports `pendingJournal` and `canaryExists`. Explicit native fixed-mode selector/confirmation UI is not a RAPP or terminal privilege interface. Existing C1.4-B `consume-proof` remains NO-EFFECT and `systemCapabilities.adminElevationEnabled=false`, grantCount0/default-deny; all other privileged effects rejected. Signed-device proof pending, not a generalized public filesystem API or Android root.

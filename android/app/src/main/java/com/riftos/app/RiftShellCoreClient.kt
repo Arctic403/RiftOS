@@ -51,8 +51,15 @@ class RiftShellCoreClient(context: Context) {
                 RiftCoreShellWindowBridge.SCHEMA
             RiftCoreSurfaceIpcProvider.METHOD_SHELL_RECOVERY_CLAIM ->
                 RiftCoreShellRecovery.SCHEMA
+            // The single real C1.4-C1 transaction returns its own versioned
+            // proof schema. Every B consent/status/revoke action retains the
+            // original admin-consent schema and all PID checks remain shared.
             RiftCoreSurfaceIpcProvider.METHOD_SHELL_ADMIN_CONSENT ->
-                RiftCoreAdminConsent.SCHEMA
+                if (extras?.getString("action") == "execute-rollback-proof") {
+                    RiftCoreAdminRollbackProof.SCHEMA
+                } else {
+                    RiftCoreAdminConsent.SCHEMA
+                }
             else -> SCHEMA
         }
         require(json.getString("schema") == schema) { "Core IPC schema mismatch" }
