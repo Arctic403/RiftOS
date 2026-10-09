@@ -527,6 +527,61 @@ if (!manifest.includes('android:name=".RiftAlternateGraphicalShellActivity"') ||
   fail('C1.2-D2 graphical Activity manifest or mandatory Kotlin source missing');
 }
 
+// C1.3-A: Android Binder read-only snapshots from main Core process
+// to :riftShellProbe; this is NOT full RiftShell process isolation yet.
+const coreIpcProvider = read(`${kotlinDir}/RiftCoreSurfaceIpcProvider.kt`);
+const remoteShell = read(`${kotlinDir}/RiftRemoteShellProbeActivity.kt`);
+for (const marker of [
+  'riftos.core.surface-ipc/1',
+  'com.riftos.app.core-surface-ipc',
+  'class RiftCoreSurfaceIpcProvider : ContentProvider()',
+  'override fun call(method: String, arg: String?, extras: Bundle?): Bundle',
+  'RiftCoreRuntime.surfaces(ctx).snapshot(id)',
+  'Process.myPid()',
+  'MAX_REPLY_BYTES = 256 * 1024',
+  'Core IPC snapshot exceeds bounded Binder payload',
+  'Core IPC insert forbidden',
+  'Core IPC update forbidden',
+  'Core IPC delete forbidden'
+]) if (!coreIpcProvider.includes(marker)) fail(`C1.3-A Core IPC provider missing: ${marker}`);
+for (const marker of [
+  'class RiftRemoteShellProbeActivity : Activity()',
+  'RiftCoreSurfaceIpcProvider.AUTHORITY',
+  'contentResolver.call(',
+  'RiftCoreSurfaceIpcProvider.METHOD_SNAPSHOT',
+  'RiftCoreSurfaceIpcProvider.RESULT_JSON',
+  'Process.myPid()',
+  'Core PID=',
+  'Shell PID=',
+  'Separate Android processes:',
+  'mainHandler.removeCallbacks(poll)',
+  'RiftAppAbi.NodeKind.TEXT_INPUT',
+  'RiftAppAbi.NodeKind.ACTION'
+]) if (!remoteShell.includes(marker)) fail(`C1.3-A remote shell IPC consumer missing: ${marker}`);
+for (const marker of [
+  'RiftCoreRuntime.', 'RiftRappHost(', 'RiftNativeDesktop(',
+  'sessions.attach(', '.offerEvent(', '.requestFocusFromShell('
+]) if (remoteShell.includes(marker)) {
+  fail(`C1.3-A remote shell directly invokes prohibited Core authority: ${marker}`);
+}
+if (!manifest.includes('android:name=".RiftCoreSurfaceIpcProvider"') ||
+    !manifest.includes('android:authorities="com.riftos.app.core-surface-ipc"') ||
+    !manifest.includes('android:name=".RiftRemoteShellProbeActivity"') ||
+    !manifest.includes('android:process=":riftShellProbe"')) {
+  fail('C1.3-A distinct-process IPC manifest wiring missing');
+}
+if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreSurfaceIpcProvider.kt"') ||
+    !gradle.includes('"src/main/java/com/riftos/app/RiftRemoteShellProbeActivity.kt"')) {
+  fail('C1.3-A IPC mandatory Kotlin compile sources missing');
+}
+for (const marker of [
+  'RiftRemoteShellProbeActivity::class.java',
+  'Intent.FLAG_ACTIVITY_NEW_TASK',
+  'RiftRemoteShellProbeActivity.EXTRA_APP_ID',
+  '"riftos.shell.client.remote-ipc/1"',
+  '"ipc-view"'
+]) if (!nativeShell.includes(marker)) fail(`C1.3-A IPC control command missing: ${marker}`);
+
 // C1.2-B2-B2: Core lease authorization gates admission AND queued delivery.
 // Input tickets capture the original focus revision so a refocus cannot
 // revive an input that was pending while another window owned focus.

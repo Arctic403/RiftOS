@@ -89,6 +89,8 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftCoreAppLifecycle.kt",
         "src/main/java/com/riftos/app/RiftAlternateShellClient.kt",
         "src/main/java/com/riftos/app/RiftAlternateGraphicalShellActivity.kt",
+        "src/main/java/com/riftos/app/RiftCoreSurfaceIpcProvider.kt",
+        "src/main/java/com/riftos/app/RiftRemoteShellProbeActivity.kt",
         "src/main/java/com/riftos/app/RiftCoreAppExecutor.kt",
         "src/main/java/com/riftos/app/RiftCoreShellCapabilityRequests.kt",
         "src/main/java/com/riftos/app/RiftCorePackageEvents.kt",

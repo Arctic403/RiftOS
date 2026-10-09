@@ -407,7 +407,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "write <file> <text>  touch <file>  mkdir <dir>  cp|mv <from> <to> [--force]  rm <path>\n" +
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
                     "workspace [cd|info|ls|status|push]\n" +
-                    "core status|sessions|surfaces|focus|apps|app-start|app-stop|alt-list|alt-attach|alt-render|alt-detach|alt-graphic-open   [CORE / ALT SHELL]\n" +
+                    "core status|sessions|surfaces|focus|apps|app-start|app-stop|alt-list|alt-attach|alt-render|alt-detach|alt-graphic-open|ipc-view   [CORE / ALT SHELL]\n" +
                     "riftbuild compiler-status|compiler-run|jvm-status|jvm-dex|runtime-status|pack-rapp|install-rapp|uninstall-rapp|launch-rapp|rapp-list|verify|install-proof|install-status|launch-proof   [GENERIC / BOUNDED]\n" +
                     "riftcrash help|status|start|capture|latest|reset [package]   [LOCALHOST DIAGNOSTIC BRIDGE]\n" +
                     "qjs help|version|eval|run   [BOUNDED HEADLESS QUICKJS / READ-ONLY RIFTFS]\n" +
@@ -504,7 +504,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "riftos-agent" -> services.riftOsAgent(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
             "riftllm-agent" -> services.riftLlm(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
             "core" -> {
-                val usage = "usage: core status|sessions|surfaces|focus|apps|app-start <id>|app-stop <id>|alt-list|alt-attach <id>|alt-render <id>|alt-detach <id>|alt-graphic-open <id>"
+                val usage = "usage: core status|sessions|surfaces|focus|apps|app-start <id>|app-stop <id>|alt-list|alt-attach <id>|alt-render <id>|alt-detach <id>|alt-graphic-open <id>|ipc-view <id>"
                 val state = when {
                     args.size == 1 -> when (args.single().lowercase()) {
                         "status" -> RiftCoreRuntime.status(appContext)
@@ -540,6 +540,26 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                             .put("revision", surface.revision)
                             .put("launchDispatched", true)
                             .put("separateShellProcess", false)
+                    }
+                    args.size == 2 && args[0].lowercase() == "ipc-view" -> {
+                        val id = args[1]
+                        require(id.isNotBlank() && id.length <= 128) {
+                            "Remote shell IPC proof app ID invalid"
+                        }
+                        val surface = RiftCoreRuntime.surfaces(appContext).snapshot(id)
+                            ?: error("No Core surface for remote shell IPC proof")
+                        appContext.startActivity(
+                            Intent(appContext, RiftRemoteShellProbeActivity::class.java)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                .putExtra(RiftRemoteShellProbeActivity.EXTRA_APP_ID, id)
+                        )
+                        JSONObject()
+                            .put("schema", "riftos.shell.client.remote-ipc/1")
+                            .put("appId", id)
+                            .put("attachmentGeneration", surface.attachmentGeneration)
+                            .put("revision", surface.revision)
+                            .put("launchDispatched", true)
+                            .put("process", ":riftShellProbe")
                     }
                     args.size == 2 && args[0].lowercase() == "app-start" ->
                         RiftCoreRuntime.lifecycle(appContext).start(args[1])

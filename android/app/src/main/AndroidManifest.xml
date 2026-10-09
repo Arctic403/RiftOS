@@ -77,6 +77,16 @@
                 <data android:scheme="riftos" android:host="mcp" />
             </intent-filter>
         </activity>
+        <provider
+            android:name=".RiftCoreSurfaceIpcProvider"
+            android:authorities="com.riftos.app.core-surface-ipc"
+            android:exported="false"
+            android:multiprocess="false" />
+        <activity
+            android:name=".RiftRemoteShellProbeActivity"
+            android:exported="false"
+            android:process=":riftShellProbe"
+            android:resizeableActivity="true" />
         <activity
             android:name=".RiftAlternateGraphicalShellActivity"
             android:exported="false"

@@ -87,6 +87,8 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftCoreAppLifecycle.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftAlternateShellClient.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftAlternateGraphicalShellActivity.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftCoreSurfaceIpcProvider.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftRemoteShellProbeActivity.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCoreAppExecutor.kt` | `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCoreShellCapabilityRequests.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCorePackageEvents.kt` | `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
