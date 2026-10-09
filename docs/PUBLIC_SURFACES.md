@@ -1,5 +1,10 @@
 # RiftOS Public and Cross-Layer Surfaces
 
+## 2026-10-09 — C1.3-C DEVICE PASS / same-process Core execution contract
+
+Signed manual Builder #655 source `8d7608f` ran the verified disposable RAPP in Core and survived actual `MainActivity.recreate()` without Core process restart, extra BOOT, or new app generation. User screenshot and separate Core subscriber confirmed working ACTION and `C13C_MANUAL_655` TEXT_INPUT with generation1 and advancing immutable surface revisions. Background Core focus settled to null and cleanup left zero Core runtime state and the original three installed RAPPs. Production process-separated graphical client and IPC are NOT part of this contract: **C1.3-D NEXT** and **C1.3-E AFTER D** require separate user-manual signed device proofs.
+
+
 ## C1.3-C #654 DEVICE PARTIAL, foreground focus repair pending
 
 Build #654 source 130dea17 verified Core-only BOOT, graphical same-generation ACTION/TEXT_INPUT state, and Core-initiated stop. Android Back backgrounded the Activity but kept a focus lease and graphical subscriber; it did NOT prove Android Activity destruction. The next source corrects focus gating on pause/blur and foreground resume. Authorized Local Agent Dev Lab `recreate-main-activity-proof` (requiring an active disposable Core RAPP and foreground MainActivity) schedules actual Android `Activity.recreate()` without stopping Core. Require new user-manual signed APK/device proof. C1.3-D/E are not started.

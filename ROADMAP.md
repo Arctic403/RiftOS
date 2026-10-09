@@ -1,5 +1,10 @@
 # RiftOS Roadmap
 
+## 2026-10-09 — C1.3-C DEVICE PASS; C1.3-D NEXT as separate gate
+
+User-manual signed Builder #655 installed source `8d7608f`. On-device disposable Core-only RAPP gen1 survived real `MainActivity.recreate()`, preserved PID7528/session/surface, reattached GUI and accepted manual ACTION/TEXT_INPUT `C13C_MANUAL_655`; Core terminal view confirmed committed text and advancing surface revision. Focus settled null in background, Core stop/uninstall fully cleaned test app and original three RAPPs remained. **C1.3-C device-proven**. **C1.3-D not started:** migrate actual desktop, taskbar, graphical windows/input and application surface rendering into its own real `:riftShell` process, while Core/RAPP execution remains independent; add versioned bounded authenticated Core↔shell transport; do not equate the existing remote diagnostic probe with real RiftShell. Build and device prove D separately, then C1.3-E real RiftShell process death/automatic restart + Core/RAPP survival proof as another separate gate. Manual Android Builder remains USER ONLY.
+
+
 ## Active 2026-10-08 checkpoint: C1.3-C → C1.3-D → C1.3-E (separate device gates)
 
 The user's newer instruction **replaces** the older proposal to patch C/D/E in a single pass. Proceed in strict order, requiring complete RiftOS+Builder source/test/docs synchronization, user-manual Builder, signed APK installation and separate installed-device proof for each gate. Preserve the pre-change RiftOS and Builder backup archives. Do not silently advance after a source-only candidate.

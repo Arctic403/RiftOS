@@ -1,5 +1,10 @@
 # Build and Validation System
 
+## 2026-10-09 — C1.3-C signed Android/device gate accepted on #655
+
+The user manually built and installed source `8d7608f` using Builder #655/run `37882347339`. Installed RiftOS reported exact SHA. Real Android: disposable RAPP Core-only BOOT/gen1/rev1, graphical attach same gen, guarded real MainActivity.recreate preserved Core PID7528/gen1/session/surface rev3; user manual action and text screenshot and subsequent independent Core `alt-render` verified `C13C_MANUAL_655` persisted and action count increased. Focus revocation on leaving RiftOS eventually showed `focusedAppId:null`; an intermediate during UI switching may hold a lease, so do not use momentary cross-app checks as settled focus proof. Disposable stop/uninstall cleaned Core with exact original three RAPPs intact. **C1.3-C device pass.** User-only manual Builder remains unchanged. Next **C1.3-D**, real desktop/window manager/renderer separate Android process, needs its OWN coherent code+docs+Builder update, signed build and physical device proof. C1.3-E is not started.
+
+
 ## C1.3-C after #654 device discovery — follow-up source gate, not promoted
 
 User-manual #654 installed source 130dea17 and proved Core BOOT, graphical reuse, ACTION/TEXT_INPUT state and cleanup. Android Back backgrounded MainActivity but left Core input focus and GUI subscriber. Following C1.3-C source must revoke focus on pause/window blur, allow focus only for real foreground windows, and restore only non-minimized visible focus on return. A guarded, generic QA-only Local Agent Dev Lab action `recreate-main-activity-proof` requests true Android MainActivity.recreate for one currently running Core RAPP. Require source/Builder tests, signed DEX marker `riftos.qa.activity-recreate/1`, and the user-manual installed-device proof: actual Activity recreation keeps Core PID, generation, surface/state, and no duplicate BOOT. User triggers Builder only. Do not mark C1.3-C passed or begin D/E until proven.
