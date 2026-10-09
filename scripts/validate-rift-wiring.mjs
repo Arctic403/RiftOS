@@ -731,8 +731,11 @@ for (const required of [
   fail(`C1.3-D native system window must use remote Core package authority: ${required}`);
 }
 if (!coreApplication.includes('RiftMcpRuntime.relayClient(this).start()') ||
-    !coreApplication.includes('WebView.setDataDirectorySuffix("riftShell")')) {
-  fail('C1.3-D Core relay/default-process ownership or shell WebView process suffix missing');
+    !coreApplication.includes('RiftBrowserWindow.prepareRemoteShellWebViewDirectory()') ||
+    !browserWindow.includes('fun prepareRemoteShellWebViewDirectory()') ||
+    !browserWindow.includes('WebView.setDataDirectorySuffix("riftShell")') ||
+    hasWebKitDependency(coreApplication)) {
+  fail('C1.3-D Core process bootstrap must delegate remote-shell WebKit suffix to RiftBrowser owner');
 }
 
 // Historical Core/alternate client invariants remain; C1.3-D extends them.

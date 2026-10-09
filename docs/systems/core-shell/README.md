@@ -1,5 +1,10 @@
 # RiftOS Core ↔ RiftShell — canonical architecture (C1 series)
 
+## 2026-10-09 — C1.3-D second manual build source-gate correction: WebKit remains RiftBrowser-owned
+
+Manual Builder run `37887642001` failed before Kotlin/Gradle compilation because `RiftCoreApplication.kt` imported `android.webkit.WebView`, violating the deliberate RiftBrowser-only WebKit owner contract. The same-process Core still detects `:riftShell` during `Application.onCreate`, but now delegates process-specific setup to `RiftBrowserWindow.prepareRemoteShellWebViewDirectory()` (WebKit import and `WebView.setDataDirectorySuffix("riftShell")` live exclusively in allowlisted `RiftBrowserWindow.kt`). Initialization still executes before the `:riftShell` Activity constructs its browser, avoiding WebView data-directory conflicts. No weakening of the source validator or Gradle ownership allowlist. Source/Builder checks synchronized; user-manual signed build and actual Core-vs-production-shell PID/device RAPP proof still pending. **C1.3-E remains untouched.**
+
+
 ## 2026-10-09 — C1.3-D production RiftShell separate-process migration SOURCE CANDIDATE (not yet device-proven)
 
 **Authority:** C1.3-C is device-PASS (#655). D moves the actual default launcher `RiftShellActivity`, `RiftNativeDesktop` taskbar/window manager, native Files/Editor/Terminal/Installed Apps/browser windows and generic `RiftShellRappHost` graphics into the **named Android `:riftShell` process**. The old remote `:riftShellProbe` remains strictly READ-ONLY diagnostic; it is not the production desktop. No activity in the production shell runs Core RAPP executables or owns Core sessions/program state. `RiftCoreApplication`, `RiftCoreRuntime`, `RiftCoreAppLifecycle`, `RiftCoreAppSessions`, `RiftCoreAppExecutor`, and the relay stay in the default Android application process.

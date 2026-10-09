@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
+import android.webkit.WebView
 import android.widget.FrameLayout
 import org.json.JSONArray
 import org.json.JSONObject
@@ -24,6 +25,19 @@ class RiftBrowserWindow(
     private val activity: Activity
 ) {
     companion object {
+        /**
+         * Must run from Application.onCreate() in the actual :riftShell
+         * process BEFORE any WebView instance/provider is constructed.
+         * Keep the Android WebKit API in the explicit RiftBrowser owner;
+         * the Core application does only process identity/lifecycle routing.
+         */
+        fun prepareRemoteShellWebViewDirectory() {
+            check(android.os.Build.VERSION.SDK_INT >= 28) {
+                "Per-process WebView data directory requires Android 9+"
+            }
+            WebView.setDataDirectorySuffix("riftShell")
+        }
+
         private const val FILE_CHOOSER_REQUEST = 7002
         private const val MAX_TABS = 8
         private const val DEFAULT_URL = "https://chatgpt.com"

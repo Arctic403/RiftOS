@@ -2,7 +2,6 @@ package com.riftos.app
 
 import android.app.Application
 import android.os.Build
-import android.webkit.WebView
 import java.io.File
 
 /**
@@ -34,7 +33,7 @@ class RiftCoreApplication : Application() {
             // Android WebView requires its own browser data directory per
             // process; otherwise moving the real browser into RiftShell may
             // fail due to the Core/browser helper process holding the lock.
-            WebView.setDataDirectorySuffix("riftShell")
+            RiftBrowserWindow.prepareRemoteShellWebViewDirectory()
         }
     }
 }
