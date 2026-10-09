@@ -78,6 +78,10 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".RiftAlternateGraphicalShellActivity"
+            android:exported="false"
+            android:resizeableActivity="true" />
+        <activity
             android:name=".RiftBrowserPreviewActivity"
             android:exported="false"
             android:resizeableActivity="true"

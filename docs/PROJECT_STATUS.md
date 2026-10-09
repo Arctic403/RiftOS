@@ -16,6 +16,12 @@ From `android/app/build.gradle.kts`:
 - version `0.11.11-relay-client`;
 - release minification disabled.
 
+## 2026-10-08 — C1.2-D1 dual-client device PASS; D2 graphical client source
+
+User manually installed RiftOS `b0b6e9b3`, Builder run #650/`37865537876`; Core PID 2521. Disposable RAPP Core-booted generation 1, frame READY revision 1. Independent `core alt-attach`/`core alt-render` returned typed Core nodes. Main GUI then adopted same session, user ACTION and TEXT_INPUT persisted `actions:1` and `ALT_CLIENT_TEST`, terminal renderer independently observed revision 4, three notifications and updated text. Detaching terminal left graphical Core session/input working; another ACTION reached actions=2, normal close revoked focus/removed session/surface, disposable uninstall succeeded, Core PID survived and three originals intact. **C1.2-D1 same-process GUI/terminal dual-reader DEVICE PASS.**
+
+**C1.2-D2 SOURCE candidate:** New independent read-only native graphical Activity directly subscribes to Core immutable `RiftAppAbi.Frame` snapshots, displays generic flow/absolute typed nodes, and unsubscribes on stop without accessing RAPP execution, focus or app input. `core alt-graphic-open <id>` opens the nonexported viewer for an existing Core surface. Normal RiftShell graphical client unchanged. New manually built APK must prove an alternate GUI renders an installed Core RAPP without BOOT/session replacement, observes updated state after normal GUI input, and disconnects cleanly. Both renderers remain in **the same Android process**; C1.3 process/IPC proof pending.
+
 ## 2026-10-08 — C1.2-C2 device PASS; D1 alternate read-only shell client SOURCE
 
 Live RiftOS `71ff8bb5`, user Builder #648/`37845327864`, Core PID 17280: disposable `c12b2a-input-probe-20261008` Core-booted to running/session generation 1, surface revision 1; selecting its native launcher item successfully adopted the same generation into graphical presentation, cleared Core-only registry, preserved existing session and displayed READY. Surface revision advanced on attach, potentially due to normal resize events; no direct BOOT-event trace claimed. Real graphical button/text updated persisted state `actions:1`, `ADOPTED_C2`. Titlebar close removed Core session/surface and revoked focus; uninstall cleaned disposable, three original RAPPs unchanged and Core PID survived. **C2 normal-path device PASS**.

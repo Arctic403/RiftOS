@@ -492,6 +492,41 @@ if (!gradle.includes('"src/main/java/com/riftos/app/RiftAlternateShellClient.kt"
   fail('C1.2-D1 alternate shell mandatory Kotlin source missing');
 }
 
+// C1.2-D2: a separate read-only native graphical Activity renders the
+// same Core snapshots, without RiftRappHost/RiftNativeDesktop authority.
+const alternateGraphical = read(`${kotlinDir}/RiftAlternateGraphicalShellActivity.kt`);
+for (const marker of [
+  'class RiftAlternateGraphicalShellActivity : Activity()',
+  'riftos.core.alt-graphic-app-id',
+  'RiftCoreRuntime.surfaces(applicationContext)',
+  'surfaces.subscribe { change ->',
+  'if (change.appId == appId)',
+  'surfaces.snapshot(appId)',
+  'frame.layout == RiftAppAbi.Layout.ABSOLUTE',
+  'RiftAppAbi.NodeKind.TEXT_INPUT',
+  'RiftAppAbi.NodeKind.ACTION',
+  'RiftAppAbi.NodeKind.IMAGE',
+  'subscription?.let(surfaces::unsubscribe)',
+  'isClickable = false',
+  'isFocusable = false',
+  'No application input'
+]) if (!alternateGraphical.includes(marker)) fail(`C1.2-D2 graphical client missing: ${marker}`);
+for (const forbidden of [
+  'RiftRappHost(', 'RiftNativeDesktop(', '.offerEvent(',
+  '.requestFocusFromShell(', '.executeChained(', 'sessions.attach('
+]) if (alternateGraphical.includes(forbidden)) fail(`C1.2-D2 graphical client has forbidden input/execution authority: ${forbidden}`);
+for (const marker of [
+  'RiftAlternateGraphicalShellActivity::class.java',
+  'Intent.FLAG_ACTIVITY_NEW_TASK',
+  'RiftAlternateGraphicalShellActivity.EXTRA_APP_ID',
+  'RiftCoreRuntime.surfaces(appContext).snapshot(id)',
+  '"riftos.shell.client.graphical/1"'
+]) if (!nativeShell.includes(marker)) fail(`C1.2-D2 graphical shell control missing: ${marker}`);
+if (!manifest.includes('android:name=".RiftAlternateGraphicalShellActivity"') ||
+    !gradle.includes('"src/main/java/com/riftos/app/RiftAlternateGraphicalShellActivity.kt"')) {
+  fail('C1.2-D2 graphical Activity manifest or mandatory Kotlin source missing');
+}
+
 // C1.2-B2-B2: Core lease authorization gates admission AND queued delivery.
 // Input tickets capture the original focus revision so a refocus cannot
 // revive an input that was pending while another window owned focus.
