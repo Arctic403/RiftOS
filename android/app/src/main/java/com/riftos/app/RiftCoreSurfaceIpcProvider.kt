@@ -196,9 +196,10 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
                 }
                 require(id.isEmpty()) { "Core admin consent forbids shell-supplied actor" }
                 val caller = Binder.getCallingPid()
-                val bearer = request.getString("ticket").takeIf { it.length <= 64 }.orEmpty()
-                val operation = request.getString("operation")
-                val target = request.getString("target")
+                val bearer = request.getString("ticket").orEmpty()
+                require(bearer.length <= 64) { "Core admin bearer exceeds bound" }
+                val operation = request.getString("operation").orEmpty()
+                val target = request.getString("target").orEmpty()
                 require(operation.length <= 64 && target.length <= 128) {
                     "Core admin consent scope exceeds bound"
                 }

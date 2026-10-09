@@ -892,6 +892,18 @@ if (!coreRuntime.includes('"adminConsent", RiftCoreAdminConsent.status(context)'
     !coreShellRecovery.includes('RiftCoreAdminConsent.revokeForShellReplacement(')) {
   fail('C1.4-B Core admin token status or real shell restart revocation missing');
 }
+// The Android org.json getString API is nullable in the Kotlin compiler.
+// Follow-up source fixes seven Gradle release errors in admin request
+// parsing: ticket/operation/target MUST become bounded non-null strings.
+for (const marker of [
+  'val bearer = request.getString("ticket").orEmpty()',
+  'require(bearer.length <= 64)',
+  'val operation = request.getString("operation").orEmpty()',
+  'val target = request.getString("target").orEmpty()',
+  'require(operation.length <= 64 && target.length <= 128)'
+]) if (!coreIpcProvider.includes(marker)) {
+  fail(`C1.4-B Kotlin nullable admin IPC String must be bounded and non-null: ${marker}`);
+}
 for (const marker of [
   'const val METHOD_SHELL_ADMIN_CONSENT = "shell.admin.consent"',
   'METHOD_SHELL_ADMIN_CONSENT ->',

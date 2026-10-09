@@ -1,5 +1,10 @@
 # RiftOS Project Status
 
+## 2026-10-09 — C1.4-B user-manual Builder 37942053678 Kotlin nullable admin consent IPC BLOCKER FIXED IN SOURCE, rebuild pending
+
+User supplied actual `RiftOS-worker-failure-15220c40 (2).zip`, signed manual Builder run `37942053678` at executable source `15220c40b423682f4304dadd43218c99488ee25a`. `npm run check` / all Core transport/documentation source validations **PASS** and Gradle `:app:verifyRiftOsAndroidSources` **PASS**; **`:app:compileReleaseKotlin` FAILED**, exactly 7 diagnostics at `RiftCoreSurfaceIpcProvider.kt` lines 199, 202, 206 and 211. Root cause: Android `org.json.JSONObject.getString()` returns nullable Kotlin `String?`, but Core's new admin IPC used raw values for `.length` and passed nullable operation/target to methods requiring non-null strings. Surgically normalized bearer, operation, target via `.orEmpty()`; bearer length explicitly bounded to 64, operation/target retain 64/128 bounds, signed Binder caller/operation-scoped Core security and C1.4-A default-deny policy unchanged. Added RiftOS wiring and Builder preflight/selftest regression markers for all three non-null conversions. **NO Kotlin/Gradle compiler or new APK yet on patched source; this is a candidate fix**, user alone reruns normal Builder. The previously installed signed #664 C1.4-A executable remains intact; four original RAPPs preserved. C1.4-B NOT device pass; C1.4-C unstarted.
+
+
 ## 2026-10-09 — C1.4-B Core exact-PID/signer trusted admin consent SOURCE ONLY (unbuilt)
 
 Latest live user-manual **Builder #664** executable `f3dd5be502ec5e95ab825d22da9a41904c4e99e6`, Core PID5397: unchanged C1.4-A default-deny policy, 0 admin grants, 2 denied audit events; #664 includes docs-only A promotion, **NOT B**. Four original installed production RAPPs preserved.

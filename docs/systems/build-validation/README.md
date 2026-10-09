@@ -1,5 +1,10 @@
 # Build and Validation System
 
+## 2026-10-09 — C1.4-B failed manual Builder run 37942053678: Kotlin JSONObject nullable String compile fix
+
+The uploaded worker failure ZIP identifies source SHA `15220c40b423682f4304dadd43218c99488ee25a`, run `37942053678`, with completed `npm run check` and Gradle validation. The **first blocking** stage was `:app:compileReleaseKotlin` with 7 nullable `String?` type diagnostics in `RiftCoreSurfaceIpcProvider.kt` admin consent method, not signing, manifest, Core IPC architecture or old C1.3 gates. New `JSONObject.getString("ticket"/"operation"/"target")` results are converted to `String` with `.orEmpty()` before field length bounds and `RiftCoreAdminConsent` calls, preserving Core's existing authentication, fixed actor and fail-closed scope. Added explicit source and Builder regression checks, and updated Builder selftests. **Patch remains unbuilt/unproven** until a NEW user-manual signed Builder, no automatic APK build/install. If still RED, use first new compiler error and fix only that; if green installed, run independent C1.4-B graphical Allow/Deny/Cancel/revoke/expiry/replay device tests. Four original apps must remain untouched.
+
+
 ## 2026-10-09 — C1.4-B Core trusted one-use admin consent SOURCE/Builder gate
 
 New mandatory Gradle/ownership `RiftCoreAdminConsent.kt` + `RiftNativeAdminApprovals.kt`. Source and Builder checks require SecureRandom 128-bit tickets, 45s TTL, max8 in-memory, OS Binder PID/UID/exact production process identity, RiftOS package signing cert validation, Core-owned no-caller-supplied actor and fixed demonstration `system.fs.read` target `/C:/System`. No Core admin bearer is persisted; no filesystem/install/runtime/process effect code in B. Native Android production window offers real Allow once/Deny/Cancel, revoke and consume/replay proof. Old PID tickets revoked on real shell replacement, Core exposes aggregate state without bearer, existing Core durable audit records bounded non-secret decision metadata. Strict Builder preflight/selftests and signed DEX schema marker `riftos.core.admin-consent/1` required.
