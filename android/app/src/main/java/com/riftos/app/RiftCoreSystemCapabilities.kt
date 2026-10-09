@@ -52,7 +52,8 @@ internal object RiftCoreSystemCapabilities {
         require(SAFE_ACTOR.matches(actor)) { "Core system capability actor invalid" }
         require(operation in RESTRICTED) { "Unknown Core system capability" }
         require(outcome in setOf(
-            "requested", "approved", "denied", "revoked", "expired", "consumed"
+            "requested", "approved", "denied", "revoked", "expired", "consumed",
+            "rolled-back", "failed"
         )) { "Core admin decision outcome invalid" }
         require(reason.matches(SAFE_ACTOR)) { "Core admin audit reason invalid" }
         synchronized(LOCK) {

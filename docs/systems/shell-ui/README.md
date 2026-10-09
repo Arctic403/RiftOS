@@ -1,5 +1,12 @@
 # RiftOS Shell UI and Native System Windows
 
+## 2026-10-09 — C1.4-C1 fixed rollback canary Admin Approvals mode SOURCE ONLY
+
+The actual native Admin Approvals window now offers an explicit **Toggle isolated rollback proof scope**. Default C1.4-B mode remains no-effect `system.fs.read` on `/C:/System`; selected C1 mode switches to exact `system.fs.write` on `/C:/RiftOS/.c14c-rollback.txt`, and the Android native Allow once/Deny/Cancel dialog tells the user this is a REAL but isolated temporary Core C: write with mandatory rollback. Dedicated **Execute Core write and rollback once** button requires the matching approved ticket and sends only the fixed target through authenticated Binder to Core. Native content is scrollable for narrow phones. Closing the window now submits authenticated `window-closed` revocation for ALL unused Core approvals owned by the OS-attested real shell PID. Neither this UI nor ordinary RAPPs can select arbitrary system files or execute general admin effects.
+
+This is unbuilt source, not user-visible in signed Builder #667 yet. Real device must prove single effect/rollback, close-with-approval revocation and legacy B behavior remain intact; old graphical process death revocation independently unproven. No broad elevation.
+
+
 ## 2026-10-09 — C1.4-B Admin Approvals graphical UI DEVICE PASS #667
 
 Signed user-built Builder #667 executable RiftOS `bba25e69` actually displayed the native **Admin Approvals** system window with trusted Core scope `system.fs.read` on `/C:/System`, 45s expiry and Android native dialog **ALLOW ONCE / DENY / CANCEL**. Approving and consuming the ticket succeeded once without any privileged effect; replay returned `Core denied: Admin ticket absent or used`. Separate Deny and Cancel flows yielded no consumable ticket; explicit Revoke invalidated the approved ticket. A ticket expired after 45s and consumption was denied. Core audit showed only metadata, no bearer or target. Native close via actual title-bar tap succeeded when no approved ticket was active. A later optional check of close-while-approved was blocked by Android System UI foreground stabilization; **do not claim it was verified**. No production graphical shell process kill was run to test PID-bound approval invalidation in B. Core ended with zero tickets/elevated grants, four original installed RAPPs. **B consent-only UI DEVICE PASS**, future C actual protected operations remain unimplemented.

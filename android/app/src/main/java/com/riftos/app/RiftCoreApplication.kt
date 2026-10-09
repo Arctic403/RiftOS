@@ -26,6 +26,11 @@ class RiftCoreApplication : Application() {
             }.getOrDefault("")
         }
         if (currentProcess == applicationInfo.processName) {
+            // C1.4-C1: reconcile any interrupted isolated C: canary before
+            // accepting new Core admin effects. Failure leaves that effect
+            // fail-closed but does not destroy unrelated Core/RAPP services.
+            runCatching { RiftCoreAdminRollbackProof.recover(this) }
+                .onFailure { android.util.Log.e("RiftCoreAdmin", "Rollback recovery failed", it) }
             RiftCoreRuntime.initialize(this)
             RiftCoreShellRecovery.initialize(this)
             // C1.3-D: MCP/relay belongs to the default Core Android process.

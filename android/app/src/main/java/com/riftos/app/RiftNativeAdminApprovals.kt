@@ -6,6 +6,7 @@ import android.graphics.Typeface
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import org.json.JSONObject
 import java.util.concurrent.Executors
@@ -24,8 +25,9 @@ internal class RiftNativeAdminApprovals(
     private val worker = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "rift-admin-consent-ui").apply { isDaemon = true }
     }
-    private val operation = "system.fs.read"
-    private val target = "/C:/System"
+    private var operation = "system.fs.read"
+    private var target = "/C:/System"
+    private var scopeText: TextView? = null
     private var visible = false
     private var currentTicket: String? = null
     private var statusView: TextView? = null
@@ -52,9 +54,9 @@ internal class RiftNativeAdminApprovals(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             }
         addText("RiftOS administrator approvals", 19f).typeface = Typeface.DEFAULT_BOLD
-        addText("C1.4-B proof only. A ticket does not read files, install software, " +
-            "register runtimes, or terminate processes.")
-        addText("Test scope: $operation on $target\n" +
+        addText("C1.4-B/C1 proof: only the fixed temporary C: canary may be written " +
+            "and rolled back. No installs, runtime registrations, or process termination.")
+        scopeText = addText("Test scope: $operation on $target\n" +
             "Core controls the caller, signer, scope, 45-second expiry and one-time use.")
         statusView = addText("No pending administrator request.")
         fun button(label: String, clicked: () -> Unit) {
@@ -65,11 +67,33 @@ internal class RiftNativeAdminApprovals(
             }, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
+        button("Toggle isolated rollback proof scope") {
+            if (currentTicket != null) {
+                show("Revoke or consume the prior approval before switching scope.")
+                return@button
+            }
+            if (operation == "system.fs.read") {
+                operation = RiftCoreAdminRollbackProof.OPERATION
+                target = RiftCoreAdminRollbackProof.TARGET
+            } else {
+                operation = "system.fs.read"
+                target = "/C:/System"
+            }
+            scopeText?.text = "Test scope: $operation on $target\n" +
+                "Only the fixed write proof can mutate a temporary C: canary, " +
+                "with mandatory journalled rollback."
+            show("Selected fixed test operation $operation; no ticket issued yet.")
+        }
         button("Request scoped administrator test") { request() }
         button("Consume once — no privileged effect") { consume() }
+        button("Execute Core write and rollback once") { executeRollbackProof() }
         button("Revoke current approval") { revoke() }
         button("Refresh Core ticket status") { refresh() }
-        desktop.attachContent("admin-permissions", root)
+        // More distinct test modes must remain reachable on small phones.
+        desktop.attachContent("admin-permissions", ScrollView(activity).apply {
+            isFillViewport = true
+            addView(root)
+        })
         refresh()
     }
 
@@ -98,6 +122,8 @@ internal class RiftNativeAdminApprovals(
             return
         }
         val serial = generation
+        val requestedOperation = operation
+        val requestedTarget = target
         // Resolve any earlier approval before issuing a fresh test request;
         // a consumed/expired ticket is already absent in Core.
         val previous = currentTicket
@@ -107,10 +133,11 @@ internal class RiftNativeAdminApprovals(
                 runCatching { client.adminConsent("revoke", ticket = previous) }
             }
             val response = runCatching {
-                client.adminConsent("request", operation = operation, target = target)
+                client.adminConsent("request", operation = requestedOperation, target = requestedTarget)
             }
             activity.runOnUiThread {
-                if (!visible || serial != generation || activity.isFinishing) {
+                if (!visible || serial != generation || activity.isFinishing ||
+                    operation != requestedOperation || target != requestedTarget) {
                     response.getOrNull()?.optString("ticket")?.let { ticket ->
                         worker.execute {
                             runCatching { client.adminConsent("revoke", ticket = ticket) }
@@ -125,12 +152,20 @@ internal class RiftNativeAdminApprovals(
                 val ticket = value.getString("ticket")
                 currentTicket = ticket
                 show("Core issued a pending test ticket. Confirm the exact scope below.")
+                val rollback = requestedOperation == RiftCoreAdminRollbackProof.OPERATION
+                val explanation = if (rollback) {
+                    "Allow ONE isolated Core C: canary write, verification and " +
+                        "mandatory immediate rollback? No production file is changed."
+                } else {
+                    "Allow ONE no-effect authorization proof? " +
+                        "This grants NO system-file access."
+                }
                 AlertDialog.Builder(activity)
-                    .setTitle("RiftOS administrator consent — proof only")
-                    .setMessage("Allow ONE no-effect authorization proof?\n" +
+                    .setTitle("RiftOS administrator consent — fixed-scope only")
+                    .setMessage(explanation + "\n" +
                         "Operation: ${value.optString("operation")}\n" +
                         "Target: ${value.optString("target")}\n" +
-                        "Expires in 45 seconds. This grants NO system-file access.")
+                        "Expires in 45 seconds. Other privileged operations stay blocked.")
                     .setPositiveButton("Allow once") { _, _ -> decide(ticket, true) }
                     .setNegativeButton("Deny") { _, _ -> decide(ticket, false) }
                     .setNeutralButton("Cancel") { _, _ -> decide(ticket, false) }
@@ -149,7 +184,10 @@ internal class RiftNativeAdminApprovals(
                 if (currentTicket == ticket) currentTicket = null
             }
             if (result.optBoolean("approved")) {
-                "Core approved ONE no-effect ticket. Consume or revoke it before expiry."
+                if (operation == RiftCoreAdminRollbackProof.OPERATION) {
+                    "Core approved ONE fixed C: canary write-and-rollback test. " +
+                        "Execute it once before the 45-second expiry, or revoke."
+                } else "Core approved ONE no-effect ticket. Consume or revoke it before expiry."
             } else "Core denied/cancelled the request; zero elevated privileges."
         }
     }
@@ -165,6 +203,34 @@ internal class RiftNativeAdminApprovals(
                 "One-use ticket consumed. NO privileged effect executed. " +
                     "Repeat Consume to confirm replay denial."
             } else "Core declined consumption."
+        }
+    }
+
+    private fun executeRollbackProof() {
+        if (operation != RiftCoreAdminRollbackProof.OPERATION ||
+            target != RiftCoreAdminRollbackProof.TARGET) {
+            show("Select the isolated Core rollback test scope first.")
+            return
+        }
+        if (!activity.hasWindowFocus()) {
+            show("Core rollback proof requires the trusted window foreground.")
+            return
+        }
+        val bearer = currentTicket ?: run { show("No approved rollback ticket."); return }
+        val client = core ?: run { show("No Core IPC available."); return }
+        perform {
+            val response = client.adminConsent("execute-rollback-proof",
+                bearer, RiftCoreAdminRollbackProof.OPERATION,
+                RiftCoreAdminRollbackProof.TARGET)
+            if (response.optBoolean("transactionCommitted") &&
+                response.optBoolean("rolledBack") &&
+                !response.optBoolean("pendingJournal", true)) {
+                activity.runOnUiThread { if (currentTicket == bearer) currentTicket = null }
+                "Core wrote, verified and rolled back the isolated C: test canary. " +
+                    "No pending journal, no permanent file, ticket consumed."
+            } else {
+                "Core did not verify a completed rollback transaction."
+            }
         }
     }
 
@@ -194,10 +260,12 @@ internal class RiftNativeAdminApprovals(
         visible = false
         generation++
         statusView = null
-        val old = currentTicket
+        scopeText = null
         currentTicket = null
-        if (old != null) worker.execute {
-            runCatching { core?.adminConsent("revoke", ticket = old) }
+        // Core invalidates ALL unconsumed approvals from the exact OS-attested
+        // real shell PID on native window close, even if the UI lost its token.
+        worker.execute {
+            runCatching { core?.adminConsent("window-closed") }
         }
     }
 

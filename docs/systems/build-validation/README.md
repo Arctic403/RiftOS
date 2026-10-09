@@ -1,5 +1,12 @@
 # Build and Validation System
 
+## 2026-10-09 — C1.4-C1 journalled restricted admin rollback source/Builder gate, signed-device proof pending
+
+New required Core source `RiftCoreAdminRollbackProof.kt` and Gradle/source owner registration. Fail-closed source validator/Builder preflight enforce exact fixed virtual C: target `/C:/RiftOS/.c14c-rollback.txt`, `system.fs.write`, synchronous pending journal commit BEFORE create, bounded fixed contents, fsync/readback verification, mandatory deletion and journal clearing, startup interrupted-operation recovery and Core status introspection. Core approved one-use exact Binder shell ticket requires foreground lease; native Admin Approvals has a distinct test-mode toggle and exact-scope native dialog, one-use execute and close-window revoke-all. Signed APK verifier requires `riftos.core.admin-rollback-proof/1`. Old B read-only/consume-proof and C1.4-A denied/protected routes remain; C1.3-C/D/E device gates untouched.
+
+**No Kotlin/Gradle or signed C1.4-C1 device test yet.** User manually dispatches existing Builder and installs. Device acceptance requires Core status `adminRollbackProof.canaryExists=false`, `pendingJournal=false` before and after; native dialog with exact write target and real effect warning, Deny/Cancel/expiry/revoke rejection; Allow-once/one effect `transactionCommitted=true, rolledBack=true`, no residual C: file; replay fails; close with approved token revokes in Core; Core/RAPP lifecycle and four original RAPPs preserved. Independently proving PID replacement revocation requires user consent for one real-shell-process kill; no process termination authorized by C1 source changes. Other system operations/rollback are NOT part of C1.
+
+
 ## 2026-10-09 — C1.4-B actual signed-device native consent tests DEVICE PASS (#667), C future
 
 C1.4-B corrected Core admin nullable String Kotlin source `bba25e699fa53c08d681b99cc41710e28c0de110` **compiled and signed GREEN** through user-manual Builder #667/run `37944426879`, installed live (fixes previous failed `:app:compileReleaseKotlin`). Core PID24051, graphical shell PID24167 when foreground, Core `adminConsent`: 8 max, 45s, no privilege effects/persistent grant, and existing `systemCapabilities`: disabled elevation/zero admin grants.

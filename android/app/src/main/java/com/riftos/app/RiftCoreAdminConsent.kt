@@ -19,9 +19,9 @@ import java.security.SecureRandom
  * PID, Core-selected actor and exact operation/target are bound to every
  * ticket. NEVER persist bearer tokens; process death revokes them all.
  *
- * This gate does NOT authorize/execute any privileged operation. consumeProof
- * only demonstrates the single-use ticket lifecycle. C1.4-C must bind a
- * specific real effect to policy, target/signer validation and rollback.
+ * The original B scope remains no-effect. C1.4-C1 adds ONLY a distinct
+ * exact-target ephemeral Core-owned C: canary write-and-rollback transaction;
+ * never an arbitrary system-file write or real installation/registration/kill.
  */
 internal object RiftCoreAdminConsent {
     const val SCHEMA = "riftos.core.admin-consent/1"
@@ -45,7 +45,9 @@ internal object RiftCoreAdminConsent {
     // Deliberately one harmless test scope for the B gate. No Core software,
     // runtime or protected-process effect is attached to this ticket.
     private fun validScope(operation: String, target: String): Boolean =
-        operation == "system.fs.read" && target == "/C:/System"
+        (operation == "system.fs.read" && target == "/C:/System") ||
+            (operation == RiftCoreAdminRollbackProof.OPERATION &&
+                target == RiftCoreAdminRollbackProof.TARGET)
 
     @Suppress("DEPRECATION")
     private fun installedSigner(context: Context): String {
@@ -171,8 +173,9 @@ internal object RiftCoreAdminConsent {
         operation: String, target: String
     ): JSONObject = synchronized(lock) {
         val value = ticket(context, callerPid, bearer)
-        require(value.approved && value.operation == operation && value.target == target) {
-            "Admin ticket not approved for this exact operation/target"
+        require(value.approved && value.operation == operation && value.target == target &&
+            operation == "system.fs.read" && target == "/C:/System") {
+            "Admin ticket not approved for this exact no-effect operation/target"
         }
         RiftCoreSystemCapabilities.recordDecision(
             context, ACTOR, value.operation, "consumed", "no-effect-proof"
@@ -182,6 +185,72 @@ internal object RiftCoreAdminConsent {
             .put("consumed", true)
             .put("executedPrivilegedEffect", false)
     }
+
+    /**
+     * C1.4-C1: one narrowly fixed system-file canary transaction. A real
+     * Core-owned C: write+fsync+verify+delete occurs only after a fresh
+     * approved exact-scope ticket and an active real-shell foreground lease.
+     * Never exposes an arbitrary file mutation or persistent system grant.
+     */
+    fun executeRollbackProof(
+        context: Context, callerPid: Int, bearer: String,
+        operation: String, target: String
+    ): JSONObject {
+        // Lock order matters: recovery.noteReport() holds its monitor then
+        // revokes Core admin tickets. Sample its foreground lease BEFORE
+        // entering the admin-ticket monitor to avoid a lock inversion.
+        val shell = RiftCoreShellRecovery.status()
+        require(shell.optInt("shellPid", -1) == callerPid &&
+            shell.optBoolean("foregroundLease", false) &&
+            shell.optString("phase") == "connected") {
+            "Core admin transaction requires active foreground production shell"
+        }
+        return synchronized(lock) {
+            val value = ticket(context, callerPid, bearer)
+            require(value.approved &&
+                value.operation == operation && value.target == target &&
+                operation == RiftCoreAdminRollbackProof.OPERATION &&
+                target == RiftCoreAdminRollbackProof.TARGET) {
+                "Core rejected admin transaction for unmatched approval scope"
+            }
+            // Consume BEFORE an effect; audit persistence failure means no effect.
+            RiftCoreSystemCapabilities.recordDecision(
+                context, ACTOR, operation, "consumed", "isolated-rollback-proof"
+            )
+            tickets.remove(bearer)
+            try {
+                val result = RiftCoreAdminRollbackProof.writeAndRollback(context)
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "rolled-back", "canary-restored"
+                )
+                result
+            } catch (error: Exception) {
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "failed", "transaction-rejected"
+                )
+                throw error
+            }
+        }
+    }
+
+    /** Closing the native approval window revokes ALL unused caller tickets. */
+    fun revokeForWindowClose(context: Context, callerPid: Int): JSONObject =
+        synchronized(lock) {
+            val signer = authenticated(context, callerPid)
+            expire(context)
+            val invalid = tickets.values.filter {
+                it.pid == callerPid && it.signer == signer
+            }
+            for (item in invalid) {
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, item.operation, "revoked", "window-closed"
+                )
+                tickets.remove(item.bearer)
+            }
+            JSONObject().put("schema", SCHEMA)
+                .put("revokedCount", invalid.size)
+                .put("systemEffectsEnabled", false)
+        }
 
     /** A restarted real shell cannot inherit old PID-bound approvals. */
     fun revokeForShellReplacement(context: Context, oldShellPid: Int) = synchronized(lock) {
@@ -203,6 +272,7 @@ internal object RiftCoreAdminConsent {
             .put("maxTickets", MAX_TICKETS)
             .put("expiresAfterMs", TTL_MS)
             .put("systemEffectsEnabled", false)
+            .put("isolatedRollbackProofEnabled", true)
             .put("grantPersistence", "none")
             .put("scope", "trusted-native-ui-proof-only")
     }

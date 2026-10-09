@@ -930,6 +930,60 @@ if (!nativeSystemApps.includes('"admin-permissions"') ||
   fail('C1.4-B administrator proof must be an installed Core-owned native system window');
 }
 
+// C1.4-C1: first actual narrowly scoped Core-owned system effect is only a
+// fixed, temporary C: test canary, journaled before write and rolled back in
+// the same Core operation; NEVER a general-purpose privileged file writer.
+const c14Rollback = read(`${kotlinDir}/RiftCoreAdminRollbackProof.kt`);
+if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreAdminRollbackProof.kt"')) {
+  fail('C1.4-C1 mandatory Core rollback source missing from Gradle');
+}
+for (const marker of [
+  'const val SCHEMA = "riftos.core.admin-rollback-proof/1"',
+  'const val OPERATION = "system.fs.write"',
+  'const val TARGET = "/C:/RiftOS/.c14c-rollback.txt"',
+  'RiftVolumePaths.resolveRelative(TARGET)',
+  'check(parent.isDirectory)',
+  'prefs.edit().putBoolean(PENDING, true).commit()',
+  'file.createNewFile()', 'output.fd.sync()',
+  'file.readBytes().contentEquals(MARKER)',
+  'file.delete()', 'prefs.edit().remove(PENDING).commit()',
+  'fun recover(context: Context)', 'fun writeAndRollback(context: Context)',
+  '"rolledBack", true', '"canaryExists"',
+  '"generalAdminEffectsEnabled", false'
+]) if (!c14Rollback.includes(marker)) fail(`C1.4-C1 reversible Core canary + journal missing: ${marker}`);
+for (const marker of [
+  'RiftCoreAdminRollbackProof.OPERATION',
+  'RiftCoreAdminRollbackProof.TARGET',
+  'fun executeRollbackProof(', 'ticket(context, callerPid, bearer)',
+  'shell.optBoolean("foregroundLease", false)',
+  'tickets.remove(bearer)',
+  'RiftCoreAdminRollbackProof.writeAndRollback(context)',
+  'fun revokeForWindowClose(',
+  '"rolled-back"', '"failed"'
+]) if (!(c14Tickets + c14Policy).includes(marker)) {
+  fail(`C1.4-C1 exact-scope Core authorization/revocation/audit missing: ${marker}`);
+}
+if (!coreApplication.includes('RiftCoreAdminRollbackProof.recover(this)') ||
+    !coreRuntime.includes('"adminRollbackProof", RiftCoreAdminRollbackProof.status(context)') ||
+    !coreIpcProvider.includes('"execute-rollback-proof" -> RiftCoreAdminConsent.executeRollbackProof(') ||
+    !coreIpcProvider.includes('"window-closed" -> RiftCoreAdminConsent.revokeForWindowClose(') ||
+    !productionClient.includes('"execute-rollback-proof", "window-closed"')) {
+  fail('C1.4-C1 Core interrupted transaction recovery, authenticated Binder method or introspection missing');
+}
+for (const marker of [
+  'Toggle isolated rollback proof scope',
+  'Execute Core write and rollback once',
+  '.setTitle("RiftOS administrator consent — fixed-scope only")',
+  'client.adminConsent("execute-rollback-proof"',
+  'core?.adminConsent("window-closed")'
+]) if (!c14AdminUi.includes(marker)) fail(`C1.4-C1 native safe write/rollback consent or close revocation UI missing: ${marker}`);
+if (c14Rollback.includes('Process.killProcess(') ||
+    c14Rollback.includes('PackageInstaller(') ||
+    c14Rollback.includes('runtime.register') ||
+    c14Rollback.includes('File(context.filesDir, target)')) {
+  fail('C1.4-C1 must never execute generalized privileged operations');
+}
+
 // Historical Core/alternate client invariants remain; C1.3-D extends them.
 
 // C1.2-B2-B2: Core lease authorization gates admission AND queued delivery.

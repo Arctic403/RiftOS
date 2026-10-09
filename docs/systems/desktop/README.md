@@ -1,5 +1,10 @@
 # RiftDesktop Window Manager
 
+## 2026-10-09 — C1.4-C1 native Admin Approvals scoped rollback proof window SOURCE
+
+Real `admin-permissions` graphical desktop window can now select fixed no-effect B consent or one guarded C1 isolated virtual-C: marker write+rollback. Uses native scrollable content and Android confirmation describing actual action before approval. Native on-close requests authenticated Core revocation for ALL of that exact production shell PID's unused tickets. No arbitrary app/RAPP window executes Core transactions directly, and Core process owns journal, file target, identity and one-use authorization. C1.4-C1 source not yet device compiled/proven. Signed user-manual Builder #667 remains last physical B consent-only gate; C1 real rollback and window-close approved-ticket validation pending; no destructive shell process test here.
+
+
 ## 2026-10-09 — C1.4-B native Admin Approvals window tested on signed #667
 
 The user manually installed signed Builder #667 executable `bba25e69`. Real native launcher opened `admin-permissions` into RiftDesktop, rendered scope and user-consent buttons, and Android native Allow once/Deny/Cancel modal worked on the physical device. B Core accepted one no-effect consent then denied replay, invalidated Deny/Cancel/revoke, and expired unused tickets after 45s. Closing the native window with a direct titlebar tap removed it from the visible desktop; an earlier accessibility click reported success without closing. Optional approval-while-closing hardening proof was not achieved due to Android System UI foreground stabilization. No intentional graphical shell process death was tested in B; PID-change revocation remains source-enforced, device untested. **C1.4-B consent-only DEVICE PASS**; actual elevated effects/rollback not implemented.
