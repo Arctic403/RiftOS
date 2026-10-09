@@ -11,9 +11,9 @@ import java.security.MessageDigest
  * desktop Activity recreation. A graphical host only ATTACHES to a record.
  * No Activity, View, RiftShell or Android GUI references are stored here.
  *
- * C1.1-A is NOT yet headless application execution. In-flight host effects,
- * event queues, and rendering remain attached to RiftRappHost until the
- * separately device-gated execution/effect broker migration.
+ * C1.3-C: a process-owned lifecycle controller now drives queued events and
+ * execution; UI clients only submit requests and consume immutable surfaces.
+ * This does not imply independent Android process survival or recovery.
  */
 class RiftCoreAppSessions(private val surfaces: RiftCoreAppSurfaces) {
     companion object {
@@ -400,10 +400,10 @@ class RiftCoreAppSessions(private val surfaces: RiftCoreAppSurfaces) {
             .put("detached", sessions.size - attached)
             .put("queuedEvents", sessions.values.sumOf { it.queuedCount() })
             .put("eventQueueOwner", "riftos-core")
-            .put("headlessExecution", false)
+            .put("headlessExecution", true)
             .put("eventExecutorOwner", "riftos-core")
-            .put("capabilityEffectsIndependentOfDesktop", false)
-            .put("appExecutionIndependentOfDesktop", false)
+            .put("capabilityEffectsIndependentOfDesktop", true)
+            .put("appExecutionIndependentOfDesktop", true)
     }
 
     @Synchronized

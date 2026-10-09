@@ -26,18 +26,14 @@ class RiftRappHost(
     private val desktop: RiftNativeDesktop,
     private val refreshLauncher: () -> Unit
 ) {
-    private data class Session(
-        val payload: RiftAppAbi.RuntimePayload,
+    // UI-only presentation identity. No executable, Core Attachment or event queue.
+    private class Session(
+        val id: String,
+        val name: String,
         val adapter: RiftAppRuntimeAdapter,
-        val coreAttachment: RiftCoreAppSessions.Attachment
+        val generation: Long
     ) {
-        val id: String get() = payload.id
-        val name: String get() = payload.name
-
-        // Core owns the program bytes, event sequence and execution. Only
-        // UI/effect callbacks remain on this disposable host attachment.
-        // UI callbacks are disposable; Core owns the ordered event ticket queue.
-        val pendingUiCompletions = LinkedHashMap<Long, (EventOutcome) -> Unit>()
+        var onFrame: ((RiftAppAbi.Frame) -> Unit)? = null
     }
 
     private data class EventOutcome(
@@ -48,12 +44,52 @@ class RiftRappHost(
     private val manager by lazy(LazyThreadSafetyMode.NONE) {
         RiftCoreRuntime.packages(activity.applicationContext)
     }
-    private val coreSessions = RiftCoreRuntime.sessions(activity.applicationContext)
+    private val coreLifecycle = RiftCoreRuntime.lifecycle(activity.applicationContext)
     private val coreSurfaces = RiftCoreRuntime.surfaces(activity.applicationContext)
     private val shellCapabilities = RiftRappShellCapabilityClient(activity, desktop)
-    private val coreExecutor = RiftCoreRuntime.appExecutor(activity.applicationContext)
-    private val sessions =
-        LinkedHashMap<String, Session>()
+    private val sessions = LinkedHashMap<String, Session>()
+    private val surfaceSubscription = coreSurfaces.subscribe { change ->
+        if (change.operation == "removed") {
+            activity.runOnUiThread {
+                if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+                // Core stop/uninstall invalidated this surface: close only the
+                // stale graphical presentation. Core has already decided stop.
+                val presentation = sessions[change.appId] ?: return@runOnUiThread
+                val stillCurrent = coreSurfaces.snapshot(change.appId)?.let {
+                    it.attachmentGeneration == presentation.generation
+                } == true
+                // A queued removal of an older generation must not close a
+                // newly attached window whose Core frame is already current.
+                if (!stillCurrent) {
+                    desktop.handle("desktop.window.close", JSONObject().put("id", change.appId))
+                }
+            }
+        } else if (change.operation == "updated") {
+            activity.runOnUiThread {
+                if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+                val session = sessions[change.appId] ?: return@runOnUiThread
+                val current = coreSurfaces.snapshot(session.id)?.takeIf {
+                    it.attachmentGeneration == session.generation
+                } ?: return@runOnUiThread
+                val renderer = session.onFrame
+                if (renderer == null) {
+                    desktop.attachContent(session.id, render(session, current.frame))
+                } else {
+                    renderer(current.frame)
+                }
+            }
+        }
+    }
+    private val stateSubscription = coreLifecycle.subscribe { change ->
+        if (change.error != null) {
+            activity.runOnUiThread {
+                if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+                if (sessions[change.appId] != null) {
+                    desktop.attachContent(change.appId, failureView(change.error))
+                }
+            }
+        }
+    }
     private val packageSubscription = RiftCorePackageEvents.subscribe { change ->
         activity.runOnUiThread {
             if (activity.isFinishing || activity.isDestroyed) return@runOnUiThread
@@ -90,73 +126,29 @@ class RiftRappHost(
         return true
     }
 
-    fun onDesktopClosed(
-        id: String
-    ): Boolean {
+    fun onDesktopClosed(id: String): Boolean {
         val session = sessions.remove(id)
         if (session != null) {
-            session.pendingUiCompletions.clear()
-            coreSessions.close(session.coreAttachment)
+            session.onFrame = null
+            // Window close is an explicit Core stop request, not UI lifecycle.
+            coreLifecycle.stop(id)
         }
         return session != null || manager.handlesInstalled(id)
-    }
-
-    fun onResume() {
-        broadcastLifecycle(
-            RiftAppAbi.EventKind.HOST_RESUME
-        )
-    }
-
-    fun onPause() {
-        broadcastLifecycle(
-            RiftAppAbi.EventKind.HOST_PAUSE
-        )
-    }
-
-    private fun broadcastLifecycle(
-        kind: Int
-    ) {
-        sessions.values
-            .toList()
-            .forEach {
-                session ->
-                if (
-                    session.adapter
-                        .supportsEventKind(
-                            kind
-                        )
-                ) {
-                    runEventAsync(
-                        session,
-                        RiftAppAbi.Event(
-                            kind =
-                                kind
-                        )
-                    ) {
-                        // Lifecycle delivery updates opaque program state.
-                        // The visible frame is refreshed by the next app event.
-                    }
-                }
-            }
     }
 
     fun destroy() {
         RiftCorePackageEvents.unsubscribe(packageSubscription)
         RiftCoreAppLaunchRequests.unsubscribe(launchSubscription)
-        // Activity loss detaches only UI; Core session identities/state remain.
-        sessions.values.forEach {
-            it.pendingUiCompletions.clear()
-            coreSessions.detach(it.coreAttachment)
-        }
+        coreSurfaces.unsubscribe(surfaceSubscription)
+        coreLifecycle.unsubscribe(stateSubscription)
+        // Activity/window loss discards only presentation; Core keeps executing.
+        sessions.values.forEach { it.onFrame = null }
         sessions.clear()
         shellCapabilities.destroy()
     }
 
-    private fun open(
-        id: String
-    ) {
-        val app =
-            manager.loadInstalled(id)
+    private fun open(id: String) {
+        val app = manager.loadInstalled(id)
         require(app.abi == RiftAppAbi.SCHEMA) {
             "Unsupported RiftOS app ABI: ${app.abi}"
         }
@@ -164,76 +156,31 @@ class RiftRappHost(
         require(adapter.presentation == app.presentation) {
             "RiftOS app presentation does not match adapter"
         }
-
-        val payload = RiftAppAbi.RuntimePayload(
-            id = app.id,
-            name = app.name,
-            abi = app.abi,
-            adapter = app.adapter,
-            presentation = app.presentation,
-            permissions = app.permissions,
-            program = app.program,
-            runtime = app.runtime
-        )
-        // Reuse a running Core-only BOOT session when opening its first
-        // graphical window. A claimed attachment preserves Core generation,
-        // interpreter state and already-published immutable surface.
-        val claimed = RiftCoreRuntime.lifecycle(activity.applicationContext)
-            .claimForShell(payload, adapter)
-        val attachment = claimed ?: coreSessions.attach(payload, adapter)
-        val session = Session(payload, adapter, attachment)
+        // Core owns executable identity, BOOT, FIFO dispatch and session.
+        // This client requests only a view of the resulting Core surface.
+        val state = coreLifecycle.openForShell(id)
+        val session = Session(id, app.name, adapter, state.getLong("attachmentGeneration"))
+        sessions[id]?.onFrame = null
         sessions[id] = session
-
         desktop.handle(
             "desktop.window.open",
-            JSONObject()
-                .put("id", id)
-                .put("title", app.name)
-                .put(
-                    "kicker",
-                    "RIFTOS APP · ${app.adapter}"
-                )
+            JSONObject().put("id", id).put("title", app.name)
+                .put("kicker", "RIFTOS APP · ${app.adapter}")
         )
-
-        if (claimed != null) {
-            val published = coreSurfaces.snapshot(id)?.takeIf {
-                it.attachmentGeneration == claimed.token
-            } ?: error("Core RAPP claimed surface disappeared before shell rendering")
-            desktop.attachContent(id, render(session, published.frame))
-            return
+        val published = coreSurfaces.snapshot(id)?.takeIf {
+            it.attachmentGeneration == session.generation
         }
-
         desktop.attachContent(
             id,
-            TextView(activity).apply {
+            if (published != null) render(session, published.frame)
+            else if (state.optString("state") == "failed") {
+                failureView(state.optString("error", "Core RAPP BOOT failed"))
+            } else TextView(activity).apply {
                 text = "Launching RiftOS app…"
                 textSize = 17f
                 setPadding(dp(18), dp(18), dp(18), dp(18))
             }
         )
-
-        runEventAsync(
-            session,
-            RiftAppAbi.Event(
-                kind = RiftAppAbi.EventKind.BOOT
-            )
-        ) { outcome ->
-            if (sessions[id] !== session) {
-                return@runEventAsync
-            }
-            val frame = outcome.frame
-            desktop.attachContent(
-                id,
-                if (frame != null) {
-                    render(session, frame)
-                } else {
-                    failureView(
-                        outcome.error
-                            ?: "RAPP launch failed"
-                    )
-                }
-            )
-        }
     }
 
     private fun runEventAsync(
@@ -241,111 +188,20 @@ class RiftRappHost(
         event: RiftAppAbi.Event,
         complete: (EventOutcome) -> Unit
     ) {
-        if (
-            sessions[session.id] !== session ||
-            !coreSessions.isAttached(session.coreAttachment)
-        ) return
-
-        val offered = runCatching {
-            coreSessions.offerEvent(session.coreAttachment, event)
-        }.getOrElse { error ->
-            // Rejection never replaces an otherwise healthy window with an
-            // error screen. Restore the last authoritative Core snapshot.
-            val surface = coreSurfaces.snapshot(session.id)?.takeIf {
-                it.attachmentGeneration == session.coreAttachment.token
-            }
-            complete(
-                EventOutcome(
-                    frame = surface?.frame,
-                    error = error.message ?: "Core rejected application input"
-                )
-            )
-            return
-        }
-        session.pendingUiCompletions[offered.ticket.id] = complete
-        if (offered.startNow) dispatchCoreEvent(session, offered.ticket)
-    }
-
-    private fun dispatchCoreEvent(
-        session: Session,
-        ticket: RiftCoreAppSessions.EventTicket
-    ) {
-        if (
-            sessions[session.id] !== session ||
-            !coreSessions.isAttached(session.coreAttachment)
-        ) return
-
-        // A queued input ticket may outlive the focus lease that authorized
-        // its admission. Core must check again just before dispatch.
-        val denial = runCatching {
-            coreSessions.authorizeQueuedEventDispatch(session.coreAttachment, ticket)
+        if (sessions[session.id] !== session) return
+        // An accepted input progresses entirely in Core, including when UI
+        // disappears; changes arrive via the immutable surface subscription.
+        val rejection = runCatching {
+            coreLifecycle.offerEvent(session.id, session.generation, event)
         }.exceptionOrNull()
-        if (denial != null) {
-            try {
-                val surface = coreSurfaces.snapshot(session.id)?.takeIf {
-                    it.attachmentGeneration == session.coreAttachment.token
-                }
-                session.pendingUiCompletions.remove(ticket.id)?.invoke(
-                    EventOutcome(
-                        frame = surface?.frame,
-                        error = denial.message ?: "Core rejected queued application input"
-                    )
-                )
-            } finally {
-                val next = coreSessions.finishEvent(session.coreAttachment, ticket)
-                if (next != null) dispatchCoreEvent(session, next)
+        if (rejection != null) {
+            val current = coreSurfaces.snapshot(session.id)?.takeIf {
+                it.attachmentGeneration == session.generation
             }
-            return
-        }
-
-        runEventStep(session, ticket.event) { outcome ->
-            if (
-                sessions[session.id] !== session ||
-                !coreSessions.isAttached(session.coreAttachment)
-            ) return@runEventStep
-
-            try {
-                session.pendingUiCompletions.remove(ticket.id)?.invoke(outcome)
-            } finally {
-                val next = coreSessions.finishEvent(session.coreAttachment, ticket)
-                if (next != null) dispatchCoreEvent(session, next)
-            }
-        }
-    }
-
-    private fun runEventStep(
-        session: Session,
-        event: RiftAppAbi.Event,
-        complete: (EventOutcome) -> Unit
-    ) {
-        // Core owns authorization, capability chaining and final surface
-        // snapshots. RiftShell renders the immutable Core snapshot only, not
-        // the raw interpreter frame returned through this disposable callback.
-        coreExecutor.executeChained(
-            session.coreAttachment,
-            session.payload,
-            session.adapter,
-            event
-        ) { result ->
-            activity.runOnUiThread {
-                if (activity.isFinishing || activity.isDestroyed ||
-                    sessions[session.id] !== session ||
-                    !coreSessions.isAttached(session.coreAttachment)
-                ) return@runOnUiThread
-                val surface = if (result.error == null) {
-                    coreSurfaces.snapshot(session.id)?.takeIf {
-                        it.attachmentGeneration == session.coreAttachment.token
-                    }
-                } else null
-                complete(
-                    EventOutcome(
-                        frame = surface?.frame,
-                        error = result.error ?: if (surface == null) {
-                            "Core application surface unavailable for current attachment"
-                        } else null
-                    )
-                )
-            }
+            complete(EventOutcome(
+                frame = current?.frame,
+                error = rejection.message ?: "Core rejected application input"
+            ))
         }
     }
 
@@ -801,9 +657,6 @@ class RiftRappHost(
                             text =
                                 node.text
                             setOnClickListener {
-                                isEnabled =
-                                    false
-
                                 runEventAsync(
                                     session,
                                     RiftAppAbi.Event(
@@ -815,9 +668,6 @@ class RiftRappHost(
                                     )
                                 ) {
                                     outcome ->
-                                    isEnabled =
-                                        true
-
                                     if (
                                         sessions[
                                             session.id
@@ -863,6 +713,7 @@ class RiftRappHost(
             }
         }
 
+        session.onFrame = { next -> applyFrame(next) }
         return scroll
     }
 
@@ -928,6 +779,10 @@ class RiftRappHost(
                 }
             }
 
+        session.onFrame = { next ->
+            if (next.layout == RiftAppAbi.Layout.ABSOLUTE) view.updateFrame(next)
+            else desktop.attachContent(session.id, render(session, next))
+        }
         return view
     }
 

@@ -198,8 +198,25 @@ assert.doesNotMatch(
 for (const required of [
   'ScrollView(activity)',
   '!field.hasFocus()',
-  'coreExecutor.executeChained(',
-]) assert.ok(host.includes(required), 'generic RAPP host contract missing: ' + required);
+  'coreLifecycle.openForShell(id)',
+  'coreLifecycle.offerEvent(session.id, session.generation, event)',
+  'coreSurfaces.subscribe { change ->',
+]) assert.ok(host.includes(required), 'C1.3-C graphical Core surface client missing: ' + required);
+for (const forbidden of [
+  'coreExecutor.executeChained(', 'coreSessions.offerEvent(',
+  'coreSessions.attach(', 'pendingUiCompletions', 'dispatchCoreEvent('
+]) assert.ok(!host.includes(forbidden), 'C1.3-C host retained Core execution: ' + forbidden);
+for (const required of [
+  'change.operation == "removed"',
+  'it.attachmentGeneration == presentation.generation',
+  'state.optString("state") == "failed"',
+  'coreLifecycle.subscribe { change ->'
+]) assert.ok(host.includes(required), 'C1.3-C shell lifecycle regression: ' + required);
+for (const required of [
+  'RiftCoreRuntime.lifecycle(appContext).start(id)',
+  'presentationDispatched',
+  'core-running'
+]) assert.ok(manager.includes(required), 'C1.3-C shell-less launch regression: ' + required);
 for (const required of [
   'RiftRappQuickJsExecutor()', 'RiftNativeBufferCompilerService.compile(',
   'RiftBoundedAsync.submit(', 'sessions.commitFromExecution(',

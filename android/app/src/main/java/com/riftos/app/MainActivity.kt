@@ -355,7 +355,6 @@ class MainActivity : Activity() {
         RiftBuildInstaller.resumePendingConfirmation(this)
         if (::browserAppHost.isInitialized) browserAppHost.onResume()
         if (::browserWindow.isInitialized) browserWindow.onResume()
-        if (::rappHost.isInitialized) rappHost.onResume()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -367,7 +366,6 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
-        if (::rappHost.isInitialized) rappHost.onPause()
         if (::browserWindow.isInitialized) browserWindow.onPause()
         if (::browserAppHost.isInitialized) browserAppHost.onPause()
         super.onPause()
@@ -380,6 +378,10 @@ class MainActivity : Activity() {
         if (::nativeSystemApps.isInitialized) nativeSystemApps.destroy()
         if (::nativeWorkspaceApps.isInitialized) nativeWorkspaceApps.destroy()
         if (::rappHost.isInitialized) rappHost.destroy()
+        // A destroyed graphical Activity must not retain a Core input focus lease.
+        if (::nativeDesktop.isInitialized) {
+            RiftCoreRuntime.sessions(applicationContext).requestFocusFromShell(null)
+        }
         if (::browserAppHost.isInitialized) browserAppHost.destroy()
         if (::nativeDesktop.isInitialized) nativeDesktop.destroy()
         super.onDestroy()

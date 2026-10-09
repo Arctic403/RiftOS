@@ -107,7 +107,7 @@ class RiftCoreAppSurfaces {
             .put("owner", "riftos-core")
             .put("count", surfaces.size)
             .put("storedTextBytes", totalTextBytes)
-            .put("headlessExecution", false)
+            .put("headlessExecution", true)
             .put("shellClientProtocol", "in-process")
             .put("surfaces", rows)
     }

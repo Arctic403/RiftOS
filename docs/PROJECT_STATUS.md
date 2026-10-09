@@ -1,5 +1,10 @@
 # RiftOS Project Status
 
+## 2026-10-08 — C1.3-C Core application execution SOURCE CANDIDATE, pending device proof
+
+After C1.3-B #653 DEVICE PASS, the user explicitly replaced the former one-pass C1.3-C/D/E approach with THREE separate device gates. C1.3-C alone is under implementation; C1.3-D/E are not started. Existing pre-change RiftOS and Builder backup archives have been recorded. Process-owned `RiftCoreAppLifecycle` now owns both shell-less and graphical RAPP startup, queued event dispatch, generation-matched input and Core executor calls. `RiftRappHost` is surface observer and authorized input client; Activity recreation must not stop Core sessions. Source/Builder checks have been updated; manual Builder/Android device acceptance remains required before calling C1.3-C complete. Last verified installed baseline stays C1.3-B source `31f4a8d4` Builder #653. Still same Android application process, no production separate RiftShell or automatic crash/restart.
+
+
 ## Verification status
 
 **CURRENT ENGINE STATUS VERIFIED AGAINST SOURCE — 2026-09-30.**

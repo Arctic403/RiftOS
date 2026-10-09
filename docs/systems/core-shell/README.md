@@ -1,5 +1,14 @@
 # RiftOS Core ↔ RiftShell — canonical architecture (C1 series)
 
+## 2026-10-08 — C1.3-C Core execution independence SOURCE CANDIDATE (NOT DEVICE PROMOTED)
+
+**User decision supersedes the old coordinated C/D/E patch:** implement, validate, manually build, device-prove and promote **C1.3-C** individually. Do not start C1.3-D (real RiftShell separate-process migration) or C1.3-E (automatic recovery) until C passes. Pre-C1.3 source/Builder backup archives exist in `workspace/AI-Handoffs/Backups/`; restore testing is separate.
+
+C1.3-C places RAPP BOOT, Core session attachment, generic event FIFO dispatch, queued focus rechecks, capability/effect continuation and state/surface publication behind process-owned `RiftCoreAppLifecycle` / `RiftCoreAppSessions` / `RiftCoreAppExecutor`. The graphical `RiftRappHost` requests `openForShell(id)`, submits authorized input by `offerEvent(id, attachmentGeneration, event)`, and subscribes to immutable Core surface changes. It holds UI presentation state only: no program/runtime payload, no Core session attachment, no BOOT, no event-ticket dispatcher and no executor callback. Explicit window Close calls Core `stop`; Activity destruction only discards graphical presentation and revokes focus. The existing Core-only `core app-start` and `core app-stop` commands continue to use the same dispatcher, and reopening the GUI reuses the same generation without duplicate BOOT. **The generic `RiftRappManager.launch(id)` now calls Core lifecycle `start(id)` first**, then best-effort `RiftCoreAppLaunchRequests.requestLaunch(id)` for optional presentation; a missing shell returns an accepted `core-running` launch rather than declining execution. Core-triggered surface removal closes stale GUI presentations without stopping/restarting another active generation. BOOT failure is reported even if it completes before a window is attached.
+
+**Proposed manual DEVICE acceptance (NOT YET RUN):** use only verified disposable RAPP; record Core PID, app generation and surface revision; Core-only BOOT with no desktop, attach GUI to the same session, verify ACTION/TEXT_INPUT and persistent state; destroy/recreate MainActivity while Core continues running and verify unchanged Core PID/session/generation and no extra BOOT; reattach and verify input, focus lease invalidated on detach and reacquired on focus; explicitly close and uninstall disposable; confirm Core app/session/surface/queue clean and the original three RAPPs untouched. The Android Core still runs inside the default application process and the actual desktop remains there. No C1.3-D/E, cross-process shell survival or automatic recovery claim.
+
+
 **Locked design decision, 2026-10-08:** RiftOS Core is the operating platform; RiftShell is a replaceable desktop/UI client. A RAPP, process, compiler, runtime, installer or filesystem MUST NOT require RiftShell to run.
 
 ## Ownership boundary

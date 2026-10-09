@@ -1,5 +1,16 @@
 # RiftOS Roadmap
 
+## Active 2026-10-08 checkpoint: C1.3-C → C1.3-D → C1.3-E (separate device gates)
+
+The user's newer instruction **replaces** the older proposal to patch C/D/E in a single pass. Proceed in strict order, requiring complete RiftOS+Builder source/test/docs synchronization, user-manual Builder, signed APK installation and separate installed-device proof for each gate. Preserve the pre-change RiftOS and Builder backup archives. Do not silently advance after a source-only candidate.
+
+- **C1.3-C — SOURCE CANDIDATE; device pending:** Core owns both GUI and shell-less RAPP BOOT, FIFO input dispatch, effect continuation, generation/focus authorization, and published surfaces. MainActivity and RiftRappHost must not own execution. Test Core-only launch, GUI reattach without duplicate BOOT, input/state, Activity destroy/recreate, explicit stop, cleanup and original installed RAPP preservation.
+- **C1.3-D — NOT STARTED:** migrate the *actual* desktop, taskbar/window manager and RAPP graphical presentation to a separate process with authenticated/bounded Core IPC. Do not count the read-only `:riftShellProbe` as production RiftShell.
+- **C1.3-E — NOT STARTED:** only after D device proof, terminate/restart the real RiftShell and prove Core PID/RAPP generation/surfaces survive while the desktop automatically reconstructs.
+
+C1.4 authorization/elevation, C1.5 language-engine retirement and C0.3 cleanup are future work. Normal RiftOS Builder remains user-dispatched only.
+
+
 This roadmap describes intended work, not shipped capability. Current implementation status is tracked in `docs/PROJECT_STATUS.md`.
 
 ## Now: native MCP connection + browser stability

@@ -1,5 +1,10 @@
 # RiftOS Public and Cross-Layer Surfaces
 
+## C1.3-C — Core app execution SOURCE CANDIDATE (2026-10-08; device proof pending)
+
+Internal Core app control is `riftos.core.apps/1`: `start(id)`, `openForShell(id)`, `offerEvent(id, currentAttachmentGeneration, genericEvent)`, `stop(id)`, `status()`. Core verifies installed executable, owns BOOT/FIFO/queued focus authorization/executeChained and publishes immutable `riftos.core.app-surfaces/1` frames. RiftRappHost consumes surfaces and submits input with the Core generation only. MainActivity lifecycle events no longer trigger RAPP execution or session detach. Activity disposal revokes GUI focus. This is same-process code, NOT authorized remote Binder input: production separate RiftShell IPC belongs to C1.3-D, and automatic restart to C1.3-E. Manual Builder + installed-device regression remain pending.
+
+
 This inventory separates live packaged authority from retained reference/compatibility JavaScript. A name in retained source is not automatically a live APK surface.
 
 ## Live native/system surfaces

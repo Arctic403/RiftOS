@@ -226,24 +226,31 @@ if (!rappHost.includes('RiftCoreRuntime.packages(activity.applicationContext)') 
 // C1.1-A: Core owns RAPP identity/opaque program state independently of UI.
 const coreSessions = read(`${kotlinDir}/RiftCoreAppSessions.kt`);
 const coreExecutor = read(`${kotlinDir}/RiftCoreAppExecutor.kt`);
+const coreAppLifecycle = read(`${kotlinDir}/RiftCoreAppLifecycle.kt`);
 for (const required of [
   'class RiftCoreAppSessions', 'riftos.core.sessions/1',
   'fun attach(', 'fun detach(attachment: Attachment)',
   'fun close(attachment: Attachment)', 'fun isAttached(attachment: Attachment)',
   'fun programSnapshot()', 'fun commitState(value: ByteArray)',
   'fun nextEventSequence()', 'fun list(): JSONObject',
-  '"headlessExecution", false', '"appExecutionIndependentOfDesktop", false',
+  '"headlessExecution", true', '"appExecutionIndependentOfDesktop", true',
 ]) if (!coreSessions.includes(required)) fail(`Core RAPP session contract missing: ${required}`);
 if (/\b(?:Activity|View|RiftNativeDesktop|RiftNativeShell|RiftRappHost)\b/.test(
   stripCodeComments(coreSessions)
 )) fail('Core session registry must not depend on desktop/UI implementation classes');
 for (const required of [
-  'RiftCoreRuntime.sessions(activity.applicationContext)',
-  'coreSessions.attach(payload, adapter)',
-  'coreSessions.detach(it.coreAttachment)',
-  'coreSessions.close(session.coreAttachment)',
-  'coreExecutor.executeChained(',
-]) if (!rappHost.includes(required)) fail(`RAPP desktop attachment migration missing: ${required}`);
+  'private val coreLifecycle = RiftCoreRuntime.lifecycle(activity.applicationContext)',
+  'coreLifecycle.openForShell(id)',
+  'coreLifecycle.offerEvent(session.id, session.generation, event)',
+  'coreLifecycle.stop(id)',
+  'coreSurfaces.subscribe { change ->',
+  'coreSurfaces.unsubscribe(surfaceSubscription)'
+]) if (!rappHost.includes(required)) fail(`C1.3-C UI presentation-only delegation missing: ${required}`);
+for (const forbidden of ['coreSessions.attach(', 'coreSessions.detach(', 'coreSessions.close(',
+  'coreSessions.offerEvent(', 'coreSessions.finishEvent(', 'coreExecutor.executeChained(',
+  'dispatchCoreEvent(', 'runEventStep(', 'RiftAppAbi.RuntimePayload(']) {
+  if (rappHost.includes(forbidden)) fail(`C1.3-C desktop retained app execution: ${forbidden}`);
+}
 if (!coreRuntime.includes('fun sessions(context: Context): RiftCoreAppSessions') ||
     !coreRuntime.includes('sessions(context).summary()')) {
   fail('RiftOS Core must own and report RAPP sessions');
@@ -266,9 +273,11 @@ if (/\b(?:Activity|View|RiftNativeDesktop|RiftNativeShell|RiftRappHost)\b/.test(
   stripCodeComments(coreExecutor)
 )) fail('Core RAPP executor references UI/desktop types');
 for (const required of [
-  'RiftCoreRuntime.appExecutor(activity.applicationContext)',
-  'coreExecutor.executeChained('
-]) if (!rappHost.includes(required)) fail(`C1.1-B1 RAPP UI still owns execution: ${required}`);
+  'private val executor = RiftCoreRuntime.appExecutor(app)',
+  'executor.executeChained(', 'private fun dispatch(',
+  'sessions.authorizeQueuedEventDispatch(', 'sessions.offerEvent(',
+  'sessions.finishEvent('
+]) if (!coreAppLifecycle.includes(required)) fail(`C1.3-C Core execution dispatch missing: ${required}`);
 for (const forbidden of [
   'RiftRappQuickJsExecutor()', 'RiftNativeBufferCompilerService.compile(',
   'RiftBoundedAsync.submit(', 'Executors.newSingleThreadExecutor',
@@ -291,13 +300,13 @@ for (const required of [
   'private var runningEvent', 'private var pendingBytes',
   'fun offerEvent(attachment: Attachment', 'fun finishEvent(attachment: Attachment',
   'resetPendingEvents()', 'event.copy(bytes = event.bytes.copyOf())',
-  '"eventQueueOwner", "riftos-core"', '"headlessExecution", false',
+  '"eventQueueOwner", "riftos-core"', '"headlessExecution", true',
 ]) if (!coreSessions.includes(required)) fail(`C1.1-B2-A Core FIFO contract missing: ${required}`);
 for (const required of [
-  'coreSessions.offerEvent(session.coreAttachment, event)',
-  'coreSessions.finishEvent(session.coreAttachment, ticket)',
-  'session.pendingUiCompletions', 'dispatchCoreEvent(session, offered.ticket)',
-]) if (!rappHost.includes(required)) fail(`C1.1-B2-A UI/Core ticket contract missing: ${required}`);
+  'sessions.offerEvent(entry.attachment, event)',
+  'sessions.finishEvent(entry.attachment, ticket)',
+  'if (offered.startNow) dispatch(entry, offered.ticket)'
+]) if (!coreAppLifecycle.includes(required)) fail(`C1.3-C Core FIFO driver missing: ${required}`);
 for (const forbidden of ['val pendingEvents =', 'var eventBusy:', 'data class PendingEvent(']) {
   if (rappHost.includes(forbidden)) fail(`C1.1-B2-A desktop regained event queue: ${forbidden}`);
 }
@@ -357,11 +366,11 @@ if (!coreExecutor.includes('sessions.publishSurfaceFromExecution(') ||
 // C1.2-B1: graphical RiftShell reads authoritative Core surface snapshots.
 for (const required of [
   'RiftCoreRuntime.surfaces(activity.applicationContext)',
+  'coreSurfaces.subscribe { change ->',
   'coreSurfaces.snapshot(session.id)',
-  'it.attachmentGeneration == session.coreAttachment.token',
-  'frame = surface?.frame',
-  'Core application surface unavailable for current attachment'
-]) if (!rappHost.includes(required)) fail(`C1.2-B1 shell surface client missing: ${required}`);
+  'it.attachmentGeneration == session.generation',
+  'session.onFrame = { next -> applyFrame(next) }'
+]) if (!rappHost.includes(required)) fail(`C1.3-C Core surface presentation client missing: ${required}`);
 if (rappHost.includes('EventOutcome(frame = result.frame')) {
   fail('C1.2-B1 RiftShell still renders raw Core executor callback frame');
 }
@@ -398,24 +407,20 @@ if (!activityFocusClient.includes('requestFocusFromShell(id)') ||
 
 // C1.2-C1: installed RAPP BOOT/stop runs in Core without a RiftShell
 // window, Activity or graphical subscriber. Device proof still pending.
-const coreAppLifecycle = read(`${kotlinDir}/RiftCoreAppLifecycle.kt`);
-// C1.2-C2: an existing Core-booted RAPP is adopted by RiftShell
-// with the same executable, generation and published surface (no re-BOOT).
+// C1.3-C supersedes the old destructive C2 attachment-claim handshake:
+ // opening an existing app reuses Core generation without taking ownership.
 for (const marker of [
-  'fun claimForShell(',
-  'entry.state == "running"',
-  'sessions.matchesExecution(entry.attachment, payload, adapter)',
-  'surface.attachmentGeneration == entry.attachment.token',
-  'active.remove(payload.id)',
-  'return entry.attachment'
-]) if (!coreAppLifecycle.includes(marker)) fail(`C1.2-C2 Core attachment transfer missing: ${marker}`);
+  'fun openForShell(id: String): JSONObject = start(id)',
+  'return entryJson(prior).put("accepted", false).put("reason", "already-started")',
+  'fun offerEvent(id: String, generation: Long, event: RiftAppAbi.Event)',
+  'private fun dispatch(entry: Entry, ticket: RiftCoreAppSessions.EventTicket)',
+  'sessions.close(entry.attachment)'
+]) if (!coreAppLifecycle.includes(marker)) fail(`C1.3-C Core-only app ownership missing: ${marker}`);
 for (const marker of [
-  '.claimForShell(payload, adapter)',
-  'val attachment = claimed ?: coreSessions.attach(payload, adapter)',
-  'if (claimed != null) {',
-  'it.attachmentGeneration == claimed.token',
-  'desktop.attachContent(id, render(session, published.frame))'
-]) if (!rappHost.includes(marker)) fail(`C1.2-C2 graphical Core session client missing: ${marker}`);
+  'coreLifecycle.openForShell(id)',
+  'state.getLong("attachmentGeneration")',
+  'it.attachmentGeneration == session.generation'
+]) if (!rappHost.includes(marker)) fail(`C1.3-C desktop Core reuse missing: ${marker}`);
 
 for (const marker of [
   'riftos.core.apps/1',
@@ -624,11 +629,10 @@ for (const marker of [
   'return attachment.record.offer(event, focusRevision)'
 ]) if (!coreSessions.includes(marker)) fail(`C1.2-B2-B2 focused input ticket authority missing: ${marker}`);
 for (const marker of [
-  'coreSessions.authorizeQueuedEventDispatch(session.coreAttachment, ticket)',
-  'val denial = runCatching {',
-  'session.pendingUiCompletions.remove(ticket.id)?.invoke(',
-  'coreSurfaces.snapshot(session.id)?.takeIf {'
-]) if (!rappHost.includes(marker)) fail(`C1.2-B2-B2 queued input settlement missing: ${marker}`);
+  'sessions.authorizeQueuedEventDispatch(entry.attachment, ticket)',
+  'finish(entry, ticket, denial.message',
+  'sessions.finishEvent(entry.attachment, ticket)'
+]) if (!coreAppLifecycle.includes(marker)) fail(`C1.3-C Core queued-input settlement missing: ${marker}`);
 
 // C1.2-B2-A: Core owns generic input-kind and target authorization.
 // The graphical shell may request an input event, never forge effect-result events.
@@ -644,9 +648,9 @@ for (const required of [
 ]) if (!coreSessions.includes(required)) fail(`C1.2-B2-A Core input authorization missing: ${required}`);
 for (const required of [
   'runCatching {',
-  'coreSessions.offerEvent(session.coreAttachment, event)',
+  'coreLifecycle.offerEvent(session.id, session.generation, event)',
   'Core rejected application input'
-]) if (!rappHost.includes(required)) fail(`C1.2-B2-A shell input rejection handling missing: ${required}`);
+]) if (!rappHost.includes(required)) fail(`C1.3-C shell input rejection missing: ${required}`);
 
 // C1.1-P: package manager is Core authority; graphical Installed Apps is only a client.
 const corePackageEvents = read(`${kotlinDir}/RiftCorePackageEvents.kt`);
@@ -675,6 +679,9 @@ if (rappManager.includes('RiftRappHost')) fail('Core package manager must not ca
 if (!corePackageEvents.includes('object RiftCoreAppLaunchRequests') ||
     !corePackageEvents.includes('riftos.core.app-launch/1') ||
     !rappManager.includes('RiftCoreAppLaunchRequests.requestLaunch(id)') ||
+    !rappManager.includes('RiftCoreRuntime.lifecycle(appContext).start(id)') ||
+    !rappManager.includes('presentationDispatched') ||
+    rappManager.includes('no-live-riftos-host') ||
     !rappHost.includes('RiftCoreAppLaunchRequests.subscribe') ||
     !rappHost.includes('RiftCoreAppLaunchRequests.unsubscribe')) {
   fail('C1.1-P generic Core launch request/replaceable shell subscription missing');
@@ -719,7 +726,8 @@ for (const required of [
   '?: return fallback()', 'registry.json',
 ]) if (!runtimeProviders.includes(required)) fail(`runtime-provider boundary missing: ${required}`);
 for (const required of [
-  'RiftCoreRuntime.appExecutor(activity.applicationContext)', 'coreExecutor.executeChained(',
+  'coreLifecycle.openForShell(id)',
+  'coreLifecycle.offerEvent(session.id, session.generation, event)'
 ]) if (!rappHost.includes(required)) fail(`RAPP host Core execution delegation missing: ${required}`);
 for (const required of [
   'RiftCoreRuntime.runtimes(app)', 'providers.execute(',

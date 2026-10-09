@@ -458,16 +458,20 @@ class RiftRappManager(context: Context) {
         require(handlesInstalled(id)) {
             "Installed RAPP not found: $id"
         }
-        val accepted = RiftCoreAppLaunchRequests.requestLaunch(id)
+        // Execution is Core-owned, including when no RiftShell Activity is
+        // alive. Opening a graphical window is a best-effort presentation
+        // request; failure to deliver it cannot prevent Core from running.
+        val core = RiftCoreRuntime.lifecycle(appContext).start(id)
+        val attached = core.getBoolean("attached")
+        val presented = attached && RiftCoreAppLaunchRequests.requestLaunch(id)
         return JSONObject()
             .put("schema", "riftbuild-rapp-launch-v1")
             .put("requestSchema", RiftCoreAppLaunchRequests.SCHEMA)
             .put("id", id)
-            .put("accepted", accepted)
-            .put(
-                "state",
-                if (accepted) "launch-dispatched" else "no-live-riftos-host"
-            )
+            .put("accepted", attached)
+            .put("core", core)
+            .put("presentationDispatched", presented)
+            .put("state", if (presented) "launch-dispatched" else "core-running")
     }
 
     @Synchronized

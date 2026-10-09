@@ -9,14 +9,14 @@ import org.json.JSONObject
  * RiftOS Core process authority. Does not depend on any Activity, desktop,
  * RiftShell window, app renderer, or installed application presentation.
  *
- * Core owns generic package installation/registry, runtime-provider discovery,
- * and build/execution capabilities. The current RAPP rendering/lifecycle host
- * is still Activity-owned; moving its execution sessions out is a separate gate.
+ * Core owns installation, executable RAPP lifecycle, FIFO dispatch, execution,
+ * immutable app surfaces and runtime-provider discovery. A graphical client
+ * is presentation only and can disappear without stopping Core RAPP execution.
  *
  * This object survives Activity recreation within the Android app process.
  * It is NOT a separate protected OS process: Android process death still resets
  * in-memory authority. Never claim cross-process/shell-crash survival from this
- * first ownership gate alone.
+ * C1.3-C gate alone.
  */
 object RiftCoreRuntime {
     private const val STATUS_SCHEMA = "riftos.core.status/1"
@@ -127,7 +127,7 @@ object RiftCoreRuntime {
             .put("coreApps", lifecycle(context).status())
             .put("desktopRequired", false)
             .put("shellRequired", false)
-            .put("appExecutionIndependentOfDesktop", false)
+            .put("appExecutionIndependentOfDesktop", true)
             .put("separateCoreProcess", false)
     }
 

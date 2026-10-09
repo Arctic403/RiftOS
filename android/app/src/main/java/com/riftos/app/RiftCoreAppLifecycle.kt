@@ -5,12 +5,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * C1.2-C1: process-owned generic RAPP bootstrap and lifecycle, independent of
- * any RiftShell window or Android Activity. The shell is only an optional
- * control client; Core owns package verification, attachment and BOOT.
- *
- * A separate graphical attach-to-running-session protocol is a later gate.
- * This does not imply Android process or native provider isolation.
+ * C1.3-C: the process-owned Core application lifecycle AND event dispatcher.
+ * A shell can start/observe/send bounded input but never owns BOOT, the queue,
+ * effect continuation, program state or execution. No Android Activity/View.
+ * Process isolation and remote shell transport are separate C1.3-D/E gates.
  */
 class RiftCoreAppLifecycle(context: Context) {
     companion object {
@@ -26,6 +24,8 @@ class RiftCoreAppLifecycle(context: Context) {
     private class Entry(
         val id: String,
         val name: String,
+        val payload: RiftAppAbi.RuntimePayload,
+        val adapter: RiftAppRuntimeAdapter,
         val attachment: RiftCoreAppSessions.Attachment
     ) {
         var state: String = "starting"
@@ -33,21 +33,40 @@ class RiftCoreAppLifecycle(context: Context) {
     }
 
     private val active = LinkedHashMap<String, Entry>()
+    data class Change(val appId: String, val state: String, val error: String?)
+    private val subscribers = LinkedHashMap<Long, (Change) -> Unit>()
+    private var nextSubscriber = 0L
+
+    @Synchronized
+    fun subscribe(observer: (Change) -> Unit): Long {
+        require(subscribers.size < 32) { "Core app state subscription bound reached" }
+        check(nextSubscriber < Long.MAX_VALUE) { "Core app state subscription IDs exhausted" }
+        nextSubscriber += 1
+        subscribers[nextSubscriber] = observer
+        return nextSubscriber
+    }
+
+    @Synchronized
+    fun unsubscribe(subscription: Long) {
+        subscribers.remove(subscription)
+    }
+
+    private fun notifyState(entry: Entry) {
+        val change = Change(entry.id, entry.state, entry.error)
+        val listeners = synchronized(this) { subscribers.values.toList() }
+        listeners.forEach { listener -> runCatching { listener(change) } }
+    }
 
     init {
         RiftCorePackageEvents.subscribe { change ->
             if (change.operation != "installed") synchronized(this) {
-                // Core package manager independently invalidates the session
-                // and its published surface. Do not hold stale lifecycle data.
+                // Package manager revokes executable sessions on update/uninstall.
                 active.remove(change.id)
             }
         }
     }
 
-    /**
-     * Start an installed RAPP entirely in Core. Do not take ownership away
-     * from an existing graphical attachment of the same application.
-     */
+    /** Core BOOT is identical whether or not a graphical client exists. */
     @Synchronized
     fun start(id: String): JSONObject {
         val prior = active[id]
@@ -58,7 +77,7 @@ class RiftCoreAppLifecycle(context: Context) {
             "RAPP is already attached to another execution client"
         }
         active.remove(id)
-        require(active.size < MAX_CORE_APPS) { "Core-only RAPP lifecycle limit reached" }
+        require(active.size < MAX_CORE_APPS) { "Core RAPP lifecycle limit reached" }
 
         val installed = packages.loadInstalled(id)
         require(installed.abi == RiftAppAbi.SCHEMA) { "Unsupported RAPP ABI" }
@@ -77,28 +96,15 @@ class RiftCoreAppLifecycle(context: Context) {
             runtime = installed.runtime
         )
         val attachment = sessions.attach(payload, adapter)
-        val entry = Entry(id, installed.name, attachment)
+        val entry = Entry(id, installed.name, payload, adapter, attachment)
         active[id] = entry
         try {
-            executor.executeChained(
-                attachment, payload, adapter,
-                RiftAppAbi.Event(kind = RiftAppAbi.EventKind.BOOT)
-            ) { outcome ->
-                synchronized(this) {
-                    if (active[id] !== entry) return@synchronized
-                    if (outcome.error == null &&
-                        outcome.frame != null &&
-                        sessions.isAttached(attachment)
-                    ) {
-                        entry.state = "running"
-                        entry.error = null
-                    } else {
-                        entry.state = "failed"
-                        entry.error = outcome.error ?: "Core RAPP boot did not publish a frame"
-                        sessions.close(attachment)
-                    }
-                }
-            }
+            // Core itself offers/dispatches BOOT. There is no shell callback or
+            // window requirement, and later input uses this same FIFO.
+            val offered = sessions.offerEvent(
+                attachment, RiftAppAbi.Event(kind = RiftAppAbi.EventKind.BOOT)
+            )
+            if (offered.startNow) dispatch(entry, offered.ticket)
         } catch (error: Throwable) {
             active.remove(id)
             sessions.close(attachment)
@@ -108,30 +114,91 @@ class RiftCoreAppLifecycle(context: Context) {
     }
 
     /**
-     * Transfer an already-running Core app to a graphical presentation
-     * without changing its attachment generation, program, or surface.
-     * No new BOOT event is executed on this path.
-     *
-     * Matching installed program identity is checked before ownership moves.
+     * A shell requests a presentation of an existing Core app. It cannot
+     * supply executable bytes, change generation, claim execution or re-BOOT.
      */
     @Synchronized
-    fun claimForShell(
-        payload: RiftAppAbi.RuntimePayload,
-        adapter: RiftAppRuntimeAdapter
-    ): RiftCoreAppSessions.Attachment? {
-        val entry = active[payload.id] ?: return null
-        require(entry.state == "running") { "Core RAPP is not ready for shell attachment" }
-        require(sessions.matchesExecution(entry.attachment, payload, adapter)) {
-            "Core RAPP shell attachment executable identity mismatch"
+    fun openForShell(id: String): JSONObject = start(id)
+
+    /**
+     * Core-only input endpoint for an attached generation. All authorization,
+     * event ordering, queued-lease rechecks and execution remain within Core.
+     * No caller-supplied callbacks, Activity, View or desktop state are kept.
+     */
+    @Synchronized
+    fun offerEvent(id: String, generation: Long, event: RiftAppAbi.Event): JSONObject {
+        val entry = active[id] ?: error("Core RAPP is not running")
+        require(entry.attachment.token == generation && sessions.isAttached(entry.attachment)) {
+            "Core RAPP attachment generation is stale"
         }
-        val surface = RiftCoreRuntime.surfaces(app).snapshot(payload.id)
-        require(surface != null &&
-            surface.attachmentGeneration == entry.attachment.token
-        ) { "Core RAPP surface is not ready for shell attachment" }
-        active.remove(payload.id)
-        return entry.attachment
+        require(entry.state != "failed") { "Core RAPP has failed" }
+        val offered = sessions.offerEvent(entry.attachment, event)
+        if (offered.startNow) dispatch(entry, offered.ticket)
+        return JSONObject()
+            .put("schema", SCHEMA)
+            .put("accepted", true)
+            .put("id", id)
+            .put("attachmentGeneration", generation)
+            .put("ticketId", offered.ticket.id)
     }
 
+    private fun dispatch(entry: Entry, ticket: RiftCoreAppSessions.EventTicket) {
+        if (active[entry.id] !== entry || !sessions.isAttached(entry.attachment)) return
+        val denial = runCatching {
+            sessions.authorizeQueuedEventDispatch(entry.attachment, ticket)
+        }.exceptionOrNull()
+        if (denial != null) {
+            finish(entry, ticket, denial.message ?: "Core rejected queued application input")
+            return
+        }
+        try {
+            executor.executeChained(
+                entry.attachment, entry.payload, entry.adapter, ticket.event
+            ) { outcome ->
+                finish(entry, ticket, outcome.error)
+            }
+        } catch (error: Throwable) {
+            finish(entry, ticket, error.message ?: error.javaClass.simpleName)
+        }
+    }
+
+    private fun finish(
+        entry: Entry,
+        ticket: RiftCoreAppSessions.EventTicket,
+        error: String?
+    ) {
+        synchronized(this) {
+            if (active[entry.id] !== entry || !sessions.isAttached(entry.attachment)) return
+            // An interpreter BOOT that returns without a published frame
+            // cannot be presented as a healthy running application.
+            val missingBootFrame = ticket.event.kind == RiftAppAbi.EventKind.BOOT &&
+                RiftCoreRuntime.surfaces(app).snapshot(entry.id)?.attachmentGeneration !=
+                    entry.attachment.token
+            val outcomeError = error ?: if (missingBootFrame) {
+                "Core RAPP BOOT did not publish a frame"
+            } else null
+            if (outcomeError == null) {
+                entry.state = "running"
+                entry.error = null
+            } else {
+                entry.error = outcomeError
+                if (ticket.event.kind == RiftAppAbi.EventKind.BOOT) {
+                    entry.state = "failed"
+                    sessions.close(entry.attachment)
+                }
+            }
+            // A stale focus ticket is a denied input, not a crashed window.
+            // Only terminal BOOT failure needs a shell error presentation;
+            // subsequent successful frames arrive through Core surfaces.
+            if (ticket.event.kind == RiftAppAbi.EventKind.BOOT && outcomeError != null) {
+                notifyState(entry)
+            }
+            val next = sessions.finishEvent(entry.attachment, ticket)
+            if (next != null) dispatch(entry, next)
+        }
+    }
+
+    /** An explicit user close/stop is a Core operation, not UI destruction. */
     @Synchronized
     fun stop(id: String): JSONObject {
         val entry = active.remove(id)
@@ -155,7 +222,8 @@ class RiftCoreAppLifecycle(context: Context) {
             .put("count", active.size)
             .put("apps", list)
             .put("coreOnlyBootSupported", true)
-            .put("fullAppExecutionIndependentOfDesktop", false)
+            .put("fullAppExecutionIndependentOfDesktop", true)
+            .put("eventDispatchOwner", "riftos-core")
             .put("shellClientProtocol", "in-process")
             .put("separateCoreProcess", false)
     }

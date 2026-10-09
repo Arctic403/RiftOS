@@ -1,5 +1,12 @@
 # Build and Validation System
 
+## 2026-10-08 — C1.3-C source / Builder ownership gate (candidate only)
+
+C1.3-C is now a separate implementation and device-proof stage, superseding the earlier proposal to combine C/D/E. `scripts/validate-rift-wiring.mjs` and `scripts/test-riftbuild-native.mjs` must require Core-owned GUI+shell-less RAPP BOOT, queued event dispatch and focus rechecks in `RiftCoreAppLifecycle`, with `RiftRappHost` limited to generic generation-matched surface presentation and Core input requests. The source tests must reject `coreSessions.attach/close/detach/offerEvent`, `executeChained`, pending event callbacks and BOOT/executable payload ownership in the graphical host. `MainActivity` cannot drive RAPP execution from Activity resume/pause; destruction revokes Core focus without stopping Core sessions.
+
+`Riftos-builder-main/scripts/riftos-build.sh` and `scripts/test-builder-contracts.py` mirror those source invariants rather than the retired C1.1-era host-dispatch markers. Signed APK verifier requires the new `eventDispatchOwner` and `fullAppExecutionIndependentOfDesktop` strings, but the presence of these strings alone is not device proof. The user **alone** starts the unchanged manual Builder workflow after source gates pass and synchronized repos are committed. Device testing must prove Core PID/session/generation persistence during GUI recreation, shell-less BOOT, reattach/input/state, explicit close/stop and disposable cleanup; do not promote until installed proof. C1.3-D/E are entirely separate future gates.
+
+
 ## Verification status
 
 **VERIFIED AGAINST CURRENT SOURCE — 2026-09-28.**
