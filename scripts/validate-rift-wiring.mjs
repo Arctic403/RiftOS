@@ -276,6 +276,22 @@ for (const marker of ['interface RiftCoreComponentV1',
   'override fun event(', 'override fun install(', 'override fun uninstall(']) {
   if (!e0HostComponent.includes(marker)) fail(`E0 Core/Shell fixed host ABI missing: ${marker}`);
 }
+// The E0 selector must preserve original production Core behavior, not merely
+// satisfy IPC source markers. Guard every migrated RAPP route at both ends.
+for (const marker of [
+  'RiftCoreRuntime.surfaces(context).snapshot(id)',
+  'RiftCoreRuntime.packages(context).listInstalled()',
+  'RiftCoreRuntime.lifecycle(context).openForShell(id)',
+  'RiftCoreRuntime.lifecycle(context).reattachForShell(id, generation)',
+  'RiftCoreRuntime.lifecycle(context).stopForShell(id, generation)',
+  'RiftCoreRuntime.sessions(context).requestFocusFromShell(id)',
+  'RiftCoreRuntime.lifecycle(context).offerEvent(id, generation, event)',
+  'RiftCoreRuntime.buildPlatform(context).installRapp(artifact)',
+  'RiftCoreRuntime.buildPlatform(context).uninstallRapp(id)'
+]) {
+  if (!e0HostComponent.includes(marker))
+    fail(`E0 embedded Core delegation changed or missing: ${marker}`);
+}
 if (!bootstrapHost.includes('RiftHostCoreComponents.core().initialize(application)') ||
     !coreRuntime.includes('.put("hostComponents", RiftHostCoreComponents.status())') ||
     !probeProvider.includes('RiftHostCoreComponents.core().initialize(ctx)') ||
@@ -853,7 +869,7 @@ for (const marker of [
   'com.riftos.app.core-surface-ipc',
   'class RiftCoreSurfaceIpcProvider : ContentProvider()',
   'override fun call(method: String, arg: String?, extras: Bundle?): Bundle',
-  'RiftCoreRuntime.surfaces(ctx).snapshot(id)',
+  'RiftHostCoreComponents.core().snapshot(ctx, id)',
   'Process.myPid()',
   'MAX_REPLY_BYTES = 256 * 1024',
   'Core IPC snapshot exceeds bounded Binder payload',
@@ -987,9 +1003,10 @@ for (const required of [
   'ctx.packageName + ":riftShell"',
   'manager.runningAppProcesses', 'process.pid == pid && process.uid == uid',
   'registryName == expected', 'procName == expected',
-  'RiftCoreRuntime.lifecycle(ctx).offerEvent(id, generation, event)',
-  'RiftCoreRuntime.lifecycle(ctx).stopForShell(id, expected)',
-  'RiftCoreRuntime.sessions(ctx)', 'METHOD_SHELL_DESKTOP_REPORT',
+  'RiftHostCoreComponents.core().event(ctx, id, generation, event)',
+  'RiftHostCoreComponents.core().stop(ctx, id, expected)',
+  'RiftHostCoreComponents.core().focus(ctx, id.takeIf { it.isNotBlank() })',
+  'METHOD_SHELL_DESKTOP_REPORT',
   'METHOD_SHELL_UI_POLL', 'RiftCoreShellRemoteUiBroker.respond('
 ]) if (!coreIpcProvider.includes(required)) {
   fail(`C1.3-D Core must authenticate, bound and settle cross-process IPC: ${required}`);
@@ -1073,7 +1090,7 @@ for (const required of [
   'METHOD_SHELL_REATTACH',
   'RiftCoreShellRecovery.claim(',
   'RiftCoreShellRecovery.noteReport(',
-  'reattachForShell(id, expected)'
+  'RiftHostCoreComponents.core().reattach(ctx, id, expected)'
 ]) if (!coreIpcProvider.includes(required)) {
   fail(`C1.3-E authenticated Core recovery/reattach Binder method missing: ${required}`);
 }
