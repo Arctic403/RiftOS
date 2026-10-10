@@ -424,6 +424,7 @@ for (const file of ['RiftCoreModuleManifest.kt', 'RiftCoreModuleStore.kt',
 for (const marker of ['MODULE_RECOVERY_PROOF = "module.recovery.proof"',
   'MODULE_RECOVERY_SCHEMA = "riftos.core.module-recovery-proof/1"',
   'fun executeModuleRecoveryProof(', 'RiftCoreModuleActivation.proveInterruptedStartRecovery(',
+  'context, ACTOR, operation, "rolled-back", "pending-journal-restored"',
   'tickets.remove(bearer)', 'module://recover/']) {
   if (!probeAdmin.includes(marker)) fail(`Bounded recovery approval missing: ${marker}`);
 }

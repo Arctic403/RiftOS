@@ -1,5 +1,11 @@
 # RiftOS Patch History
 
+## 2026-10-10 — Gate 2-C #690 live recovery audit mismatch fix (LOCAL, UNPUSHED)
+
+User installed signed RiftOS Builder run `38061286815` / build #690 with exact source `777f34b417dbb9dcabb3abc4b65c563335be6cb7`. RiftOS MCP verified active Core PID 10149 and Shell PID 10197, 3 RAPPs, no grants/providers, and historical known-good example.alternate-proof receipt. On-device **direct Core consumed-stage bearer replay PASS**: new native button sent an approved identical ticket twice across protected Binder, accepted first stage and denied second; proof unchanged. The new **bounded interrupted-start journal recovery test reached its final audit but the UI reported `Core denied: Core admin decision outcome invalid`**. Investigation: `RiftCoreAdminConsent.executeModuleRecoveryProof` recorded successful outcome `recovered`, which `RiftCoreSystemCapabilities.recordDecision` excludes from its allowed outcomes. The actual journal proof method returned, and independent Core status still showed original active ID/revision, historical nonce and PID, pendingStartup=false, zero grants and approvals. Hence end-to-end UI proof remains BLOCKED, though underlying journal/restore appears successful.
+
+Local repair: changed **only** the successful recovery audit outcome to the already permitted `rolled-back`, preserving existing audit policy unchanged; `scripts/validate-rift-wiring.mjs` now explicitly checks this allowed outcome to prevent regression. No new APK build, push, install or user device proof of repaired code yet. Manual signed Builder workflow and separate permissions remain unchanged.
+
 ## 2026-10-10 — Gate 2-C Core bearer replay + controlled recovery gate (SOURCE ONLY, UNPUSHED)
 
 On signed #689, actual device testing confirmed generic DEX execution, native denied/stale approval checks, Core SHA rejection, invalid manifest discovery rejection, missing-entrypoint active-pointer rollback and healthy reactivation of the known-good module. Two gaps remained: the trusted UI previously stopped a second stage click before testing Core's actual one-use bearer, and an entrypoint failure was not an interrupted-start journal recovery test. Wrong-SHA stages could also leave a new empty private module-ID directory, counting against the max-32 admission limit.

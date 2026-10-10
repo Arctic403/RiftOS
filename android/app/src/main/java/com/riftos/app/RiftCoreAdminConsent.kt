@@ -475,7 +475,7 @@ internal object RiftCoreAdminConsent {
                 val result = RiftCoreModuleActivation.proveInterruptedStartRecovery(
                     context, id, revision)
                 RiftCoreSystemCapabilities.recordDecision(
-                    context, ACTOR, operation, "recovered", "pending-journal-restored"
+                    context, ACTOR, operation, "rolled-back", "pending-journal-restored"
                 )
                 result
             } catch (failure: Exception) {
