@@ -1,5 +1,13 @@
 # RiftOS Patch History
 
+## 2026-10-09 — Trusted native RiftFS ProbeV1 selector (SOURCE ONLY; DEVICE TEST USER-OWNED)
+
+Live RiftOS #684 successfully ran independent `rift-module-builder` RAPP `build.local` Kotlin → D8 and exported `/D:/Builds/Modules/probe-v1.dex` (2,563,188 bytes, D8 reported SHA-256 `2d2373dfd13f0f7b9ab15a4146cfef8760a3c7d5aa0f6fa858b7d7feb461877d`). The Android file-picker detour was redundant; user authorized direct in-RiftOS importing, but **manual device tests must be performed by user**.
+
+Minimal fix: `RiftNativeAdminApprovals` now offers `Select ProbeV1 DEX from RiftOS Files`, presenting only bounded regular `.dex` files in the fixed `/D:/Builds/Modules` RiftFS folder. Canonical path and every directory component checked against symlinks; file size 1..32 MiB and filename allowlist checked both at selection and right before opening a read-only `ParcelFileDescriptor`. The trusted Shell passes *only the descriptor* over the already-signer/PID/foreground-gated Core IPC. Existing separate Core 45-second one-use scope for stage, separate SHA-256 activation approval, immutable SHA-addressed Core storage, no provider registration, embedded Core/Shell fallbacks and Android document picker all remain unchanged. No new Core admin endpoint, RAPP elevated capability, compiler or APK packaging route. Added source wiring guards. **New source unbuilt/unpushed, no device proof claimed.**
+
+User's manual regression gates: new UI select and stage, activation SHA/process proof; denial/expiry/replay; path/symlink/out-of-folder rejection, missing/oversized/malformed DEX; Android picker fallback; existing two RAPPs/Core/Shell survive. See handoff for steps.
+
 ## 2026-10-10 — External ProbeV1 DEX workflow setup-only failure repaired (SOURCE ONLY)
 
 The user-supplied `logs_103013000955.zip` contains only `external-probe` job steps. It failed at `Set up Android tools` from `android-actions/setup-android@v3` because `sdkmanager` could not find the obsolete `tools` package (exit 1). Checkout and Java 17 setup passed; `javac`, D8 compile and artifact upload were **not reached**. Replaced that Android setup action with a guarded use of the GitHub Ubuntu runner's existing SDK and conditional install of just API 35 + Build Tools/D8 35.0.0 when absent. Standalone DEX script, user-manual signed RiftOS Builder, and installed RiftOS APK untouched. **Rerun required; no DEX/device proof yet.**

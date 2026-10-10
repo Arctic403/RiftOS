@@ -12,6 +12,8 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import org.json.JSONObject
+import java.io.File
+import java.nio.file.Files
 import java.util.concurrent.Executors
 
 /**
@@ -36,8 +38,15 @@ internal class RiftNativeAdminApprovals(
     private var statusView: TextView? = null
     private var generation = 0L
     private var selectedProbeUri: Uri? = null
+    private var selectedRiftFsProbeName: String? = null
     private var stagedProbeSha: String? = null
-    companion object { const val PROBE_PICK_REQUEST = 0x6A41 }
+    companion object {
+        const val PROBE_PICK_REQUEST = 0x6A41
+        private const val PROBE_RIFTFS_PATH = "/D:/Builds/Modules"
+        private const val PROBE_RIFTFS_RELATIVE = "documents/builds/Modules"
+        private const val PROBE_MAX_BYTES = 32L * 1024 * 1024
+        private val PROBE_NAME = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,119}\\.dex$")
+    }
 
 
     fun open() {
@@ -110,6 +119,7 @@ internal class RiftNativeAdminApprovals(
         button("Execute Core empty registry and rollback once") { executeRegistryProof() }
         button("Revoke current approval") { revoke() }
         button("Discover installed runtime candidates (read-only)") { discoverProviders() }
+        button("Select ProbeV1 DEX from RiftOS Files") { pickRiftFsProbeDex() }
         button("Select external ProbeV1 DEX (Android picker)") { pickProbeDex() }
         button("Stage selected DEX using one-use approval") { stageProbe() }
         button("Select digest-bound probe activation scope") { selectProbeActivation() }
@@ -146,6 +156,7 @@ internal class RiftNativeAdminApprovals(
             return
         }
         selectedProbeUri = null
+        selectedRiftFsProbeName = null
         stagedProbeSha = null
         operation = RiftCoreAdminConsent.PROBE_STAGE
         target = RiftCoreAdminConsent.PROBE_TARGET
@@ -172,6 +183,7 @@ internal class RiftNativeAdminApprovals(
             return true
         }
         selectedProbeUri = uri
+        selectedRiftFsProbeName = null
         stagedProbeSha = null
         operation = RiftCoreAdminConsent.PROBE_STAGE
         target = RiftCoreAdminConsent.PROBE_TARGET
@@ -179,6 +191,91 @@ internal class RiftNativeAdminApprovals(
             "and Allow once before staging. No activation yet."
         show("Selected a document-provided DEX. Approval is still required.")
         return true
+    }
+
+
+    /**
+     * Trusted native source picker for a fixed user-build directory. No RAPP,
+     * shell command or arbitrary path is accepted as an administrator input.
+     * Core still receives only a read-only FD and consumes a separate ticket.
+     */
+    private fun probeRiftFsDirectory(): File {
+        val relative = RiftVolumePaths.resolveRelative(PROBE_RIFTFS_PATH)
+        require(relative == PROBE_RIFTFS_RELATIVE) {
+            "Unexpected RiftFS build-directory mapping"
+        }
+        val rawRoot = File(activity.filesDir, "riftfs")
+        require(!Files.isSymbolicLink(rawRoot.toPath())) { "Symlinked RiftFS root" }
+        val riftfs = rawRoot.canonicalFile
+        var cursor = riftfs
+        for (name in relative.split('/')) {
+            cursor = File(cursor, name)
+            require(!Files.isSymbolicLink(cursor.toPath())) {
+                "Symlinked RiftFS build-directory segment"
+            }
+        }
+        require(cursor.isDirectory && cursor.canonicalFile.toPath()
+            .startsWith(riftfs.toPath())) { "RiftFS module directory is unavailable" }
+        return cursor
+    }
+
+    private fun verifiedProbeRiftFsFile(name: String): File {
+        require(name.matches(PROBE_NAME)) { "Invalid DEX filename" }
+        val directory = probeRiftFsDirectory()
+        val file = File(directory, name)
+        require(!Files.isSymbolicLink(file.toPath()) &&
+            file.isFile && file.canonicalFile.parentFile == directory.canonicalFile &&
+            file.length() in 1L..PROBE_MAX_BYTES) {
+            "External DEX must be a nonempty regular file under $PROBE_RIFTFS_PATH (max 32 MiB)"
+        }
+        return file
+    }
+
+    private fun pickRiftFsProbeDex() {
+        if (currentTicket != null) {
+            show("Revoke or consume the earlier approval before choosing another DEX.")
+            return
+        }
+        selectedProbeUri = null
+        selectedRiftFsProbeName = null
+        stagedProbeSha = null
+        operation = RiftCoreAdminConsent.PROBE_STAGE
+        target = RiftCoreAdminConsent.PROBE_TARGET
+        scopeText?.text = "Fixed external ProbeV1 staged from $PROBE_RIFTFS_PATH. " +
+            "Core reads a verified DEX descriptor only after separate one-use approval."
+        val files = runCatching {
+            val directory = probeRiftFsDirectory()
+            val children = directory.listFiles() ?: error("Could not list RiftFS modules")
+            require(children.size <= 256) { "Too many entries in module folder" }
+            children.filter { entry ->
+                entry.name.matches(PROBE_NAME) &&
+                    runCatching { verifiedProbeRiftFsFile(entry.name) }.isSuccess
+            }.sortedBy { it.name }.take(32)
+        }.getOrElse { error ->
+            show("RiftFS module folder unavailable: ${error.message}")
+            return
+        }
+        if (files.isEmpty()) {
+            show("No verified .dex files in $PROBE_RIFTFS_PATH. Build ProbeV1 first.")
+            return
+        }
+        val serial = generation
+        val names = files.map { it.name }
+        AlertDialog.Builder(activity)
+            .setTitle("Choose RiftOS module from $PROBE_RIFTFS_PATH")
+            .setItems(files.map { "${it.name} · ${it.length()} bytes" }.toTypedArray()) { _, which ->
+                if (!visible || generation != serial || currentTicket != null) return@setItems
+                val chosen = names.getOrNull(which) ?: return@setItems
+                runCatching { verifiedProbeRiftFsFile(chosen) }
+                    .onSuccess {
+                        selectedProbeUri = null
+                        selectedRiftFsProbeName = chosen
+                        show("Selected $PROBE_RIFTFS_PATH/$chosen. Request one-use staging approval.")
+                    }
+                    .onFailure { show("DEX selection denied: ${it.message}") }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun selectProbeActivation() {
@@ -207,12 +304,25 @@ internal class RiftNativeAdminApprovals(
             show("Probe staging requires the trusted window foreground.")
             return
         }
-        val uri = selectedProbeUri ?: run { show("Choose a DEX file first."); return }
+        val uri = selectedProbeUri
+        val riftFsName = selectedRiftFsProbeName
+        if ((uri == null) == (riftFsName == null)) {
+            show("Choose exactly one DEX source first (RiftOS Files or Android picker).")
+            return
+        }
         val ticket = currentTicket ?: run { show("No stage approval ticket."); return }
         val client = core ?: run { show("Core IPC unavailable."); return }
         perform {
-            val descriptor = activity.contentResolver.openFileDescriptor(uri, "r")
-                ?: error("Cannot open the selected DEX read-only")
+            // Core sees a read-only Android FD, never a RAPP-controlled path.
+            val descriptor = if (uri != null) {
+                activity.contentResolver.openFileDescriptor(uri, "r")
+                    ?: error("Cannot open the selected Android DEX read-only")
+            } else {
+                ParcelFileDescriptor.open(
+                    verifiedProbeRiftFsFile(requireNotNull(riftFsName)),
+                    ParcelFileDescriptor.MODE_READ_ONLY
+                )
+            }
             descriptor.use { fd ->
                 val result = client.adminConsent("execute-probe-stage", ticket,
                     RiftCoreAdminConsent.PROBE_STAGE,
@@ -226,6 +336,7 @@ internal class RiftNativeAdminApprovals(
                     if (currentTicket == ticket) currentTicket = null
                     stagedProbeSha = sha
                     selectedProbeUri = null
+                    selectedRiftFsProbeName = null
                 }
                 "Core staged immutable external DEX SHA-256 " + sha.take(16) +
                     "… No execution. Select digest-bound activation, request a NEW approval."
@@ -497,6 +608,7 @@ internal class RiftNativeAdminApprovals(
         scopeText = null
         currentTicket = null
         selectedProbeUri = null
+        selectedRiftFsProbeName = null
         stagedProbeSha = null
         // Core invalidates ALL unconsumed approvals from the exact OS-attested
         // real shell PID on native window close, even if the UI lost its token.

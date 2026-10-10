@@ -296,6 +296,14 @@ for (const marker of ['Intent.ACTION_OPEN_DOCUMENT', 'Intent.CATEGORY_OPENABLE',
   'activity.contentResolver.openFileDescriptor(uri, "r")']) {
   if (!probeUi.includes(marker)) fail(`Bootstrap native user approval/picker missing: ${marker}`);
 }
+for (const marker of ['Select ProbeV1 DEX from RiftOS Files',
+  'PROBE_RIFTFS_PATH = "/D:/Builds/Modules"',
+  'RiftVolumePaths.resolveRelative(PROBE_RIFTFS_PATH)',
+  'Files.isSymbolicLink(', 'file.canonicalFile.parentFile == directory.canonicalFile',
+  'selectedRiftFsProbeName', 'ParcelFileDescriptor.open(',
+  'ParcelFileDescriptor.MODE_READ_ONLY', 'verifiedProbeRiftFsFile(requireNotNull(riftFsName))']) {
+  if (!probeUi.includes(marker)) fail(`Fixed RiftFS ProbeV1 descriptor-only import missing: ${marker}`);
+}
 if (!probeApps.includes('adminApprovals.onActivityResult(') ||
     !probeActivity.includes('systemApps.onActivityResult(')) {
   fail('Bootstrap native Android document picker result must reach approvals UI');
