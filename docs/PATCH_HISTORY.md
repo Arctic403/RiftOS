@@ -1,5 +1,11 @@
 # RiftOS Patch History
 
+## 2026-10-09 — Bootstrap ComponentStore proof-only staged revisions (SOURCE, NOT DEVICE)
+
+After user-manual signed Builder #680 (`494be44e6348`) booted, user screenshot and Core audit recorded **C2-A positive physical PASS**: one-use scoped `runtime.register` requested→approved→consumed→rolled-back, empty registry created/removed, no journal/registered provider/grant. Negative deny/replay/expiry tests and C2-B2 real third-party enrollment remain separate.
+
+New `RiftBootstrapComponentStore` stages bounded DEX into read-only content-addressed revision filenames, maintains Android AtomicFile `probe.json`/previous fallback activation pointers and interrupted-startup rollback. `RiftBootstrapHost` now allows separate DEX only in the non-exported `:riftBootstrapProbe` Android process, never in Core or Shell; external Core/Shell are specifically disabled. Added parent-classloader collision rejection, exact Gradle source and ownership, source-validator/Builder guards, passive probe status and this documentation. **No native user import/consent, actual loaded external probe, complete Node/Gradle compilation, build, device test or push** yet. Pre-edit clean #680 source archived to `workspace/backups/riftos-494be44-pre-component-store-20261009.zip`. No RAPP installation/privilege changes.
+
 ## 2026-10-09 — Bootstrap Host compatibility entrypoint and optional DEX selector (SOURCE-ONLY)
 
 User authorized the direction toward a tiny Android bootstrap with RiftOS Core/Shell as separately updatable components. Before editing, archived the clean RiftOS source `3c8a7bd5f6f5` to `workspace/backups/riftos-pre-bootstrap-host-20261009.zip` (SHA-256 `5ee3cbda40da45097a262c4338a0c7dbe1d328b0fe6f0bb9bdba9ca73af768aa`). `RiftCoreApplication` now delegates actual default-process Core startup and remote Shell WebView setup to `RiftBootstrapHost` while the embedded fallback preserves existing C1.4 rollback/journal recovery, Core runtime, Shell recovery and MCP relay sequencing. Added an optional hash-verified immutable app-private DEX `RiftBootstrapEntry` selector with synced interrupted-boot fallback, plus passive Core status introspection. This is **process-start-only**, not hot-swapping and not an externalized Core/Shell.

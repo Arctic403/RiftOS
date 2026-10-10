@@ -1,5 +1,9 @@
 # RiftOS Public and Cross-Layer Surfaces
 
+## 2026-10-09 — Bootstrap component store remains internal-only
+
+`RiftBootstrapComponentStore` offers Android app-private `stage`, `activateProbe`, `recoverProbe`, `resetProbe`, and versioned read helpers. Its staged `<id>-<sha256>.dex` files are read-only and activate only a noncritical `probe` through Android AtomicFile `probe.json`, with its execution owned by an inert nonexported `:riftBootstrapProbe` Service process; the previous record remains for interrupted-boot restoration. **No new IPC, exported Binder action, terminal command, RAPP permission, provider registration or native UI activation control was added.** The existing `core status.bootstrapHost` now includes passive probe activation/boot flags and `criticalExternalActivationEnabled:false`. Embedded Core/Shell continue under Android and external critical activation is off. User #680 verified C2-A positive registry rollback; unrelated C2-B2 registry admissions remain disabled.
+
 ## 2026-10-09 — Bootstrap Host diagnostic/entrypoint surface (SOURCE ONLY)
 
 `RiftBootstrapEntry.start(Application)` is an APK-shared, version-1 Kotlin interface reserved for optional process-start DEX modules. `RiftBootstrapHost` selects only app-private hash-checked `core`/`shell` DEX if an explicit activation record exists, otherwise runs the same embedded Core/Shell startup. `core status` adds passive `bootstrapHost` (schema `riftos.bootstrap-host/1`), reporting activation-file presence, interrupted boot markers, `inProcessHotSwapEnabled:false`, and `embeddedFallbackAvailable:true`; these are status only, NOT registry installs or admin permissions. No RAPP or remote caller can activate components through this new surface; no separate external Core/Shell implementation has been built or device-proven. See `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md`.

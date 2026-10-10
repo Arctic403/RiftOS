@@ -194,6 +194,8 @@ if (!desktop.includes('LauncherApp("mcp", "Rift MCP", "⇄")')) fail('Rift MCP i
 // C1.0 Core/Shell split: only Core owns installation/runtime/build authority.
 const coreApplication = read(`${kotlinDir}/RiftCoreApplication.kt`);
 const bootstrapHost = read(`${kotlinDir}/RiftBootstrapHost.kt`);
+const bootstrapStore = read(`${kotlinDir}/RiftBootstrapComponentStore.kt`);
+const bootstrapProbe = read(`${kotlinDir}/RiftBootstrapProbeService.kt`);
 const coreRuntime = read(`${kotlinDir}/RiftCoreRuntime.kt`);
 const rappHost = read(`${kotlinDir}/RiftRappHost.kt`);
 const platformBuild = read(`${kotlinDir}/RiftBuildPlatformTools.kt`);
@@ -211,8 +213,46 @@ for (const required of ['interface RiftBootstrapEntry', 'object RiftBootstrapHos
   if (!bootstrapHost.includes(required)) fail(`Bootstrap host compatibility/recovery contract missing: ${required}`);
 }
 if (!coreApplication.includes('RiftBootstrapHost.prepareShell(this)') ||
-    !gradle.includes('"src/main/java/com/riftos/app/RiftBootstrapHost.kt"')) {
-  fail('Bootstrap host must own both Android process entrypoints and be declared in exact Kotlin sources');
+    !gradle.includes('"src/main/java/com/riftos/app/RiftBootstrapHost.kt"') ||
+    !gradle.includes('"src/main/java/com/riftos/app/RiftBootstrapComponentStore.kt"') ||
+    !gradle.includes('"src/main/java/com/riftos/app/RiftBootstrapProbeService.kt"')) {
+  fail('Bootstrap host/store/isolated proof service must be declared in exact Android sources');
+}
+for (const marker of ['class RiftBootstrapProbeService : Service()',
+    'Application.getProcessName() == packageName + ":riftBootstrapProbe"',
+    'RiftBootstrapHost.startProbe(application as Application)',
+    'stopSelf(startId)', 'START_NOT_STICKY']) {
+  if (!bootstrapProbe.includes(marker)) fail(`Isolated bootstrap probe process guard missing: ${marker}`);
+}
+if (!manifest.includes('android:name=".RiftBootstrapProbeService"') ||
+    !manifest.includes('android:process=":riftBootstrapProbe"') ||
+    !/android:name="\.RiftBootstrapProbeService"[\s\S]{0,140}android:exported="false"[\s\S]{0,140}android:process=":riftBootstrapProbe"/.test(manifest)) {
+  fail('Bootstrap DEX probe must be non-exported and process-isolated in Android manifest');
+}
+if (!bootstrapHost.includes('fun startProbe(application: Application)') ||
+    coreApplication.includes('startProbe(')) {
+  fail('Bootstrap DEX probe may run only in separate inert Android service');
+}
+// Only a noncritical proof module may load external DEX until real
+// Core/Shell extraction and Android process restart are device-proven.
+for (const marker of ['if (id != "probe")', 'start(application, "probe"',
+  'RiftBootstrapComponentStore.active(application, id)',
+  'RiftBootstrapComponentStore.recoverProbe(application)',
+  'RiftBootstrapComponentStore.dexFile(application, id, sha)',
+  'criticalExternalActivationEnabled", false', 'inProcessHotSwapEnabled", false',
+  'probeProofPresent',
+  'application.classLoader.loadClass(className)']) {
+  if (!bootstrapHost.includes(marker)) fail(`Bootstrap proof-only loader gate missing: ${marker}`);
+}
+for (const marker of ['internal object RiftBootstrapComponentStore',
+  'fun stage(context: Context, component: String, entrypoint: String,',
+  'fun activateProbe(context: Context, sha: String, entrypoint: String)',
+  'fun recoverProbe(context: Context)', 'fun resetProbe(context: Context)',
+  'AtomicFile(', 'output.fd.sync()', 'MAX_BYTES',
+  'temporary.setReadOnly()', 'verifyCandidate(output, sha)',
+  'probe.previous.json', 'probe.booting', 'active.delete()',
+  'require(!File(dir, "probe.booting").exists())']) {
+  if (!bootstrapStore.includes(marker)) fail(`Bootstrap staged activation/rollback contract missing: ${marker}`);
 }
 for (const required of ['object RiftCoreRuntime', 'fun initialize(context: Context)',
   'fun packages(context: Context)', 'fun runtimes(context: Context)',

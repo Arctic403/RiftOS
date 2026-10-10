@@ -1,5 +1,9 @@
 # Android Host
 
+## 2026-10-09 — Immutable staged probe component architecture (SOURCE ONLY)
+
+With signed RiftOS #680 live and the previous C2-A positive registry test confirmed by screenshot plus Core audit, the bootstrap host now gains `RiftBootstrapComponentStore`. It can stage content-addressed read-only DEX revisions and atomically select an internal noncritical `probe` activation with previous-revision fallback and boot-interruption recovery. The installed Core/Shell remain embedded and protected; external Core/Shell activation is explicitly disabled until device proof. The nonexported `:riftBootstrapProbe` Service is separately process-scoped and stays inert without future native Core authorization. There is **no user-facing installer/consent IPC, loaded external probe, new signed APK, or live hot swap** at this checkpoint. See `BOOTSTRAP_HOST_MIGRATION.md`; user alone starts Builder.
+
 ## 2026-10-09 — Bootstrap Host compatibility boundary (SOURCE ONLY)
 
 `RiftCoreApplication` now delegates default-process Core startup and remote-`:riftShell` WebView preparation to `RiftBootstrapHost`. With no external activation file (the only shipping configuration), the original embedded Core recovery, Core runtime, Shell recovery, MCP relay and browser data-directory sequence remains unchanged. An optional hash-verified, read-only, app-private DEX entrypoint is defined for future separately delivered Core/Shell implementations at **process startup only**. It is NOT a working hot-swap, a component installer, or a completed Core/Shell extraction, and it has not been built/device tested.

@@ -83,6 +83,8 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/MainActivity.kt",
         "src/main/java/com/riftos/app/RiftCoreApplication.kt",
         "src/main/java/com/riftos/app/RiftBootstrapHost.kt",
+        "src/main/java/com/riftos/app/RiftBootstrapComponentStore.kt",
+        "src/main/java/com/riftos/app/RiftBootstrapProbeService.kt",
         "src/main/java/com/riftos/app/RiftCoreRuntime.kt",
         "src/main/java/com/riftos/app/RiftCoreAppSessions.kt",
         "src/main/java/com/riftos/app/RiftCoreAppSurfaces.kt",

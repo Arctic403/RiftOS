@@ -1,5 +1,11 @@
 # RiftOS Project Status
 
+## 2026-10-09 — Bootstrap store staged/recovery proof source checkpoint
+
+**Installed baseline:** manual signed RiftOS #680 source `494be44e6348`, live Core/Shell and two retained RAPPs. C2-A positive execution now has user screenshot + Core audit PASS, zero target/registry/scratch/journal/grants; C2-A negative cases not fully proven, and C2-B2 real provider admission remains unimplemented.
+
+**Working-tree SOURCE ONLY:** Added immutable SHA-addressed DEX staging, probe-only AtomicFile activation and previous/embedded recovery in `RiftBootstrapComponentStore`. The host can select a noncritical external `probe` when the separate, currently inert `:riftBootstrapProbe` Android service is explicitly started; **Core and Shell external replacements are still disabled**, and neither has been extracted from APK. No importer/approval UI or real DEX probe artifact exists. No full source suite, Kotlin/Gradle compile or device proof performed for this patch. User manual Builder workflow unchanged. See `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md`.
+
 ## 2026-10-09 — Bootstrap Host compatibility migration started (SOURCE ONLY, not completed)
 
 Clean RiftOS `3c8a7bd5f6f5` was backed up before the change. The APK now enters `RiftBootstrapHost` at Core/Shell process startup; no activated external module means identical embedded Core/Shell behavior by design. Optional DEX entrypoint supports future separately delivered `core` or `shell` process-start modules, but no module has been built, installed, activated or device-proven. The Kotlin/Java/C++ RiftOS implementation still lives in the APK; generic component installer, crash-loop supervision after startup, true external Core/Shell extraction and live switching remain unimplemented. See `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md`. Full source Node check, Kotlin compile, user signed Builder and device tests pending. C2-A still requires device PASS; C2-B2 HOLD. User manual Builder flow unchanged.

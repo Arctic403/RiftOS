@@ -6,14 +6,13 @@ import dalvik.system.DexClassLoader
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.file.Files
 import java.security.MessageDigest
 
 /**
- * The stable APK-side entrypoint that can start an embedded compatibility
- * component or a separately delivered DEX component on the next process boot.
- *
- * No live in-process class replacement: a new classloader is selected only
- * at an Android process startup. Shell and Core have independent selections.
+ * Stable Android process entrypoint and compatibility fallback. The two
+ * critical components still run embedded until physical modularization proof.
+ * Only "probe" may load separately installed DEX on process startup.
  */
 interface RiftBootstrapEntry {
     fun start(application: Application)
@@ -24,22 +23,25 @@ internal object RiftBootstrapHost {
     private const val MAX_MODULE_BYTES = 32L * 1024 * 1024
     private const val TAG = "RiftBootstrapHost"
 
-    /** Passive diagnostics. Does not load or execute any component. */
     fun status(context: android.content.Context): JSONObject {
-        val root = File(context.applicationContext.filesDir, "bootstrap-components")
+        val root = RiftBootstrapComponentStore.root(context)
         return JSONObject()
             .put("schema", "riftos.bootstrap-host/1")
             .put("coreActivationPresent", File(root, "core.json").isFile)
             .put("coreInterruptedBoot", File(root, "core.booting").exists())
             .put("shellActivationPresent", File(root, "shell.json").isFile)
             .put("shellInterruptedBoot", File(root, "shell.booting").exists())
+            .put("probeActivationPresent", File(root, "probe.json").isFile)
+            .put("probeInterruptedBoot", File(root, "probe.booting").exists())
+            .put("probeProofPresent", File(root, "probe-proof.json").isFile)
+            .put("criticalExternalActivationEnabled", false)
             .put("inProcessHotSwapEnabled", false)
             .put("embeddedFallbackAvailable", true)
     }
 
     fun startCore(application: Application) {
-        // The stable host, not an optional Core plug-in, always owns these
-        // C1.4 interrupted-transaction recoveries before module selection.
+        // These authority-bound recoveries belong to the APK host, not an
+        // external code module; preserve their exact existing startup order.
         runCatching { RiftCoreAdminRollbackProof.recover(application) }
             .onFailure { Log.e("RiftCoreAdmin", "Rollback recovery failed", it) }
         runCatching { RiftCoreAdminRegistryProof.recover(application) }
@@ -53,6 +55,13 @@ internal object RiftBootstrapHost {
         })
     }
 
+    /** Called only in :riftBootstrapProbe, never from the main Core process. */
+    fun startProbe(application: Application) {
+        start(application, "probe", object : RiftBootstrapEntry {
+            override fun start(application: Application) = Unit
+        })
+    }
+
     fun prepareShell(application: Application) {
         start(application, "shell", object : RiftBootstrapEntry {
             override fun start(application: Application) {
@@ -62,92 +71,91 @@ internal object RiftBootstrapHost {
     }
 
     private fun start(application: Application, id: String, embedded: RiftBootstrapEntry) {
-        val root = File(application.filesDir, "bootstrap-components")
-        val activation = File(root, id + ".json")
-        if (!activation.exists()) {
+        // Current Android manifest components and Core services are still
+        // compiled inside the APK. Never let an experimental DEX replace
+        // either critical process entrypoint before device-proven extraction.
+        if (id != "probe") {
             embedded.start(application)
             return
         }
 
-        // A previously interrupted external bootstrap always returns to the
-        // known embedded baseline. Do not repeatedly crash-loop the same DEX.
+        val root = RiftBootstrapComponentStore.root(application)
         val inProgress = File(root, id + ".booting")
         if (inProgress.exists()) {
-            Log.e(TAG, "Interrupted " + id + " module boot; using embedded compatibility component")
+            Log.e(TAG, "Interrupted " + id + " module boot; restoring prior activation")
+            runCatching { RiftBootstrapComponentStore.recoverProbe(application) }
+                .onFailure { Log.e(TAG, "Rollback unavailable; retaining embedded probe", it) }
             embedded.start(application)
             return
         }
 
-        val external = runCatching { load(application, root, id, activation) }
-            .onFailure { Log.e(TAG, "Invalid " + id + " module; retaining embedded component", it) }
+        val activation = runCatching { RiftBootstrapComponentStore.active(application, id) }
+            .onFailure { Log.e(TAG, "Invalid module activation; retaining embedded probe", it) }
+            .getOrNull()
+        if (activation == null) {
+            embedded.start(application)
+            return
+        }
+        val external = runCatching { load(application, id, activation) }
+            .onFailure { Log.e(TAG, "Module invalid; retaining embedded probe", it) }
             .getOrNull()
         if (external == null) {
             embedded.start(application)
             return
         }
 
-        // Marker is synced before untrusted/external entrypoint control. If
-        // start throws or the process dies, the marker prevents a boot loop.
-        root.mkdirs()
+        // Persist before calling external code. An exception or process death
+        // leaves this marker and triggers previous/embedded recovery on boot.
         require(inProgress.createNewFile()) { "Module bootstrap already in progress" }
-        FileOutputStream(inProgress, false).use { stream ->
-            stream.write(("booting:" + id + "\n").toByteArray(Charsets.UTF_8))
-            stream.fd.sync()
+        FileOutputStream(inProgress, false).use { output ->
+            output.write(("booting:" + id + "\n").toByteArray(Charsets.UTF_8))
+            output.fd.sync()
         }
         try {
             external.start(application)
-            require(inProgress.delete()) { "Could not finish module bootstrap marker" }
+            require(inProgress.delete()) { "Failed to clear component startup marker" }
             Log.i(TAG, "External " + id + " component started")
         } catch (failure: Throwable) {
-            Log.e(TAG, "External " + id + " startup failed; embedded recovery on next launch", failure)
+            Log.e(TAG, "External " + id + " failed; recovery required next boot", failure)
             throw failure
         }
     }
 
-    private fun load(
-        application: Application,
-        root: File,
-        id: String,
-        activation: File
-    ): RiftBootstrapEntry {
-        require(activation.isFile && activation.length() in 1L..4096L) {
-            "Invalid activation record"
-        }
-        val record = JSONObject(activation.readText(Charsets.UTF_8))
+    private fun load(application: Application, id: String, record: JSONObject): RiftBootstrapEntry {
         require(record.getString("schema") == MODULE_SCHEMA &&
-            record.getString("component") == id &&
-            record.getInt("api") == 1) {
-            "Unsupported bootstrap component contract"
+            record.getInt("api") == 1 && record.getString("component") == id) {
+            "Unsupported module ABI"
         }
         val className = record.getString("entrypoint")
         require(className.matches(Regex("^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+$"))) {
-            "Invalid module entrypoint"
+            "Invalid entrypoint"
         }
-        val expectedSha = record.getString("sha256")
-        require(expectedSha.matches(Regex("^[0-9a-f]{64}$"))) { "Invalid module digest" }
-
-        // Fixed names prohibit manifest-controlled paths escaping app-private
-        // storage. Modules are immutable while the classloader uses them.
-        val module = File(root, id + ".dex")
-        require(module.isFile && module.length() in 1L..MAX_MODULE_BYTES && !module.canWrite()) {
-            "Module DEX must be immutable and within size limits"
+        val sha = record.getString("sha256")
+        require(sha.matches(Regex("^[0-9a-f]{64}$"))) { "Invalid module fingerprint" }
+        val module = RiftBootstrapComponentStore.dexFile(application, id, sha)
+        require(module.isFile && !Files.isSymbolicLink(module.toPath()) &&
+            module.length() in 1L..MAX_MODULE_BYTES && !module.canWrite()) {
+            "Module DEX is not immutable"
         }
         val digest = MessageDigest.getInstance("SHA-256")
-        module.inputStream().buffered().use { input ->
-            val buffer = ByteArray(64 * 1024)
+        module.inputStream().buffered().use { stream ->
+            val buf = ByteArray(64 * 1024)
             while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                if (count > 0) digest.update(buffer, 0, count)
+                val n = stream.read(buf)
+                if (n < 0) break
+                if (n > 0) digest.update(buf, 0, n)
             }
         }
-        val actualSha = digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
-        require(actualSha == expectedSha) { "Bootstrap DEX digest mismatch" }
+        val actual = digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
+        require(actual == sha) { "Module digest mismatch" }
+        require(runCatching { application.classLoader.loadClass(className) }.isFailure) {
+            "External module entrypoint must not shadow an APK-owned class"
+        }
         val loader = DexClassLoader(module.absolutePath, application.codeCacheDir.absolutePath,
             null, application.classLoader)
         val type = loader.loadClass(className)
         require(RiftBootstrapEntry::class.java.isAssignableFrom(type)) {
-            "Module does not implement the bootstrap entrypoint"
+            "Module entrypoint contract mismatch"
         }
         return type.getDeclaredConstructor().newInstance() as RiftBootstrapEntry
     }
