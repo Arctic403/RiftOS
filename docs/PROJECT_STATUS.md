@@ -1,5 +1,9 @@
 # RiftOS Project Status
 
+## 2026-10-10 — E0 verified Builder log: Kotlin reachability false positive
+
+Private failure archive for manual signed Builder run `38074813193` (RiftOS source `28ac97a05486`) identifies `RiftHostComponentAbiV1.kt` as "unreachable from an Android manifest component" in source-owned `validate-rift-wiring.mjs`; Gradle/Kotlin compilation did not start. The file is genuinely reached by E0 boot and protected Core IPC through its top-level `RiftHostCoreComponents` declaration, but the generic validator previously followed only `.kt` file basenames. The validator now traverses explicitly declared top-level Kotlin types as well as basenames, retaining manifest-rooted reachability and the original all-files orphan failure. No production APK code or Builder changes in this correction. E0 still needs the next user-only manually triggered signed Builder run and full on-device proof; #691 remains last verified APK. External Core/Shell activation stays OFF and E1 is not started.
+
 ## 2026-10-10 — E0 source validator correction before manual signed retry
 
 RiftOS HEAD before this local repair was `17c98ff336f97640fcdc26331c4f567245a1e594`; the last new manually dispatched Builder source-check failed before Gradle. E0 adapter routes are present, but five legacy direct-`RiftCoreRuntime` expectations remained in the source validator (snapshot, event, stop, focus, reattach). All five now check the production IPC adapter call instead; all nine embedded delegate implementations also receive explicit source guards. This source-only correction does **not** change Core/Shell runtime, signing, install flow or Android classes. Kotlin compilation/device proof of E0 remains pending user-manual signed Builder. Last verified running signed APK is still #691; external Core and Shell activation remains OFF. Python/Node/general runtime enrollment remain deferred.

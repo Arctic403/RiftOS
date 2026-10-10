@@ -99,6 +99,14 @@ for (const file of kotlinFiles) {
 }
 
 const kotlinTypes = new Map(kotlinFiles.map(file => [path.basename(file, '.kt'), { file, text: read(file) }]));
+// Kotlin permits multiple public/internal/private declarations per .kt file,
+// and their names need not match that file's basename. Reachability is
+// file-based, but reference edges must recognize all declared type symbols.
+const kotlinDeclaredSymbols = new Map([...kotlinTypes].map(([name, node]) => [
+  name,
+  [name, ...[...node.text.matchAll(/^(?:(?:public|internal|private|protected|open|abstract|sealed|data|enum|annotation|expect|actual)\s+)*(?:class|interface|object)\s+([A-Za-z_]\w*)\b/gm)]
+    .map(match => match[1])]
+]));
 const reachable = new Set([...manifestComponentNames]);
 const queue = [...reachable];
 while (queue.length) {
@@ -107,7 +115,8 @@ while (queue.length) {
   if (!node) continue;
   for (const [name] of kotlinTypes) {
     if (reachable.has(name) || name === current) continue;
-    if (new RegExp(`\\b${name}\\b`).test(node.text)) {
+    if (kotlinDeclaredSymbols.get(name).some(symbol =>
+      new RegExp(`\\b${symbol}\\b`).test(node.text))) {
       reachable.add(name);
       queue.push(name);
     }
