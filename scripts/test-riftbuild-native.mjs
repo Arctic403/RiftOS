@@ -244,7 +244,13 @@ assert.match(absolute, /Layout\s*\.\s*ABSOLUTE/);
 assert.match(absolute, /NodeKind\s*\.\s*TEXT_INPUT/);
 assert.match(absolute, /EventKind\s*\.\s*TEXT_INPUT/);
 
-assert.match(shell, /private val riftBuild = RiftCoreRuntime\.buildPlatform\(appContext\)/);
+// RiftBuild is a legacy diagnostic/build bridge. Keep it reachable only
+// lazily for embedded Core: an external Core must NEVER construct the APK's
+// embedded RiftCoreRuntime merely by creating RiftNativeShell.
+assert.match(shell, /private val riftBuild by lazy \{/);
+assert.match(shell, /RiftHostCoreComponents\.status\(\)\.optBoolean\("externalCoreEnabled", false\)/);
+assert.match(shell, /RiftCoreRuntime\.buildPlatform\(appContext\)/);
+assert.doesNotMatch(shell, /private val riftBuild = RiftCoreRuntime\.buildPlatform\(appContext\)/);
 assert.match(shell, /riftbuild compiler-status\|compiler-run\|jvm-status\|jvm-dex\|runtime-status\|pack-rapp\|install-rapp\|uninstall-rapp\|launch-rapp\|rapp-list\|verify\|install-proof\|install-status\|launch-proof/);
 for (const retiredCommand of [
   'riftbuild doctor|validate|plan',
