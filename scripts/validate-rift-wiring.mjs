@@ -304,7 +304,7 @@ for (const marker of [
   'candidate.attach(this, host,',
   'RiftShellPlatformServicesAdapter(externalCore)',
   'private var externalShell: RiftShellGraphicalComponentV1? = null',
-  'externalShell?.onResume()',
+  'externalShell?.let { it.onResume(); return }',
   'externalShell?.onPause()',
   'externalShell?.onDestroy()',
   'RiftShellCandidateSwitch.fallback(application, "external-shell-attach-exception")',
