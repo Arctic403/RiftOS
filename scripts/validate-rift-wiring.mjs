@@ -272,6 +272,28 @@ const probeClient = read(`${kotlinDir}/RiftShellCoreClient.kt`);
 const probeProvider = read(`${kotlinDir}/RiftCoreSurfaceIpcProvider.kt`);
 const e0HostComponent = read(`${kotlinDir}/RiftHostComponentAbiV1.kt`);
 const e1CoreSwitch = read(`${kotlinDir}/RiftCoreCandidateSwitch.kt`);
+const coreRecoveryDiagnostics = read(`${kotlinDir}/RiftCoreRecoveryDiagnostics.kt`);
+for (const marker of [
+  'internal object RiftCoreRecoveryDiagnostics',
+  'fun recoverHistoricalExit(app: Application)',
+  'getHistoricalProcessExitReasons(app.packageName, 0, 8)',
+  'fun recordCandidateFailure(app: Application, stage: String, failure: Throwable)',
+  'fun installExternalCrashObserver(app: Application)',
+  'previous.uncaughtException(thread, failure)',
+  'fullPlatformTraceGuaranteed", false',
+  'AtomicFile(path)',
+]) if (!coreRecoveryDiagnostics.includes(marker)) {
+  fail(`H Core failure evidence source contract missing: ${marker}`);
+}
+if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreRecoveryDiagnostics.kt"') ||
+    !bootstrapHost.includes('RiftCoreRecoveryDiagnostics.recoverHistoricalExit(application)') ||
+    !coreRuntime.includes('.put("coreRecoveryDiagnostics", RiftCoreRecoveryDiagnostics.status(context))') ||
+    !e0HostComponent.includes('RiftCoreRecoveryDiagnostics.installExternalCrashObserver(application)') ||
+    !e0HostComponent.includes('RiftCoreRecoveryDiagnostics.recordCandidateFailure(application, "initialize", failure)') ||
+    !e1CoreSwitch.includes('RiftCoreRecoveryDiagnostics.recordCandidateFailure(application, "verification", it)')) {
+  fail('H Core diagnostic owner, signed Gradle source, startup and exception integration missing');
+}
+
 for (const marker of [
   'internal object RiftCoreCandidateSwitch',
   'RiftBootstrapComponentStore.active(application, "core")',

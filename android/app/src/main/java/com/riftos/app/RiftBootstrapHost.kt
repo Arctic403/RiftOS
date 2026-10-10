@@ -58,6 +58,8 @@ internal object RiftBootstrapHost {
     }
 
     fun startCore(application: Application) {
+        runCatching { RiftCoreRecoveryDiagnostics.recoverHistoricalExit(application) }
+            .onFailure { Log.w(TAG, "Core historical process diagnostics unavailable", it) }
         // These authority-bound recoveries belong to the APK host, not an
         // external code module; preserve their exact existing startup order.
         runCatching { RiftCoreAdminRollbackProof.recover(application) }

@@ -83,6 +83,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftBootstrapHost.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftHostComponentAbiV1.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCoreCandidateSwitch.kt` | `docs/systems/android-host/README.md` + `docs/systems/android-host/E1_CORE_CANDIDATE.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftCoreRecoveryDiagnostics.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBootstrapComponentStore.kt` | `docs/systems/android-host/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBootstrapProbeService.kt` | `docs/systems/android-host/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCoreModuleManifest.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |

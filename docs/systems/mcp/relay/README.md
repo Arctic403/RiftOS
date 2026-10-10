@@ -1,5 +1,9 @@
 # Rift MCP Relay Client
 
+## 2026-10-10 — Relay remains APK-hosted across future Core/Shell revision replacement
+
+Per the [canonical migration roadmap](../../android-host/EXTERNAL_CORE_SHELL_ROADMAP.md), the MCP relay and its authenticated operation journal must remain in the stable Android host rather than living in the independently replaceable Core or graphical Shell DEX. It must not depend on RiftOS foreground UI. Test transport reconnection, replay-deduplication and tool-grant continuity during real Shell restart and Core revision rollback, within Android background/process limits. The source-only E1 selector has not device-proven any new restart guarantee; there is no promise a dead Android host process can maintain a live relay connection.
+
 ## Verification status
 
 **VERIFIED AGAINST CURRENT SOURCE — 2026-09-20.**

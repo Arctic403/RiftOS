@@ -66,6 +66,7 @@ internal object RiftHostCoreComponents {
             return
         }
         try {
+            RiftCoreRecoveryDiagnostics.installExternalCrashObserver(application)
             candidate.initialize(application)
             selected = candidate
             selectedKind = "external-unaccepted"
@@ -73,6 +74,7 @@ internal object RiftHostCoreComponents {
             // separately authorized device acceptance. Process death or reboot
             // before acceptance selects embedded and revokes the pointer.
         } catch (failure: Throwable) {
+            RiftCoreRecoveryDiagnostics.recordCandidateFailure(application, "initialize", failure)
             RiftCoreCandidateSwitch.fallback(application, "external-startup-exception")
             selected = embedded
             selectedKind = "embedded"

@@ -128,6 +128,7 @@ object RiftCoreRuntime {
             .put("shellRecovery", RiftCoreShellRecovery.status())
             .put("bootstrapHost", RiftBootstrapHost.status(context))
             .put("hostComponents", RiftHostCoreComponents.status())
+            .put("coreRecoveryDiagnostics", RiftCoreRecoveryDiagnostics.status(context))
             .put("moduleHost", runCatching {
                 RiftCoreModuleActivation.status(context)
             }.getOrElse { failure ->

@@ -1,5 +1,9 @@
 # Rift MCP System
 
+## 2026-10-10 — Permanent Android-host ownership during external Core/Shell migration
+
+The current [authoritative Core/Shell roadmap](../android-host/EXTERNAL_CORE_SHELL_ROADMAP.md) **keeps RiftOS MCP tool host and its relay inside the Android APK**; these must not be externalized as part of Core or Shell and must remain process-owned independently of the foreground graphical Shell. The future stable host owns verifier/recovery diagnostics and must allow sanctioned MCP status/reconciliation even after Shell is closed/restarted, subject to Android lifecycle and background restrictions. External Core cannot mint elevated MCP grants or bypass the existing workspace scoped-tool permissions and signed one-use admin gates; a same-UID DEX loader is not a security boundary. Full restart and failed-Core-update recovery are future tests, not completed live proofs.
+
 ## Verification status
 
 **VERIFIED AGAINST CURRENT SOURCE — 2026-09-26.**

@@ -1,5 +1,11 @@
 # RiftOS
 
+## Current priority — real external Core and RiftShell, host-stable no-repack workflow (2026-10-10)
+
+The [authoritative host/Core/Shell migration roadmap](docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md) supersedes earlier source-only aspirations. The Android APK is to become a **stable bootstrap/verifier/supervisor and MCP/relay host**. Once its independent installer/ABI/consent/watchdog and recovery are signed and device-proven, routine compatible Core and Shell updates use separately compiled, content-addressed verified artifacts **without rebuilding the APK**. First prove real external Core runs without invoking embedded Core execution; retain embedded Core only as migration fallback. Then implement crash records with all evidence Android exposes, version history and automatic rollback to the previous **known-good external Core**; repeat for the real graphical Shell with Core and RAPPs surviving Shell death. Only after both are proven remove embedded implementations in a final manually signed minimal APK. APK rebuilds remain necessary for genuine Android/host/ABI changes and cannot be promised away before host acceptance.
+
+**Evidence distinction:** manually signed installed #695 is an E0 **embedded** compatibility pass. Pushed RiftOS `812dd80d1e0e` and Builder `bb2bd8fc275c` add source-verified E1 candidate-selector groundwork but have not been reinstalled/device-proven in this conversation. No independent external Core/Shell or full watchdog/activation system is established yet.
+
 RiftOS is an Android-hosted user-space operating environment. **Permanent architectural rule:** RiftOS Core owns software installation, runtime management, filesystems, processes, application execution and capabilities. RiftShell is a **replaceable desktop/UI component** providing the desktop, taskbar, Start menu, File Explorer and user interaction; applications must not need RiftShell to execute. Android still owns the underlying process/security boundary. The transition is implemented in [phased Core/Shell gates](docs/systems/core-shell/README.md), starting with process-scoped Core service ownership; app sessions and a truly replaceable shell are not yet independent in C1.0.
 
 ## Verification status

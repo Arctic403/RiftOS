@@ -15,7 +15,7 @@ const requiredRoots = [
 ];
 const hostOwned = [
   'RiftCoreApplication', 'RiftBootstrapHost', 'RiftCoreSurfaceIpcProvider',
-  'RiftHostComponentAbiV1', 'RiftCoreCandidateSwitch', 'RiftCoreShellRecovery', 'RiftCoreAdminConsent',
+  'RiftHostComponentAbiV1', 'RiftCoreCandidateSwitch', 'RiftCoreRecoveryDiagnostics', 'RiftCoreShellRecovery', 'RiftCoreAdminConsent',
   'RiftCoreAdminRegistryProof', 'RiftCoreAdminRollbackProof',
   'RiftCoreSystemCapabilities', 'RiftShellActivity', 'RiftShellCoreClient',
   'RiftMcpRuntime', 'RiftMcpRelayClient'

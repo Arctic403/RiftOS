@@ -1,5 +1,15 @@
 # Build and Validation System
 
+## 2026-10-10 — H recovery diagnostics mandatory Kotlin and signed DEX contract
+
+New `RiftCoreRecoveryDiagnostics.kt` is an APK host diagnostic dependency, explicitly listed in Gradle's `verifyRiftOsAndroidSources` Kotlin allowlist and `SOURCE_OWNERSHIP`. `scripts/validate-rift-wiring.mjs` and coordinated Builder preflight/Python selftest require its bounded AtomicFile/Android exit evidence/uncaught handler delegation, BootstrapHost startup hook and Core read-only status; final `verify-riftos-apk.sh` requires `riftos.core.recovery-diagnostics/1` in the signed classes.dex. No automatic Core activation, signed Builder dispatch, Kotlin compilation or device result follows from the source-only checks. H3 remains unaccepted.
+
+## 2026-10-10 — Build/release policy for independently updatable Core and Shell
+
+Read [External Core/Shell Roadmap](../android-host/EXTERNAL_CORE_SHELL_ROADMAP.md). Until the APK host's narrow ABI, independent loader, trusted qualification/one-use activation, surviving watchdog/rollback and previous-external-revision journal are **physically accepted**, signed RiftOS APK rebuilds may still be necessary. User alone dispatches the normal signed RiftOS Builder; do not replace it with a retired compiler path or auto-build. After host H3 acceptance, separate Core and Shell artifacts must have independent compile/preflight/manifest, exact ABI/entrypoint/SHA/signer, complete class closure and no APK-duplicate checks, inactive load, guarded restart, device parity, observed crash diagnostics and rollback proof. Gradle and Builder's fixed Kotlin/DEX requirements must be updated only when the final embedded implementations are actually removed (F2), *not* prematurely. Any host-ABI, Android permission/manifest, signing or JNI change still goes through full manual signed APK validation. No source-only check counts as device proof, and errors/tombstones inaccessible on Android are not falsely promised.
+
+Latest Builder HEAD `bb2bd8fc275c` and RiftOS HEAD `812dd80d1e0e` are pushed; the last independently observed installed/device-proven source remains #695 `c92d8b72319a`. Newer loader compilation and device behavior remain unproven until the user performs the normal manual signed build/install.
+
 ## 2026-10-10 — E1 Core switch Kotlin/source/Builder synchronized (SOURCE ONLY)
 
 New Android `RiftCoreCandidateSwitch.kt` added to the exact Gradle Kotlin source list and `SOURCE_OWNERSHIP`. RiftOS wiring tests check one-time Core initialization, ContentProvider no-eager-init, SHA/ABI/qualification, no-duplicate-class DEX verification, interrupted boot + embedded rollback, and absence of automatic promotion/hot-swap. E1 transitive-closure audit guards the class ownership and the user-signed Builder script/selftest verifies this source, Gradle file list and protected Core switch. No Android Kotlin compilation or signed APK device gate has been run for this local patch; signed #695 remains last known good.

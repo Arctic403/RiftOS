@@ -1,5 +1,9 @@
 # Boot and Engine Startup
 
+## 2026-10-10 — New bootstrap/recovery ownership roadmap (PLANNED, NOT VERIFIED)
+
+For active implementation gates see [external Core/Shell roadmap](../android-host/EXTERNAL_CORE_SHELL_ROADMAP.md). The real Android `Application` is the protected Core-process bootstrap; `ContentProvider` must not prematurely create an embedded Core before one-time startup selection. The permanent host is planned to own external artifact verification, exact version selection, crash/restart supervisor, previous external N-1 rollback and startup safety. Core process death is handled on **a later permitted restart by a surviving host/OS component**; not by the terminated Core. `RiftShellActivity` stays the Android graphical entrypoint while the real presentation/controller moves to an independent Shell artifact, recovering without resetting Core sessions. MCP/relay stay APK-hosted. **This is a future plan, not a claim the current E1 selector/supervisor has passed physical Android proof**. The older diagrams below record their dated state.
+
 ## Verification status
 
 **VERIFIED AGAINST CURRENT SOURCE — 2026-09-17.**

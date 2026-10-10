@@ -153,6 +153,7 @@ internal object RiftCoreCandidateSwitch {
             } ?: return null
         val candidate = runCatching { load(application, record) }.getOrElse {
             Log.e(TAG, "Core candidate rejected, using embedded", it)
+            RiftCoreRecoveryDiagnostics.recordCandidateFailure(application, "verification", it)
             fallback(application, "candidate-verification-failed")
             return null
         }
