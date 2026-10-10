@@ -1,5 +1,9 @@
 # Independent Bootstrap Probe Fixture (source only)
 
+## 2026-10-10 external workflow setup failure and local source repair
+
+A user-triggered `external-probe` workflow failed **at the Android setup action**, before external `javac`, D8, or artifact upload. The log reports `Warning: Failed to find package 'tools'` and `sdkmanager` exit 1 from `android-actions/setup-android@v3`. The standalone workflow now uses the GitHub Ubuntu runner's preinstalled Android SDK, checks for API 35 `android.jar` and Build Tools 35.0.0 `d8`, and invokes the runner's existing `sdkmanager` only if either is missing. This avoids requesting the obsolete `tools` package. The RiftOS APK's user-manual Builder and the independent probe javac/D8 recipe are unchanged. **This patch is not proof of a completed DEX build; manually rerun after pushing it.**
+
 ## Manual artifact → signed APK device test (NOT executed yet)
 
 This proof uses a **separate manual** `.github/workflows/build-bootstrap-probe.yml` (`workflow_dispatch`). It compiles `ProbeV1.java` outside the RiftOS APK, using JDK javac, Android SDK D8, and a compile-only `RiftBootstrapEntry` ABI stub which **does not enter the DEX**. The downloadable `riftos-external-probe-v1-dex` artifact contains raw `probe-v1.dex` and its SHA256 sidecar. This separate artifact build never signs/rebuilds RiftOS; the RiftOS APK still uses the existing *user-manual* Builder.
