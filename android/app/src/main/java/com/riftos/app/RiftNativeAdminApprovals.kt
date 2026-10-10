@@ -43,6 +43,12 @@ internal class RiftNativeAdminApprovals(
     private data class ModuleChoice(val manifestText: String, val manifest: RiftCoreModuleManifest)
     private var selectedModule: ModuleChoice? = null
     private var stagedModule: RiftCoreModuleManifest? = null
+    private data class ProtectedChoice(
+        val manifestText: String,
+        val manifest: RiftProtectedComponentManifest
+    )
+    private var selectedProtected: ProtectedChoice? = null
+    private var stagedProtected: RiftProtectedComponentManifest? = null
     companion object {
         const val PROBE_PICK_REQUEST = 0x6A41
         private const val PROBE_RIFTFS_PATH = "/D:/Builds/Modules"
@@ -55,7 +61,7 @@ internal class RiftNativeAdminApprovals(
     fun open() {
         desktop.handle("desktop.window.open", JSONObject()
             .put("id", "admin-permissions").put("title", "Admin Approvals")
-            .put("kicker", "CORE AUTHORITY / NO SYSTEM EFFECTS"))
+            .put("kicker", "CORE AUTHORITY / ONE-USE COMPONENT APPROVAL"))
         visible = true
         generation++
         val root = LinearLayout(activity).apply {
@@ -73,9 +79,10 @@ internal class RiftNativeAdminApprovals(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             }
         addText("RiftOS administrator approvals", 19f).typeface = Typeface.DEFAULT_BOLD
-        addText("C1.4-B/C1/C2-A proofs: fixed temporary C: canary or an isolated " +
-            "EMPTY runtime registry proof; both always roll back. No provider install, " +
-            "real registration, production package change or process termination.")
+        addText("One-use OS admin tickets: isolated old C:/registry proofs and " +
+            "separately approved Core/Shell DEX stage, next-start activation and " +
+            "post-device SHA/PID acceptance. Signed Core verifies every operation; " +
+            "ordinary apps cannot gain protected component authority.")
         scopeText = addText("Test scope: $operation on $target\n" +
             "Core controls the caller, signer, scope, 45-second expiry and one-time use.")
         statusView = addText("No pending administrator request.")
@@ -129,6 +136,12 @@ internal class RiftNativeAdminApprovals(
         button("Activate selected generic module once") { activateGenericModule() }
         button("Select bounded module recovery proof") { selectGenericRecoveryProof() }
         button("Prove interrupted startup recovery once") { proveGenericRecovery() }
+        button("Choose separately compiled Core/Shell component") { pickProtectedComponent() }
+        button("Stage & verify approved Core/Shell candidate") { stageProtectedComponent() }
+        button("Select exact Core/Shell activation scope") { selectProtectedActivation() }
+        button("Activate Core/Shell for NEXT restart only") { activateProtectedComponent() }
+        button("Select exact running Core/Shell acceptance scope") { selectProtectedAcceptance() }
+        button("Accept running verified Core/Shell as known-good") { acceptProtectedComponent() }
         button("Select ProbeV1 DEX from RiftOS Files") { pickRiftFsProbeDex() }
         button("Select external ProbeV1 DEX (Android picker)") { pickProbeDex() }
         button("Stage selected DEX using one-use approval") { stageProbe() }
@@ -368,6 +381,231 @@ internal class RiftNativeAdminApprovals(
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    /**
+     * Protected Core/Shell component import is native Admin UI only.
+     * Built DEX sources live in /D:/Builds/Components/{core|shell};
+     * the UI sends Core an exact manifest + read-only FD, not a path.
+     */
+    private fun protectedBuildRoot(): File {
+        val path = "/D:/Builds/Components"
+        val expected = "documents/builds/Components"
+        require(RiftVolumePaths.resolveRelative(path) == expected) {
+            "Critical build directory mapping changed"
+        }
+        val root = File(activity.filesDir, "riftfs")
+        require(!Files.isSymbolicLink(root.toPath())) {
+            "Critical build RiftFS root symlinked"
+        }
+        var folder = root.canonicalFile
+        for (part in expected.split('/')) {
+            folder = File(folder, part)
+            require(!Files.isSymbolicLink(folder.toPath())) {
+                "Critical build directory segment symlinked"
+            }
+        }
+        require(folder.isDirectory &&
+            folder.canonicalFile.toPath().startsWith(root.canonicalFile.toPath())) {
+            "No protected Core/Shell build directory exists"
+        }
+        return folder.canonicalFile
+    }
+
+    private fun readProtectedChoice(component: String): ProtectedChoice {
+        require(component == "core" || component == "shell") {
+            "Critical build component must be Core or Shell"
+        }
+        val base = protectedBuildRoot()
+        val folder = File(base, component)
+        require(!Files.isSymbolicLink(folder.toPath()) &&
+            folder.isDirectory &&
+            folder.canonicalFile.parentFile == base) {
+            "Critical build directory not trusted"
+        }
+        val manifestFile = File(folder, "component.json")
+        require(manifestFile.isFile &&
+            !Files.isSymbolicLink(manifestFile.toPath()) &&
+            manifestFile.length() in
+            1L..RiftProtectedComponentManifest.MAX_BYTES.toLong()) {
+            "Missing exact protected component.json"
+        }
+        val manifestBytes = manifestFile.readBytes()
+        val parsed = RiftProtectedComponentManifest.parse(manifestBytes)
+        require(parsed.component == component) {
+            "Critical manifest directory/component mismatch"
+        }
+        val dex = File(folder, parsed.payload)
+        require(dex.isFile && !Files.isSymbolicLink(dex.toPath()) &&
+            dex.canonicalFile.parentFile == folder.canonicalFile &&
+            dex.length() in 112L..(32L * 1024 * 1024)) {
+            "Critical independent component DEX missing or outside build folder"
+        }
+        return ProtectedChoice(String(manifestBytes, Charsets.UTF_8), parsed)
+    }
+
+    private fun pickProtectedComponent() {
+        if (currentTicket != null) {
+            show("Revoke or consume prior admin approval before changing component.")
+            return
+        }
+        val choices = listOf("core", "shell").mapNotNull { id ->
+            runCatching { readProtectedChoice(id) }.getOrNull()
+        }
+        if (choices.isEmpty()) {
+            show("Build independent core.dex or shell.dex with component.json in " +
+                "/D:/Builds/Components/core or /shell first.")
+            return
+        }
+        val serial = generation
+        AlertDialog.Builder(activity)
+            .setTitle("Choose independently compiled OS component")
+            .setItems(choices.map {
+                it.manifest.component + " v" + it.manifest.version +
+                    " · " + it.manifest.sha256.take(16)
+            }.toTypedArray()) { _, index ->
+                if (!visible || generation != serial || currentTicket != null) return@setItems
+                val choice = choices.getOrNull(index) ?: return@setItems
+                selectedProtected = choice
+                stagedProtected = null
+                operation = RiftCoreAdminConsent.PROTECTED_STAGE
+                target = "component://stage/" + choice.manifest.identityDigest()
+                scopeText?.text = "STAGE ONLY: " + choice.manifest.component +
+                    " SHA " + choice.manifest.sha256 + ". Separate approval required."
+                show("Protected DEX selected. Request explicit one-use stage approval.")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun stageProtectedComponent() {
+        val choice = selectedProtected ?: run {
+            show("Choose an independently compiled Core/Shell manifest first.")
+            return
+        }
+        val digest = choice.manifest.identityDigest()
+        if (operation != RiftCoreAdminConsent.PROTECTED_STAGE ||
+            target != "component://stage/" + digest) {
+            show("Select protected stage scope first.")
+            return
+        }
+        if (!activity.hasWindowFocus()) {
+            show("Protected stage requires foreground native Admin Approvals.")
+            return
+        }
+        val ticket = currentTicket ?: run { show("No exact stage approval ticket."); return }
+        val client = core ?: run { show("Core Binder unavailable."); return }
+        perform {
+            val fresh = readProtectedChoice(choice.manifest.component)
+            require(fresh.manifest.identityDigest() == digest) {
+                "Protected component changed after user stage approval"
+            }
+            val dex = File(File(protectedBuildRoot(), fresh.manifest.component),
+                fresh.manifest.payload)
+            ParcelFileDescriptor.open(dex, ParcelFileDescriptor.MODE_READ_ONLY).use { fd ->
+                val result = client.adminConsent("execute-protected-stage", ticket,
+                    RiftCoreAdminConsent.PROTECTED_STAGE,
+                    "component://stage/" + digest,
+                    dexFd = fd, manifestText = fresh.manifestText)
+                require(result.getBoolean("staged") &&
+                    result.getString("manifestDigest") == digest &&
+                    result.getString("sha256") == choice.manifest.sha256 &&
+                    !result.optBoolean("activated", true)) {
+                    "Core did not verify protected immutable DEX and manifest"
+                }
+                activity.runOnUiThread {
+                    if (currentTicket == ticket) currentTicket = null
+                    stagedProtected = choice.manifest
+                }
+                "Core verified independent " + choice.manifest.component +
+                    " SHA " + choice.manifest.sha256.take(16) +
+                    " without executing code. Select activation and approve again."
+            }
+        }
+    }
+
+    private fun selectProtectedActivation() {
+        if (currentTicket != null) {
+            show("Revoke/consume earlier admin ticket before selecting activation.")
+            return
+        }
+        val component = stagedProtected ?: run {
+            show("Stage protected Core/Shell candidate first.")
+            return
+        }
+        operation = RiftCoreAdminConsent.PROTECTED_ACTIVATE
+        target = "component://activate/" + component.component + "/" + component.sha256
+        scopeText?.text = "NEXT START ONLY: " + component.component +
+            " SHA " + component.sha256 +
+            ". Unaccepted Core/Shell falls back on failed startup."
+        show("Request fresh one-use activation approval. No live hot swap.")
+    }
+
+    private fun activateProtectedComponent() {
+        val component = stagedProtected ?: run { show("No staged protected revision."); return }
+        val expected = "component://activate/" + component.component + "/" + component.sha256
+        if (operation != RiftCoreAdminConsent.PROTECTED_ACTIVATE || target != expected ||
+            !activity.hasWindowFocus()) {
+            show("Select exact protected activation scope in foreground first.")
+            return
+        }
+        val ticket = currentTicket ?: run { show("No activation approval ticket."); return }
+        val client = core ?: run { show("Core Binder unavailable."); return }
+        perform {
+            val result = client.adminConsent("execute-protected-activate", ticket,
+                RiftCoreAdminConsent.PROTECTED_ACTIVATE, expected)
+            require(result.getBoolean("activated") &&
+                result.getBoolean("restartRequired") &&
+                result.getString("sha256") == component.sha256) {
+                "Core did not commit exact protected next-start pointer"
+            }
+            activity.runOnUiThread { if (currentTicket == ticket) currentTicket = null }
+            "Exact " + component.component + " revision staged for controlled restart. " +
+                "No reboot performed automatically. Device test before acceptance."
+        }
+    }
+
+    private fun selectProtectedAcceptance() {
+        if (currentTicket != null) {
+            show("Revoke prior ticket before accepting a device-tested candidate.")
+            return
+        }
+        val choice = selectedProtected ?: run {
+            show("Choose the exact built Core/Shell revision before acceptance.")
+            return
+        }
+        operation = RiftCoreAdminConsent.PROTECTED_ACCEPT
+        target = "component://accept/" +
+            choice.manifest.component + "/" + choice.manifest.sha256
+        scopeText?.text = "ACCEPT RUNNING DEVICE-PROVEN revision ONLY: " + target +
+            ". Core verifies current SHA; Shell requires matching OS-attested PID."
+        show("Request separate one-use acceptance only after real device functionality proof.")
+    }
+
+    private fun acceptProtectedComponent() {
+        val choice = selectedProtected ?: run { show("Select exact critical revision."); return }
+        val expected = "component://accept/" +
+            choice.manifest.component + "/" + choice.manifest.sha256
+        if (operation != RiftCoreAdminConsent.PROTECTED_ACCEPT || target != expected ||
+            !activity.hasWindowFocus()) {
+            show("Select exact critical acceptance scope first.")
+            return
+        }
+        val ticket = currentTicket ?: run { show("No acceptance ticket."); return }
+        val client = core ?: run { show("Core Binder unavailable."); return }
+        perform {
+            val result = client.adminConsent("execute-protected-accept", ticket,
+                RiftCoreAdminConsent.PROTECTED_ACCEPT, expected)
+            require(result.getBoolean("deviceAccepted") &&
+                result.getBoolean("lastKnownGood") &&
+                result.getString("sha256") == choice.manifest.sha256) {
+                "Protected running component not accepted"
+            }
+            activity.runOnUiThread { if (currentTicket == ticket) currentTicket = null }
+            "Accepted exact running " + choice.manifest.component + " SHA " +
+                choice.manifest.sha256.take(16) +
+                " as last-known-good. New updates may roll back to this version."
+        }
     }
 
     private fun stageGenericModule() {
@@ -731,6 +969,18 @@ internal class RiftNativeAdminApprovals(
                     "Allow ONE Core-only EMPTY runtime registry creation, signer " +
                         "verification and mandatory rollback? This does NOT " +
                         "register, enable or install any runtime provider."
+                } else if (requestedOperation == RiftCoreAdminConsent.PROTECTED_STAGE) {
+                    "Allow ONE exact-manifest Core/Shell DEX to be staged and checked " +
+                        "for forbidden embedded Core class references? STAGE ONLY, " +
+                        "no execution. The separate DEX is trusted same-UID code."
+                } else if (requestedOperation == RiftCoreAdminConsent.PROTECTED_ACTIVATE) {
+                    "Allow ONE exact-SHA Core/Shell revision to become the next " +
+                        "boot selection? Current Core/Shell is NOT hot-swapped. " +
+                        "An unaccepted failure must recover an earlier revision."
+                } else if (requestedOperation == RiftCoreAdminConsent.PROTECTED_ACCEPT) {
+                    "Accept this EXACT independently running Core/Shell SHA as " +
+                        "last-known-good AFTER real device testing? A failed " +
+                        "future update may recover to this revision."
                 } else if (requestedOperation == RiftCoreAdminConsent.MODULE_STAGE) {
                     "Allow ONE content-addressed import of this exact trusted module " +
                         "manifest and matching DEX? STAGE ONLY, no execution or provider " +
@@ -786,6 +1036,15 @@ internal class RiftNativeAdminApprovals(
                 } else if (operation == RiftCoreAdminRegistryProof.OPERATION) {
                     "Core approved ONE empty registry/rollback proof; no provider installation. " +
                         "Execute before 45-second expiry or revoke."
+                } else if (operation == RiftCoreAdminConsent.PROTECTED_STAGE) {
+                    "Core approved ONE protected DEX SHA/manifest stage. " +
+                        "Execute stage within 45 seconds; no code executes during staging."
+                } else if (operation == RiftCoreAdminConsent.PROTECTED_ACTIVATE) {
+                    "Core approved ONE exact protected revision activation for NEXT start. " +
+                        "Execute within 45 seconds; no live hot swap."
+                } else if (operation == RiftCoreAdminConsent.PROTECTED_ACCEPT) {
+                    "Core approved ONE exact installed-device acceptance of the " +
+                        "currently running candidate. Execute before expiry."
                 } else if (operation == RiftCoreAdminConsent.MODULE_STAGE) {
                     "Core approved ONE exact manifest-bound generic module stage. " +
                         "Execute before 45-second expiry; no code runs during staging."

@@ -58,8 +58,21 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     private val watchdog = Executors.newSingleThreadScheduledExecutor()
     private val headlessJs = RiftHeadlessJsRuntime(appContext)
     private val services = RiftNativeShellServices(appContext)
-    private val riftBuild = RiftCoreRuntime.buildPlatform(appContext)
-    private val alternateShellClient = RiftAlternateShellClient(RiftCoreRuntime.surfaces(appContext))
+    // Retired proof/build debug paths must not eagerly create embedded Core
+    // while an independently selected external Core owns all live RAPP state.
+    private val riftBuild by lazy {
+        require(!RiftHostCoreComponents.status().optBoolean("externalCoreEnabled", false)) {
+            "Legacy RiftBuild Core coupling unavailable under independent external Core"
+        }
+        RiftCoreRuntime.buildPlatform(appContext)
+    }
+    private val alternateShellClientLazy = lazy {
+        require(!RiftHostCoreComponents.status().optBoolean("externalCoreEnabled", false)) {
+            "Legacy alternate surface proof unavailable under independent external Core"
+        }
+        RiftAlternateShellClient(RiftCoreRuntime.surfaces(appContext))
+    }
+    private val alternateShellClient by alternateShellClientLazy
     private val nativeGit = RiftMcpRuntime.nativeGit(appContext)
     @Volatile private var closed = false
 
@@ -372,7 +385,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
 
     override fun close() {
         closed = true
-        alternateShellClient.close()
+        if (alternateShellClientLazy.isInitialized()) alternateShellClient.close()
         cancelAllShellJobs("Native RiftShell closed")
         worker.shutdownNow()
         shellJobWorker.shutdownNow()
@@ -504,14 +517,20 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "riftos-agent" -> services.riftOsAgent(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
             "riftllm-agent" -> services.riftLlm(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
             "core" -> {
+                if (RiftHostCoreComponents.status()
+                        .optBoolean("externalCoreEnabled", false) &&
+                    args.firstOrNull()?.lowercase()?.startsWith("alt-") == true) {
+                    error("Legacy alternate Core surface renderer disabled for independent external Core")
+                }
                 val usage = "usage: core status|sessions|surfaces|focus|apps|app-start <id>|app-stop <id>|alt-list|alt-attach <id>|alt-render <id>|alt-detach <id>|alt-graphic-open <id>|ipc-view <id>"
                 val state = when {
                     args.size == 1 -> when (args.single().lowercase()) {
-                        "status" -> RiftCoreRuntime.status(appContext)
-                        "sessions" -> RiftCoreRuntime.sessions(appContext).list()
-                        "surfaces" -> RiftCoreRuntime.surfaces(appContext).list()
-                        "focus" -> RiftCoreRuntime.sessions(appContext).focusStatus()
-                        "apps" -> RiftCoreRuntime.lifecycle(appContext).status()
+                        "status" -> RiftHostCoreComponents.executionView().coreStatus(appContext)
+                        "sessions" -> RiftHostCoreComponents.executionView().sessionsView(appContext)
+                        "surfaces" -> RiftHostCoreComponents.executionView().surfacesView(appContext)
+                        "focus" -> RiftHostCoreComponents.executionView().focusView(appContext)
+                        "apps" -> JSONObject().put("schema", "riftos.core.apps/1")
+                            .put("apps", RiftHostCoreComponents.executionView().runningApps(appContext))
                         "alt-list" -> alternateShellClient.status()
                         else -> error(usage)
                     }
@@ -526,8 +545,10 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                         require(id.isNotBlank() && id.length <= 128) {
                             "Alternate graphical client app ID is invalid"
                         }
-                        val surface = RiftCoreRuntime.surfaces(appContext).snapshot(id)
-                            ?: error("No Core surface to render in alternate graphical client")
+                        val surface = RiftHostCoreComponents.core().snapshot(appContext, id)
+                        require(surface.optBoolean("present")) {
+                            "No selected Core surface for alternate graphical client"
+                        }
                         appContext.startActivity(
                             Intent(appContext, RiftAlternateGraphicalShellActivity::class.java)
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -536,8 +557,8 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                         JSONObject()
                             .put("schema", "riftos.shell.client.graphical/1")
                             .put("appId", id)
-                            .put("attachmentGeneration", surface.attachmentGeneration)
-                            .put("revision", surface.revision)
+                            .put("attachmentGeneration", surface.getLong("attachmentGeneration"))
+                            .put("revision", surface.getLong("revision"))
                             .put("launchDispatched", true)
                             .put("separateShellProcess", false)
                     }
@@ -546,8 +567,10 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                         require(id.isNotBlank() && id.length <= 128) {
                             "Remote shell IPC proof app ID invalid"
                         }
-                        val surface = RiftCoreRuntime.surfaces(appContext).snapshot(id)
-                            ?: error("No Core surface for remote shell IPC proof")
+                        val surface = RiftHostCoreComponents.core().snapshot(appContext, id)
+                        require(surface.optBoolean("present")) {
+                            "No selected Core surface for remote shell IPC proof"
+                        }
                         appContext.startActivity(
                             Intent(appContext, RiftRemoteShellProbeActivity::class.java)
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -556,15 +579,15 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                         JSONObject()
                             .put("schema", "riftos.shell.client.remote-ipc/1")
                             .put("appId", id)
-                            .put("attachmentGeneration", surface.attachmentGeneration)
-                            .put("revision", surface.revision)
+                            .put("attachmentGeneration", surface.getLong("attachmentGeneration"))
+                            .put("revision", surface.getLong("revision"))
                             .put("launchDispatched", true)
                             .put("process", ":riftShellProbe")
                     }
                     args.size == 2 && args[0].lowercase() == "app-start" ->
-                        RiftCoreRuntime.lifecycle(appContext).start(args[1])
+                        RiftHostCoreComponents.executionView().startApp(appContext, args[1])
                     args.size == 2 && args[0].lowercase() == "app-stop" ->
-                        RiftCoreRuntime.lifecycle(appContext).stop(args[1])
+                        RiftHostCoreComponents.executionView().stopApp(appContext, args[1])
                     else -> error(usage)
                 }
                 ShellOutcome(state.toString(2), cwd, state)

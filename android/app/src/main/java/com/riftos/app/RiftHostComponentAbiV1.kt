@@ -30,6 +30,22 @@ interface RiftCoreComponentV1 {
     fun uninstall(context: Context, id: String): JSONObject
 }
 
+/**
+ * Additional required Core ownership view for Shell recovery, diagnostics
+ * and provider discovery. Real external Core must implement BOTH interfaces;
+ * APK-host recovery can never instantiate RiftCoreRuntime as a substitute.
+ */
+interface RiftCoreExecutionViewV1 {
+    fun runningApps(context: Context): JSONArray
+    fun sessionsView(context: Context): JSONObject
+    fun surfacesView(context: Context): JSONObject
+    fun focusView(context: Context): JSONObject
+    fun coreStatus(context: Context): JSONObject
+    fun discoverRuntimeCandidates(context: Context): JSONObject
+    fun startApp(context: Context, id: String): JSONObject
+    fun stopApp(context: Context, id: String): JSONObject
+}
+
 /** E0 shell-side portable lifecycle envelope, not activated or connected yet. */
 interface RiftShellPresentationV1 {
     fun restore(snapshot: JSONObject): JSONObject
@@ -53,6 +69,9 @@ internal object RiftHostCoreComponents {
     @Volatile private var selectedKind = "embedded"
 
     fun core(): RiftCoreComponentV1 = selected
+    fun executionView(): RiftCoreExecutionViewV1 =
+        selected as? RiftCoreExecutionViewV1
+            ?: error("Selected Core lacks independent RAPP execution/recovery ABI")
 
     /** Called only once after host-owned recoveries in the actual Core process. */
     @Synchronized
@@ -69,10 +88,18 @@ internal object RiftHostCoreComponents {
             RiftCoreRecoveryDiagnostics.installExternalCrashObserver(application)
             candidate.initialize(application)
             selected = candidate
-            selectedKind = "external-unaccepted"
-            // A startup marker intentionally stays durable until a future,
-            // separately authorized device acceptance. Process death or reboot
-            // before acceptance selects embedded and revokes the pointer.
+            val sha = RiftCoreCandidateSwitch.status().optString("selectedSha256")
+            RiftCoreRecoveryDiagnostics.recordSelected(application, sha)
+            val alreadyAccepted = RiftComponentReleaseLedger.isAccepted(
+                application, "core", sha)
+            selectedKind = if (alreadyAccepted) "external-known-good"
+                else "external-unaccepted"
+            if (alreadyAccepted) {
+                // The same verified external revision can restart normally.
+                // Android process-exit evidence still detects post-start crashes.
+                RiftBootstrapComponentStore.clearProtectedStartupMarker(
+                    application, "core")
+            }
         } catch (failure: Throwable) {
             RiftCoreRecoveryDiagnostics.recordCandidateFailure(application, "initialize", failure)
             RiftCoreCandidateSwitch.fallback(application, "external-startup-exception")
@@ -87,17 +114,34 @@ internal object RiftHostCoreComponents {
         .put("schema", CORE_SCHEMA)
         .put("abi", ABI_VERSION)
         .put("selected", selectedKind)
-        .put("externalCoreEnabled", selectedKind == "external-unaccepted")
+        .put("externalCoreEnabled", selectedKind.startsWith("external-"))
         .put("externalShellEnabled", false)
         .put("candidateSwitch", RiftCoreCandidateSwitch.status())
 }
 
 /** Delegates to the exact production Core graph; no duplicate runtime authority. */
-private object EmbeddedCoreComponentV1 : RiftCoreComponentV1 {
+private object EmbeddedCoreComponentV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
     private const val SNAPSHOT_SCHEMA = "riftos.core.surface-ipc/1"
     private const val MAX_FRAME_NODES = 256
 
     override fun initialize(context: Context) = RiftCoreRuntime.initialize(context)
+
+    override fun runningApps(context: Context): JSONArray =
+        RiftCoreRuntime.lifecycle(context).status().getJSONArray("apps")
+    override fun sessionsView(context: Context): JSONObject =
+        RiftCoreRuntime.sessions(context).list()
+    override fun surfacesView(context: Context): JSONObject =
+        RiftCoreRuntime.surfaces(context).list()
+    override fun focusView(context: Context): JSONObject =
+        RiftCoreRuntime.sessions(context).focusStatus()
+    override fun coreStatus(context: Context): JSONObject =
+        RiftCoreRuntime.status(context)
+    override fun discoverRuntimeCandidates(context: Context): JSONObject =
+        RiftCoreRuntime.runtimes(context).discoverCandidates()
+    override fun startApp(context: Context, id: String): JSONObject =
+        RiftCoreRuntime.lifecycle(context).start(id)
+    override fun stopApp(context: Context, id: String): JSONObject =
+        RiftCoreRuntime.lifecycle(context).stop(id)
 
     override fun snapshot(context: Context, id: String): JSONObject {
         val snapshot = RiftCoreRuntime.surfaces(context).snapshot(id)

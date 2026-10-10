@@ -290,8 +290,8 @@ for (const marker of [
 for (const marker of [
   'internal object RiftShellCandidateSwitch',
   'RiftBootstrapComponentStore.active(application, "shell")',
-  'RiftBootstrapComponentStore.resetShellToEmbedded(application)',
-  'Independent Shell qualification missing',
+  'RiftProtectedRevisionRecovery.rollback(',
+  'RiftProtectedRevisionRecovery.verifiedReceipt(',
   'Shell candidate class shadows host APK',
   'Shell candidate does not implement native graphical V1 contract',
   'unaccepted-shell-startup',
@@ -320,6 +320,65 @@ if (!gradle.includes('"src/main/java/com/riftos/app/RiftShellComponentAbiV1.kt"'
 const coreRecoveryDiagnostics = read(`${kotlinDir}/RiftCoreRecoveryDiagnostics.kt`);
 const componentReleaseLedger = read(`${kotlinDir}/RiftComponentReleaseLedger.kt`);
 const coreSupervisor = read(`${kotlinDir}/RiftCoreRecoverySupervisorService.kt`);
+
+const protectedManifest = read(kotlinDir + '/RiftProtectedComponentManifest.kt');
+const protectedDex = read(kotlinDir + '/RiftProtectedDexVerifier.kt');
+const protectedInstaller = read(kotlinDir + '/RiftProtectedComponentInstaller.kt');
+const protectedRecovery = read(kotlinDir + '/RiftProtectedRevisionRecovery.kt');
+const protectedUi = read(kotlinDir + '/RiftNativeAdminApprovals.kt');
+for (const [owner, markers] of [
+  [protectedManifest, ['riftos.protected-component/1', 'fun identityDigest(): String',
+    'fun activationRecord(): JSONObject', 'buildSha256']],
+  [protectedDex, ['riftos.protected-dex-closure/1',
+    'DEX type descriptor', 'Critical DEX defines class outside its independent namespace',
+    'External component references APK-owned execution', 'type.getDeclaredConstructor()',
+    'behavioralDeviceProof", false']],
+  [protectedInstaller, ['riftos.protected-component-operation/1',
+    'fun stage(context: Context, manifestBytes: ByteArray,',
+    'RiftProtectedDexVerifier.inspect(', 'fun activate(context: Context, component: String, sha: String)',
+    'fun acceptProven(context: Context, component: String, sha: String,',
+    'RiftComponentReleaseLedger.recordPrepared(', 'RiftComponentReleaseLedger.acceptProven(',
+    'RiftProtectedRevisionRecovery.verifiedReceipt(']],
+  [protectedRecovery, ['riftos.host.protected-recovery/1',
+    'fun verifiedReceipt(context: Context, component: String, candidate: JSONObject)',
+    'fun rollback(context: Context, component: String, reason: String)',
+    'RiftComponentReleaseLedger.confirmRollback(',
+    'RiftBootstrapComponentStore.clearProtectedStartupMarker(']],
+]) for (const marker of markers) if (!owner.includes(marker)) {
+  fail('Protected Core/Shell staging/recovery source missing: ' + marker);
+}
+for (const name of ['RiftProtectedComponentManifest', 'RiftProtectedDexVerifier',
+  'RiftProtectedComponentInstaller', 'RiftProtectedRevisionRecovery']) {
+  if (!gradle.includes('"src/main/java/com/riftos/app/' + name + '.kt"'))
+    fail('Protected Core/Shell Kotlin owner absent from Gradle: ' + name);
+}
+for (const marker of ['PROTECTED_STAGE = "protected.stage"',
+  'PROTECTED_ACTIVATE = "protected.activate"',
+  'PROTECTED_ACCEPT = "protected.accept"',
+  'executeProtectedStage(', 'executeProtectedActivate(', 'executeProtectedAccept(']) {
+  if (!probeAdmin.includes(marker)) fail('Core protected approval missing: ' + marker);
+}
+for (const marker of ['execute-protected-stage', 'execute-protected-activate',
+  'execute-protected-accept']) {
+  if (!probeProvider.includes('"' + marker + '"') ||
+      !probeClient.includes('"' + marker + '"') ||
+      !protectedUi.includes('"' + marker + '"'))
+    fail('Protected Core/Shell operation not routed across native/IPC/Core: ' + marker);
+}
+for (const marker of ['pickProtectedComponent()', 'stageProtectedComponent()',
+  'selectProtectedActivation()', 'activateProtectedComponent()',
+  'selectProtectedAcceptance()', 'acceptProtectedComponent()']) {
+  if (!protectedUi.includes(marker))
+    fail('Protected graphical admin control missing: ' + marker);
+}
+if (!coreRuntime.includes('.put("protectedComponentOperations", RiftProtectedComponentInstaller.status(context))') ||
+    !e0HostComponent.includes('RiftCoreRecoveryDiagnostics.recordSelected(application, sha)') ||
+    !coreRecoveryDiagnostics.includes('RiftProtectedRevisionRecovery.rollback(') ||
+    !componentReleaseLedger.includes('fun confirmRollback(context: Context, id: String, sha: String)') ||
+    !bootstrapStore.includes('fun writeProtectedPointer(context: Context, component: String, candidate: JSONObject)')) {
+  fail('Protected exact-identity Core/Shell selection and crash N-1 recovery not wired');
+}
+
 for (const marker of [
   'internal object RiftComponentReleaseLedger',
   'riftos.host.revisions/1',
@@ -355,7 +414,7 @@ if (!gradle.includes('"src/main/java/com/riftos/app/RiftComponentReleaseLedger.k
     !coreRuntime.includes('.put("coreRecoverySupervisor", RiftCoreRecoverySupervisorService.status(context))') ||
     !coreRuntime.includes('.put("externalCoreRevisions", RiftComponentReleaseLedger.status(context, "core"))') ||
     !coreRuntime.includes('.put("externalShellRevisions", RiftComponentReleaseLedger.status(context, "shell"))') ||
-    !e1CoreSwitch.includes('RiftComponentReleaseLedger.failed(application, "core", reason)')) {
+    !e1CoreSwitch.includes('RiftProtectedRevisionRecovery.rollback(')) {
   fail('H external revision ledger/observer not fully included in manifest, Android Kotlin and Core startup/status');
 }
 
@@ -383,9 +442,9 @@ if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreRecoveryDiagnostics.
 for (const marker of [
   'internal object RiftCoreCandidateSwitch',
   'RiftBootstrapComponentStore.active(application, "core")',
-  'RiftBootstrapComponentStore.resetCoreToEmbedded(application)',
+  'RiftProtectedRevisionRecovery.rollback(', 
   'fun selectAtBoot(application: Application): RiftCoreComponentV1?',
-  'Independent Core qualification receipt missing',
+  'RiftProtectedRevisionRecovery.verifiedReceipt(',
   'Core candidate contains an unexpected package',
   'Core candidate duplicates an APK-owned class',
   'Core candidate entrypoint missing',
@@ -414,7 +473,7 @@ for (const marker of ['interface RiftCoreComponentV1',
   'private val embedded: RiftCoreComponentV1 = EmbeddedCoreComponentV1',
   'fun core(): RiftCoreComponentV1 = selected',
   'fun initializeAtBoot(application: android.app.Application)',
-  'selectedKind == "external-unaccepted"', 'externalShellEnabled", false',
+  'selectedKind.startsWith("external-")', 'externalShellEnabled", false',
   'override fun snapshot(', 'override fun installed(', 'override fun open(',
   'override fun reattach(', 'override fun stop(', 'override fun focus(',
   'override fun event(', 'override fun install(', 'override fun uninstall(']) {
@@ -675,7 +734,7 @@ for (const f of ['RiftCoreApplication.kt', 'RiftCoreRuntime.kt']) {
 }
 if (!nativeShell.includes('RiftCoreRuntime.buildPlatform(appContext)') ||
     !nativeShell.includes('"core" -> {') ||
-    !nativeShell.includes('RiftCoreRuntime.status(appContext)')) {
+    !nativeShell.includes('RiftHostCoreComponents.executionView().coreStatus(appContext)')) {
   fail('RiftShell is still owning or not exposing the Core platform status');
 }
 if (!rappHost.includes('RiftCoreRuntime.packages(activity.applicationContext)') ||
@@ -718,7 +777,7 @@ if (!coreRuntime.includes('fun sessions(context: Context): RiftCoreAppSessions')
 if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreAppSessions.kt"')) {
   fail('Core session registry must be Gradle-mandatory');
 }
-if (!nativeShell.includes('RiftCoreRuntime.sessions(appContext).list()')) {
+if (!nativeShell.includes('RiftHostCoreComponents.executionView().sessionsView(appContext)')) {
   fail('Read-only core sessions command missing');
 }
 
@@ -818,7 +877,7 @@ for (const required of [
   'surfaces.remove(id)'
 ]) if (!coreSessions.includes(required)) fail(`C1.2-A lifecycle surface publication missing: ${required}`);
 if (!coreExecutor.includes('sessions.publishSurfaceFromExecution(') ||
-    !nativeShell.includes('"surfaces" -> RiftCoreRuntime.surfaces(appContext).list()') ||
+    !nativeShell.includes('"surfaces" -> RiftHostCoreComponents.executionView().surfacesView(appContext)') ||
     !gradle.includes('"src/main/java/com/riftos/app/RiftCoreAppSurfaces.kt"')) {
   fail('C1.2-A Core surface publication, diagnostic or mandatory Gradle snapshot missing');
 }
@@ -860,7 +919,7 @@ for (const marker of [
 ]) if (!desktopFocusClient.includes(marker)) fail(`C1.2-B2-B1 shell focus client missing: ${marker}`);
 if (!activityFocusClient.includes('focusRequestSink = { id ->') ||
     !activityFocusClient.includes('id.takeIf { hasWindowFocus() && !isFinishing && !isDestroyed }') ||
-    !nativeShell.includes('"focus" -> RiftCoreRuntime.sessions(appContext).focusStatus()') ||
+    !nativeShell.includes('"focus" -> RiftHostCoreComponents.executionView().focusView(appContext)') ||
     !gradle.includes('"src/main/java/com/riftos/app/RiftCoreInputFocus.kt"') ||
     !coreRuntime.includes('.put("inputFocus", sessions(context).focusStatus())')) {
   fail('C1.3-C foreground-only Core focus client or diagnostic missing');
@@ -873,7 +932,7 @@ for (const marker of [
 const osLocalAgent = read(`${kotlinDir}/RiftVortexLocalAgent.kt`);
 for (const marker of [
   'recreate-main-activity-proof', 'context is MainActivity && context.hasWindowFocus()',
-  'RiftCoreRuntime.lifecycle(context.applicationContext)',
+  'RiftHostCoreComponents.executionView()',
   'entry.optString("state") == "running"', 'context.recreate()',
   'riftos.qa.activity-recreate/1', 'coreProcessTermination", false'
 ]) if (!osLocalAgent.includes(marker)) fail(`C1.3-C controlled Activity recreation proof missing: ${marker}`);
@@ -922,9 +981,9 @@ for (const marker of [
   '.put("coreApps", lifecycle(context).status())'
 ]) if (!coreRuntime.includes(marker)) fail(`C1.2-C1 process-owned lifecycle wiring missing: ${marker}`);
 for (const marker of [
-  '"apps" -> RiftCoreRuntime.lifecycle(appContext).status()',
-  'RiftCoreRuntime.lifecycle(appContext).start(args[1])',
-  'RiftCoreRuntime.lifecycle(appContext).stop(args[1])'
+  'RiftHostCoreComponents.executionView().runningApps(appContext)',
+  'RiftHostCoreComponents.executionView().startApp(appContext, args[1])',
+  'RiftHostCoreComponents.executionView().stopApp(appContext, args[1])'
 ]) if (!nativeShell.includes(marker)) fail(`C1.2-C1 Core-only app control missing: ${marker}`);
 if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreAppLifecycle.kt"')) {
   fail('C1.2-C1 mandatory lifecycle Kotlin source missing');
@@ -997,7 +1056,7 @@ for (const marker of [
   'RiftAlternateGraphicalShellActivity::class.java',
   'Intent.FLAG_ACTIVITY_NEW_TASK',
   'RiftAlternateGraphicalShellActivity.EXTRA_APP_ID',
-  'RiftCoreRuntime.surfaces(appContext).snapshot(id)',
+  'RiftHostCoreComponents.core().snapshot(appContext, id)',
   '"riftos.shell.client.graphical/1"'
 ]) if (!nativeShell.includes(marker)) fail(`C1.2-D2 graphical shell control missing: ${marker}`);
 if (!manifest.includes('android:name=".RiftAlternateGraphicalShellActivity"') ||
@@ -1219,7 +1278,7 @@ for (const required of [
   'private const val ATTEMPT_COOLDOWN_MS = 5_000L',
   'if (!hasSeenShell || !foreground || ownerPid <= 0) return',
   'if (processAlive(context, ownerPid))',
-  'RiftCoreRuntime.sessions(context).requestFocusFromShell(null)',
+  'RiftHostCoreComponents.core().focus(context, null)',
   'context.startActivity(intent)',
   'it.processName == context.packageName + ":riftShell"',
   'fun killShellForProof(context: Context, disposableId: String)',
@@ -1597,7 +1656,7 @@ for (const marker of [
   '"discover-providers" -> RiftCoreAdminConsent.discoverProviderCandidates(ctx, caller)',
   'fun discoverProviderCandidates(context: Context, callerPid: Int)',
   'authenticated(context, callerPid)',
-  'RiftCoreRuntime.runtimes(context).discoverCandidates()',
+  'RiftHostCoreComponents.executionView().discoverRuntimeCandidates(context)',
   'extras?.getString("action") == "discover-providers"',
   '"riftos.core.runtime-candidates/1"',
   'Discover installed runtime candidates (read-only)',

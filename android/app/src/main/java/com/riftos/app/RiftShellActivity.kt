@@ -89,12 +89,14 @@ class RiftShellActivity : Activity() {
                 setContentView(host)
                 candidate.attach(this, host,
                     RiftShellPlatformServicesAdapter(externalCore), restore)
+                RiftShellCandidateSwitch.reportAttached(application)
                 externalShell = candidate
                 return
             } catch (failure: Throwable) {
                 android.util.Log.e("RiftShellActivity",
                     "External graphical Shell startup rejected", failure)
                 RiftShellCandidateSwitch.fallback(application, "external-shell-attach-exception")
+                runCatching { RiftShellCandidateSwitch.reportStopped(application) }
                 runCatching { candidate.onDestroy() }
                 host.removeAllViews()
             }
@@ -374,6 +376,7 @@ class RiftShellActivity : Activity() {
 
     override fun onDestroy() {
         if (externalShell != null) {
+            runCatching { RiftShellCandidateSwitch.reportStopped(application) }
             runCatching { externalShell?.onDestroy() }
             externalShell = null
             stateReporter.shutdownNow()

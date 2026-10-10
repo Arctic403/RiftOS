@@ -716,8 +716,8 @@ object RiftOsLocalAgent {
                 require(id.isNotBlank() && id.length <= 128) {
                     "Recreation proof requires one current Core RAPP id"
                 }
-                val apps = RiftCoreRuntime.lifecycle(context.applicationContext)
-                    .status().getJSONArray("apps")
+                val apps = RiftHostCoreComponents.executionView()
+                    .runningApps(context.applicationContext)
                 var generation = 0L
                 for (i in 0 until apps.length()) {
                     val entry = apps.getJSONObject(i)

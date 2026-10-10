@@ -213,6 +213,22 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
                     "execute-module-recovery-proof" ->
                         RiftCoreAdminConsent.executeModuleRecoveryProof(
                             ctx, caller, bearer, operation, target)
+                    "execute-protected-stage" -> {
+                        val descriptor = request.getParcelable<android.os.ParcelFileDescriptor>("dexFd")
+                            ?: error("Protected component staging requires exact DEX descriptor")
+                        descriptor.use { fd ->
+                            RiftCoreAdminConsent.executeProtectedStage(
+                                ctx, caller, bearer, operation, target,
+                                request.getString("moduleManifest")
+                                    ?: error("Protected staging requires exact manifest"), fd)
+                        }
+                    }
+                    "execute-protected-activate" ->
+                        RiftCoreAdminConsent.executeProtectedActivate(
+                            ctx, caller, bearer, operation, target)
+                    "execute-protected-accept" ->
+                        RiftCoreAdminConsent.executeProtectedAccept(
+                            ctx, caller, bearer, operation, target)
                     "execute-probe-activate" -> RiftCoreAdminConsent.executeProbeActivate(
                         ctx, caller, bearer, operation, target)
                     "window-closed" -> RiftCoreAdminConsent.revokeForWindowClose(ctx, caller)

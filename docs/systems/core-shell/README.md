@@ -1,5 +1,9 @@
 # RiftOS Core ↔ RiftShell — canonical architecture (C1 series)
 
+## 2026-10-10 — Required independent execution view and N-1 version acceptance
+
+A real external Core candidate must implement both `RiftCoreComponentV1` (RAPP calls) and **`RiftCoreExecutionViewV1`** (running sessions, surface/focus/core status, runtime provider discovery, app start/stop). APK host recovery, native Core diagnostics and Admin Approvals route to the **selected** execution view and fail closed when absent; legacy alternate/embedded debug routines are not allowed during external-Core execution. Exact Core SHA/PID and graphical Shell SHA/PID receipts govern manual post-device acceptance and N-1 fallback. A qualified binary must not import APK-owned executable `RiftCoreRuntime` classes; [protected component protocol](../android-host/PROTECTED_COMPONENT_FORMAT.md) records type-closure limits. **Actual feature-complete independent Core and desktop implementations remain uncompiled/unproven.** No APK rebuild or user device tests dispatched.
+
 ## 2026-10-10 — Start of actual graphical Shell abstraction (UNPROVEN)
 
 APK now defines `RiftShellGraphicalComponentV1` for lifecycle/desktop ownership and `RiftShellPlatformServicesV1` for Core-installed RAPPs, launch, reattach, stop, focus, typed RAPP frames/events, build/install/uninstall, UI and desktop-state recovery. `RiftShellActivity` selects optional guarded external graphical Shell before creating embedded window manager; embedded remains default. `RiftShellCandidateSwitch` requires exact content hash, ABI, distinct DEX-only namespace/entrypoint and host-owned qualification record (a proper trusted producer not implemented yet). A separate observer process and Core/Shell revision catalogue exist only as infrastructure; genuine standalone Core execution, actual separately compiled graphical Shell, trusted activation and automatic N-1 fallback still need code and device proof. Continue on `main`, keep backup for restoration.

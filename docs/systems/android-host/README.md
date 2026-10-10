@@ -1,5 +1,9 @@
 # Android Host
 
+## 2026-10-10 — Guarded Core/Shell versioned installer implementation
+
+See [protected critical artifact format](PROTECTED_COMPONENT_FORMAT.md) and [main roadmap](EXTERNAL_CORE_SHELL_ROADMAP.md). APK-owned Core now has distinct manifest parsing, static DEX reference closure, exact immutable per-SHA qualification receipt, signer/PID/foreground one-use stage+activation+physical acceptance, protected Core/Shell pointer/N-1 journal, Core crash SHA/PID recovery before restart and confirmed real Shell process-loss recovery. Android cannot guarantee a continuously running watchdog or full native dump. Real independent external execution **not yet device accepted**; embedded stays as reserve until all gate proofs pass.
+
 ## 2026-10-10 — Core/Shell revision ledger and separate observation source
 
 Main branch hosts `RiftComponentReleaseLedger` (SHA-checked pending, proven, quarantine state), `RiftCoreRecoverySupervisorService` (nonexported separate Android process for best-effort Core observation, **does not guarantee automatic process restart**), and guarded `RiftShellCandidateSwitch` (inactive without host-qualified external Shell). The platform `RiftShellActivity` now offers `RiftShellGraphicalComponentV1` before constructing any embedded desktop on the candidate path, using authenticated `RiftShellCoreClient` through a scoped `RiftShellPlatformServicesV1` adapter. Embedded Shell remains default/recoverable. MCP/relay stays APK-owned. Host/device failure recovery and last-known-good external Core/Shell automatic rollback remain unproven until a real artifact builder/qualifier/pointer activator/watcher is implemented and tested. GitHub backup is a restore-only snapshot; development on `main`.

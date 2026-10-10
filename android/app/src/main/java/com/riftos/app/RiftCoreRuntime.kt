@@ -132,6 +132,10 @@ object RiftCoreRuntime {
             .put("coreRecoverySupervisor", RiftCoreRecoverySupervisorService.status(context))
             .put("externalCoreRevisions", RiftComponentReleaseLedger.status(context, "core"))
             .put("externalShellRevisions", RiftComponentReleaseLedger.status(context, "shell"))
+            .put("protectedComponentOperations", RiftProtectedComponentInstaller.status(context))
+            .put("externalShellAttached",
+                runCatching { RiftShellCandidateSwitch.attached(context) }.getOrNull()
+                    ?: JSONObject.NULL)
             .put("moduleHost", runCatching {
                 RiftCoreModuleActivation.status(context)
             }.getOrElse { failure ->

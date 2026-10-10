@@ -41,6 +41,10 @@ internal object RiftCoreAdminConsent {
     const val MODULE_RECOVERY_PROOF = "module.recovery.proof"
     const val MODULE_RECOVERY_SCHEMA = "riftos.core.module-recovery-proof/1"
     const val MODULE_OPERATION_SCHEMA = "riftos.core.module-operation/1"
+    const val PROTECTED_STAGE = "protected.stage"
+    const val PROTECTED_ACTIVATE = "protected.activate"
+    const val PROTECTED_ACCEPT = "protected.accept"
+    const val PROTECTED_SCHEMA = "riftos.protected-component-operation/1"
 
     private val random = SecureRandom()
     private val lock = Any()
@@ -72,7 +76,13 @@ internal object RiftCoreAdminConsent {
             (operation == MODULE_RECOVERY_PROOF &&
                 target.matches(Regex("^module://recover/[a-z][a-z0-9._-]{0,44}/[0-9a-f]{64}$"))) ||
             (operation == PROBE_ACTIVATE &&
-                target.matches(Regex("^bootstrap://probe/[0-9a-f]{64}$")))
+                target.matches(Regex("^bootstrap://probe/[0-9a-f]{64}$"))) ||
+            (operation == PROTECTED_STAGE &&
+                target.matches(Regex("^component://stage/[0-9a-f]{64}$"))) ||
+            (operation == PROTECTED_ACTIVATE &&
+                target.matches(Regex("^component://activate/(core|shell)/[0-9a-f]{64}$"))) ||
+            (operation == PROTECTED_ACCEPT &&
+                target.matches(Regex("^component://accept/(core|shell)/[0-9a-f]{64}$")))
 
     @Suppress("DEPRECATION")
     private fun installedSigner(context: Context): String {
@@ -488,6 +498,132 @@ internal object RiftCoreAdminConsent {
     }
 
     /**
+     * Native UI + Core Binder verified, exact manifest-bound component stage.
+     * This cannot be called through RAPP/terminal or generic module services.
+     */
+    fun executeProtectedStage(
+        context: Context, callerPid: Int, bearer: String,
+        operation: String, target: String, manifestText: String,
+        descriptor: ParcelFileDescriptor
+    ): JSONObject {
+        val shell = RiftCoreShellRecovery.status()
+        require(shell.optInt("shellPid", -1) == callerPid &&
+            shell.optBoolean("foregroundLease", false) &&
+            shell.optString("phase") == "connected") {
+            "Protected component stage requires foreground trusted Shell"
+        }
+        return synchronized(lock) {
+            val manifestBytes = manifestText.toByteArray(Charsets.UTF_8)
+            val manifest = RiftProtectedComponentManifest.parse(manifestBytes)
+            require(target == "component://stage/" + manifest.identityDigest()) {
+                "Protected component manifest changed after ticket approval"
+            }
+            val approval = ticket(context, callerPid, bearer)
+            require(approval.approved && approval.operation == PROTECTED_STAGE &&
+                operation == PROTECTED_STAGE && approval.target == target &&
+                validScope(operation, target)) {
+                "Protected component stage requires exact one-use user approval"
+            }
+            tickets.remove(bearer)
+            RiftCoreSystemCapabilities.recordDecision(
+                context, ACTOR, operation, "consumed", "protected-component-stage")
+            try {
+                val staged = FileInputStream(descriptor.fileDescriptor).use { input ->
+                    RiftProtectedComponentInstaller.stage(context, manifestBytes, input)
+                }
+                require(staged.getString("manifestDigest") == manifest.identityDigest() &&
+                    staged.getString("sha256") == manifest.sha256) {
+                    "Protected component stage result identity mismatch"
+                }
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "staged", "protected-immutable-dex")
+                staged
+            } catch (failure: Exception) {
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "failed", "protected-stage-rejected")
+                throw failure
+            }
+        }
+    }
+
+    fun executeProtectedActivate(
+        context: Context, callerPid: Int, bearer: String,
+        operation: String, target: String
+    ): JSONObject {
+        val shell = RiftCoreShellRecovery.status()
+        require(shell.optInt("shellPid", -1) == callerPid &&
+            shell.optBoolean("foregroundLease", false) &&
+            shell.optString("phase") == "connected") {
+            "Protected activation requires foreground trusted Shell"
+        }
+        return synchronized(lock) {
+            val approval = ticket(context, callerPid, bearer)
+            require(approval.approved && approval.operation == PROTECTED_ACTIVATE &&
+                approval.target == target && operation == PROTECTED_ACTIVATE &&
+                validScope(operation, target)) {
+                "Protected activation requires exact one-use SHA approval"
+            }
+            val parts = target.removePrefix("component://activate/").split("/")
+            require(parts.size == 2) { "Protected activation target invalid" }
+            val manifest = RiftProtectedComponentInstaller.staged(
+                context, parts[0], parts[1])
+            require(manifest.component == parts[0] && manifest.sha256 == parts[1]) {
+                "Protected staged revision differs from approved activation"
+            }
+            tickets.remove(bearer)
+            RiftCoreSystemCapabilities.recordDecision(
+                context, ACTOR, operation, "consumed", "protected-component-activate")
+            try {
+                val activated = RiftProtectedComponentInstaller.activate(
+                    context, parts[0], parts[1])
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "activated", "restart-required")
+                activated
+            } catch (failure: Exception) {
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "failed", "protected-activation-rejected")
+                throw failure
+            }
+        }
+    }
+
+    fun executeProtectedAccept(
+        context: Context, callerPid: Int, bearer: String,
+        operation: String, target: String
+    ): JSONObject {
+        val shell = RiftCoreShellRecovery.status()
+        require(shell.optInt("shellPid", -1) == callerPid &&
+            shell.optBoolean("foregroundLease", false) &&
+            shell.optString("phase") == "connected") {
+            "Protected acceptance requires foreground trusted Shell"
+        }
+        return synchronized(lock) {
+            val approval = ticket(context, callerPid, bearer)
+            require(approval.approved && approval.operation == PROTECTED_ACCEPT &&
+                approval.target == target && operation == PROTECTED_ACCEPT &&
+                validScope(operation, target)) {
+                "Protected device acceptance requires exact one-use approval"
+            }
+            val parts = target.removePrefix("component://accept/").split("/")
+            require(parts.size == 2) { "Protected acceptance target invalid" }
+            tickets.remove(bearer)
+            RiftCoreSystemCapabilities.recordDecision(
+                context, ACTOR, operation, "consumed", "protected-device-accept")
+            try {
+                val accepted = RiftProtectedComponentInstaller.acceptProven(
+                    context, parts[0], parts[1], callerPid)
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "accepted", "exact-sha-device-proof")
+                accepted
+            } catch (failure: Exception) {
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "failed", "protected-device-accept-rejected")
+                throw failure
+            }
+        }
+    }
+
+    /**
      * Trusted fixed-proof import: only real foreground RiftShell, installed
      * APK signer, approved one-use ticket and selected SAF read descriptor.
      * No arbitrary app or runtime registration is ever granted.
@@ -629,7 +765,7 @@ internal object RiftCoreAdminConsent {
      */
     fun discoverProviderCandidates(context: Context, callerPid: Int): JSONObject {
         authenticated(context, callerPid)
-        return RiftCoreRuntime.runtimes(context).discoverCandidates()
+        return RiftHostCoreComponents.executionView().discoverRuntimeCandidates(context)
     }
 
     fun status(context: Context): JSONObject = synchronized(lock) {

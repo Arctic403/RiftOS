@@ -73,6 +73,62 @@ internal object RiftCoreRecoveryDiagnostics {
         }
     }
 
+    private fun selectedFile(app: Application): File =
+        File(RiftBootstrapComponentStore.root(app), "core-selected-process.json")
+
+    private fun selectedProcess(app: Application): JSONObject? {
+        val file = selectedFile(app)
+        if (!file.exists() && !File(file.path + ".bak").exists()) return null
+        require(!java.nio.file.Files.isSymbolicLink(file.toPath())) {
+            "Core selection process record symlink"
+        }
+        val bytes = AtomicFile(file).openRead().use {
+            val data = ByteArray(4097)
+            val count = it.read(data)
+            require(count in 1..4096 && it.read() == -1) {
+                "Core selection record exceeds bound"
+            }
+            data.copyOf(count)
+        }
+        return JSONObject(String(bytes, Charsets.UTF_8)).also {
+            require(it.getString("schema") == "riftos.core.selected-process/1") {
+                "Invalid Core selected process record"
+            }
+        }
+    }
+
+    fun recordSelected(app: Application, sha: String) {
+        require(sha.matches(Regex("^[0-9a-f]{64}$"))) {
+            "Selected Core digest invalid"
+        }
+        val active = RiftBootstrapComponentStore.active(app, "core")
+        require(active?.optString("sha256") == sha) {
+            "Selected Core not backed by matching immutable activation"
+        }
+        val file = selectedFile(app)
+        require(!java.nio.file.Files.isSymbolicLink(file.toPath()) &&
+            !java.nio.file.Files.isSymbolicLink(
+                File(file.path + ".bak").toPath())) {
+            "Core selected process receipt symlink"
+        }
+        val state = JSONObject()
+            .put("schema", "riftos.core.selected-process/1")
+            .put("sha256", sha)
+            .put("pid", Process.myPid())
+            .put("startedAt", System.currentTimeMillis())
+        val bytes = state.toString().toByteArray(Charsets.UTF_8)
+        require(bytes.size in 1..4096)
+        val atomic = AtomicFile(file)
+        val output = atomic.startWrite()
+        try {
+            output.write(bytes)
+            atomic.finishWrite(output)
+        } catch (failure: Throwable) {
+            atomic.failWrite(output)
+            throw failure
+        }
+    }
+
     private fun sha(bytes: ByteArray) = MessageDigest.getInstance("SHA-256")
         .digest(bytes).joinToString("") { "%02x".format(it.toInt() and 255) }
 
@@ -141,6 +197,33 @@ internal object RiftCoreRecoveryDiagnostics {
                 .put("traceTruncatedOrUnknown", traceBytes?.size == MAX_TRACE)
                 .put("recordedAt", System.currentTimeMillis())
             runCatching { write(app, record) }
+
+            // Only a real Android crash/ANR of the exact previously selected,
+            // already accepted external Core can demote that good revision.
+            // Force-stop, normal user exit and memory pressure are not evidence
+            // that a new Core revision itself was defective.
+            val fatal = exit.reason == android.app.ApplicationExitInfo.REASON_CRASH ||
+                exit.reason == android.app.ApplicationExitInfo.REASON_CRASH_NATIVE ||
+                exit.reason == android.app.ApplicationExitInfo.REASON_ANR
+            if (fatal) {
+                val selected = runCatching { selectedProcess(app) }.getOrNull()
+                if (selected != null &&
+                    selected.optInt("pid", -1) == exit.pid &&
+                    selected.optLong("startedAt", Long.MAX_VALUE) <= exit.timestamp) {
+                    val selectedSha = selected.optString("sha256")
+                    val active = runCatching {
+                        RiftBootstrapComponentStore.active(app, "core")
+                    }.getOrNull()
+                    if (selectedSha.matches(Regex("^[0-9a-f]{64}$")) &&
+                        active?.optString("sha256") == selectedSha &&
+                        RiftComponentReleaseLedger.isAccepted(app, "core", selectedSha)) {
+                        // No live Core exists at this point; this is before
+                        // the one-time startup selector runs on the new PID.
+                        RiftProtectedRevisionRecovery.rollback(
+                            app, "core", "android-exit-" + exit.reason)
+                    }
+                }
+            }
         }
     }
 

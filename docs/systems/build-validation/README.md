@@ -1,5 +1,9 @@
 # Build and Validation System
 
+## 2026-10-10 — Protected critical component source and signed-DEX contract
+
+Four new Kotlin owners `RiftProtectedComponentManifest.kt`, `RiftProtectedDexVerifier.kt`, `RiftProtectedComponentInstaller.kt` and `RiftProtectedRevisionRecovery.kt` are explicitly Gradle-mandatory and source-owned. Source preflight requires Core candidate double-interface execution ownership, separate Core/Shell exact qualified receipts, native Admin Approvals protected stage/activate/accept routing, Core historical fatal SHA/PID + Shell process-death N-1 rollback, and absence of silent NativeShell/CoreShellRecovery embedded execution calls on the selected external path. Builder script/Python selftest and signed DEX verifier require the new protected ABI schemas. Do not mark any gate PASS until user-manual signed Builder compiles this source and the real external Core/Shell binaries undergo all relevant physical-device tests. The backup remains restore-only and active source pushes go to main.
+
 ## 2026-10-10 — Core/Shell host migration exact source preflight
 
 Added `RiftComponentReleaseLedger.kt`, `RiftCoreRecoverySupervisorService.kt`, `RiftShellCandidateSwitch.kt`, `RiftShellComponentAbiV1.kt` to exact Gradle Kotlin inventory and `docs/SOURCE_OWNERSHIP.md`. AndroidManifest now declares a nonexported `:riftCoreSupervisor` Service; RiftOS validator checks Shell ABI/selector/lifecycle, immutable Core/Shell revision metadata and Core observer. Separate Builder `riftos-build.sh` requires the new source/manifest markers; `test-builder-contracts.py` verifies preflight presence, and `verify-riftos-apk.sh` requires `riftos.host.revisions/1`, `riftos.host.core-supervisor/1`, `riftos.shell.candidate-switch/1`. Full source npm/Gradle/Kotlin/DEX and signed APK proof **not run by assistant**. User continues manual signed builds on normal `main`. Recovery backup not used.

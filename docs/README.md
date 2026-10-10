@@ -1,5 +1,7 @@
 # RiftOS Documentation Map
 
+**Protected Core/Shell artifact protocol:** [Manifest, binary verifier, signed Admin Approvals, SHA/PID acceptance and N-1 rollback](systems/android-host/PROTECTED_COMPONENT_FORMAT.md). This is source integration only until real independent Core/Shell implementations and device proof exist.
+
 ## Active Core/Shell migration roadmap (2026-10-10)
 
 **Current planned gates and required evidence:** [External Core, crash recovery, graphical Shell and minimal host APK roadmap](systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md). Use this for forward execution instead of chronological pre-E1 "local/unbuilt" sections. [E1 candidate source status](systems/android-host/E1_CORE_CANDIDATE.md) and [Bootstrap host boundaries](systems/android-host/BOOTSTRAP_HOST_MIGRATION.md) remain implementation references. All components remain **unverified until code, reproducible artifact, installed-device test and recovery proof** establish their respective milestones. Last physically verified E0 is embedded Core signed #695; newer pushed E1 selector is not live-proven. Source/Builder SHA and runtime selection must accompany every device proof. Routine no-repack external Core/Shell development becomes a guarantee only *after* the stable host/supervisor itself passes its gate.

@@ -86,7 +86,7 @@ internal object RiftComponentReleaseLedger {
         require(value.getString("schema") == SCHEMA &&
             value.getString("component") == id) { "Revision journal invalid" }
         if (verifyFiles) {
-            for (field in listOf("pending", "lastKnownGood")) {
+            for (field in listOf("pending", "lastKnownGood", "previousKnownGood")) {
                 value.optJSONObject(field)?.let { validate(context, id, it) }
             }
         }
@@ -122,6 +122,7 @@ internal object RiftComponentReleaseLedger {
         .put("rejectedReason", JSONObject.NULL)
         .put("pending", JSONObject.NULL)
         .put("lastKnownGood", JSONObject.NULL)
+        .put("previousKnownGood", JSONObject.NULL)
 
     /** This does NOT select a revision; caller must independently qualify it. */
     @Synchronized
@@ -149,7 +150,10 @@ internal object RiftComponentReleaseLedger {
         val pending = state.optJSONObject("pending") ?: error("No pending revision")
         require(pending.getString("sha256") == sha) { "Accepted SHA differs from pending" }
         validate(context, id, pending)
-        state.put("lastKnownGood", JSONObject(pending.toString()))
+        val prior = state.optJSONObject("lastKnownGood")
+        state.put("previousKnownGood",
+            prior?.let { JSONObject(it.toString()) } ?: JSONObject.NULL)
+            .put("lastKnownGood", JSONObject(pending.toString()))
             .put("pending", JSONObject.NULL)
             .put("status", "external-known-good")
             .put("acceptedAt", System.currentTimeMillis())
@@ -169,9 +173,18 @@ internal object RiftComponentReleaseLedger {
         // corrupt pending candidate merely to quarantine it.
         val state = read(context, id, verifyFiles = false) ?: empty(id)
         val pending = state.optJSONObject("pending")
+        val accepted = state.optJSONObject("lastKnownGood")
         if (pending != null) {
             state.put("rejectedSha256", pending.optString("sha256"))
                 .put("pending", JSONObject.NULL)
+        } else if (accepted != null) {
+            // Post-acceptance failure: demote the dying revision and use N-1.
+            state.put("rejectedSha256", accepted.optString("sha256"))
+                .put("lastKnownGood",
+                    state.optJSONObject("previousKnownGood")?.let {
+                        JSONObject(it.toString())
+                    } ?: JSONObject.NULL)
+                .put("previousKnownGood", JSONObject.NULL)
         }
         state.put("rejectedReason", reason.take(120))
             .put("status", if (state.optJSONObject("lastKnownGood") != null)
@@ -183,11 +196,45 @@ internal object RiftComponentReleaseLedger {
     }
 
     @Synchronized
+    fun isAccepted(context: Context, id: String, sha: String): Boolean {
+        if (!sha.matches(DIGEST)) return false
+        return runCatching {
+            val state = read(context, id, verifyFiles = false) ?: return false
+            state.isNull("pending") &&
+                state.optJSONObject("lastKnownGood")?.optString("sha256") == sha &&
+                state.optString("status") == "external-known-good"
+        }.getOrDefault(false)
+    }
+
+    @Synchronized
     fun recoveryTarget(context: Context, id: String): JSONObject? {
-        val state = read(context, id) ?: return null
+        val state = read(context, id, verifyFiles = false) ?: return null
         val good = state.optJSONObject("lastKnownGood") ?: return null
         if (good.optString("sha256") == state.optString("rejectedSha256")) return null
         return validate(context, id, good)
+    }
+
+    /** Restore the already-accepted N-1 to normal restart policy after rollback. */
+    @Synchronized
+    fun confirmRollback(context: Context, id: String, sha: String): JSONObject {
+        require(sha.matches(DIGEST)) { "Restored revision SHA invalid" }
+        val state = read(context, id, verifyFiles = false)
+            ?: error("No protected rollback journal")
+        require(state.optString("status") == "external-rollback-required" &&
+            state.isNull("pending") &&
+            state.optJSONObject("lastKnownGood")?.optString("sha256") == sha) {
+            "Protected rollback verdict changed before pointer restoration"
+        }
+        validate(context, id, state.getJSONObject("lastKnownGood"))
+        val pointer = RiftBootstrapComponentStore.active(context, id)
+        require(pointer?.optString("sha256") == sha) {
+            "Restored active pointer digest mismatch"
+        }
+        state.put("status", "external-known-good")
+            .put("restoredKnownGoodAt", System.currentTimeMillis())
+            .put("sequence", state.optLong("sequence") + 1L)
+        write(context, id, state)
+        return summary(state)
     }
 
     private fun summary(state: JSONObject): JSONObject {
@@ -200,6 +247,8 @@ internal object RiftComponentReleaseLedger {
             .put("sequence", state.optLong("sequence"))
             .put("pendingSha256", pending?.optString("sha256") ?: JSONObject.NULL)
             .put("lastKnownGoodSha256", accepted?.optString("sha256") ?: JSONObject.NULL)
+            .put("previousKnownGoodSha256",
+                state.optJSONObject("previousKnownGood")?.optString("sha256") ?: JSONObject.NULL)
             .put("rejectedSha256", state.optString("rejectedSha256").takeIf {
                 it.matches(DIGEST)
             } ?: JSONObject.NULL)

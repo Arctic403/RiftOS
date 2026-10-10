@@ -37,6 +37,7 @@ internal object RiftCoreCandidateSwitch {
     private val DIGEST = Regex("^[0-9a-f]{64}$")
 
     @Volatile private var lastSelection = "embedded"
+    @Volatile private var lastSelectedSha: String? = null
     @Volatile private var lastFallback = "none"
 
     private fun root(application: Application) =
@@ -87,8 +88,8 @@ internal object RiftCoreCandidateSwitch {
         require(entrypoint.startsWith(PREFIX) && sha.matches(DIGEST)) {
             "Core candidate namespace/SHA invalid"
         }
-        val qualification = readQualification(File(root(application), QUALIFIED_FILE))
-            ?: error("Independent Core qualification receipt missing")
+        val qualification = RiftProtectedRevisionRecovery.verifiedReceipt(
+            application, "core", record)
         require(qualification.getString("schema") == QUALIFIED_SCHEMA &&
             qualification.getInt("abi") == RiftHostCoreComponents.ABI_VERSION &&
             qualification.getString("sha256") == sha &&
@@ -130,7 +131,8 @@ internal object RiftCoreCandidateSwitch {
             application.codeCacheDir.absolutePath, null, application.classLoader)
         val implementation = loader.loadClass(entrypoint)
         require(implementation.classLoader === loader &&
-            RiftCoreComponentV1::class.java.isAssignableFrom(implementation)) {
+            RiftCoreComponentV1::class.java.isAssignableFrom(implementation) &&
+            RiftCoreExecutionViewV1::class.java.isAssignableFrom(implementation)) {
             "Core candidate did not implement APK-owned Core V1 ABI"
         }
         return implementation.getDeclaredConstructor().newInstance() as RiftCoreComponentV1
@@ -140,6 +142,7 @@ internal object RiftCoreCandidateSwitch {
     @Synchronized
     fun selectAtBoot(application: Application): RiftCoreComponentV1? {
         lastSelection = "embedded"
+        lastSelectedSha = null
         val root = root(application)
         val marker = File(root, BOOT_MARKER)
         if (marker.exists()) {
@@ -168,6 +171,7 @@ internal object RiftCoreCandidateSwitch {
             return null
         }
         lastSelection = "external-unaccepted"
+        lastSelectedSha = record.getString("sha256")
         return candidate
     }
 
@@ -175,21 +179,19 @@ internal object RiftCoreCandidateSwitch {
     @Synchronized
     fun fallback(application: Application, reason: String) {
         lastSelection = "embedded"
+        lastSelectedSha = null
         lastFallback = reason
-        runCatching { RiftComponentReleaseLedger.failed(application, "core", reason) }
-            .onFailure { Log.w(TAG, "Core revision quarantine journal unavailable", it) }
-        try {
-            RiftBootstrapComponentStore.resetCoreToEmbedded(application)
-        } catch (failure: Throwable) {
-            // Never run a failed external implementation. Pending marker
-            // remains as conservative boot protection if rollback fails.
-            Log.e(TAG, "Core activation rollback requires recovery", failure)
+        val decision = RiftProtectedRevisionRecovery.rollback(
+            application, "core", reason)
+        if (!decision.optBoolean("rollbackRecorded", false)) {
+            Log.w(TAG, "Core revision recovery degraded to embedded")
         }
     }
 
     fun status(): JSONObject = JSONObject()
         .put("schema", SCHEMA)
         .put("selected", lastSelection)
+        .put("selectedSha256", lastSelectedSha ?: JSONObject.NULL)
         .put("lastFallback", lastFallback)
         .put("inactiveCandidateOnly", lastSelection == "embedded")
         .put("automaticPromotionEnabled", false)

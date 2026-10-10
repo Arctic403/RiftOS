@@ -27,6 +27,7 @@ internal object RiftShellCandidateSwitch {
     private val SHA = Regex("^[0-9a-f]{64}$")
     private const val TAG = "RiftShellCandidate"
     @Volatile private var selection = "embedded"
+    @Volatile private var selectedSha: String? = null
     @Volatile private var fallbackReason = "none"
 
     private fun readQualified(application: Application): JSONObject? {
@@ -55,7 +56,8 @@ internal object RiftShellCandidateSwitch {
             entrypoint.matches(Regex("^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+$"))) {
             "Shell revision identity invalid"
         }
-        val qualified = readQualified(application) ?: error("Independent Shell qualification missing")
+        val qualified = RiftProtectedRevisionRecovery.verifiedReceipt(
+            application, "shell", record)
         require(qualified.getString("schema") == QUALIFIED_SCHEMA &&
             qualified.getInt("abi") == RiftHostCoreComponents.ABI_VERSION &&
             qualified.getString("sha256") == sha &&
@@ -117,6 +119,7 @@ internal object RiftShellCandidateSwitch {
     @Synchronized
     fun selectAtBoot(application: Application): RiftShellGraphicalComponentV1? {
         selection = "embedded"
+        selectedSha = null
         val marker = File(RiftBootstrapComponentStore.root(application), "shell.booting")
         if (marker.exists()) {
             fallback(application, "interrupted-shell-boot")
@@ -144,22 +147,100 @@ internal object RiftShellCandidateSwitch {
             return null
         }
         selection = "external-unaccepted"
+        selectedSha = active.getString("sha256")
         return candidate
     }
 
     @Synchronized
     fun fallback(application: Application, reason: String) {
         selection = "embedded"
+        selectedSha = null
         fallbackReason = reason
-        runCatching { RiftComponentReleaseLedger.failed(application, "shell", reason) }
-            .onFailure { Log.w(TAG, "Shell release journal unavailable", it) }
-        runCatching { RiftBootstrapComponentStore.resetShellToEmbedded(application) }
-            .onFailure { Log.e(TAG, "Shell activation rollback failed", it) }
+        val decision = RiftProtectedRevisionRecovery.rollback(
+            application, "shell", reason)
+        if (!decision.optBoolean("rollbackRecorded", false)) {
+            Log.w(TAG, "Shell revision recovery degraded to embedded")
+        }
+    }
+
+    /**
+     * The real Shell process reports its exact attached graphical revision.
+     * Core checks actual Binder PID and this private, bounded receipt before
+     * a user may accept a known-good Shell update.
+     */
+    fun reportAttached(application: Application) {
+        val sha = selectedSha ?: error("Embedded Shell has no external receipt")
+        require(selection == "external-unaccepted") {
+            "Cannot report an unselected graphical Shell"
+        }
+        val active = RiftBootstrapComponentStore.active(application, "shell")
+            ?: error("Shell activation pointer absent")
+        require(active.getString("sha256") == sha) {
+            "Graphical Shell active SHA changed before attach"
+        }
+        val alreadyAccepted = RiftComponentReleaseLedger.isAccepted(
+            application, "shell", sha)
+        if (alreadyAccepted) {
+            RiftBootstrapComponentStore.clearProtectedStartupMarker(
+                application, "shell")
+            selection = "external-known-good"
+        }
+        val record = JSONObject().put("schema", "riftos.shell.attached/1")
+            .put("sha256", sha)
+            .put("pid", android.os.Process.myPid())
+            .put("atMs", System.currentTimeMillis())
+        val output = File(RiftBootstrapComponentStore.root(application),
+            "shell-attached.json")
+        require(!Files.isSymbolicLink(output.toPath()) &&
+            !Files.isSymbolicLink(File(output.path + ".bak").toPath())) {
+            "Shell attached receipt symlinked"
+        }
+        val atomic = AtomicFile(output)
+        val bytes = record.toString().toByteArray(Charsets.UTF_8)
+        require(bytes.size in 1..4096)
+        val stream = atomic.startWrite()
+        try {
+            stream.write(bytes)
+            atomic.finishWrite(stream)
+        } catch (failure: Throwable) {
+            atomic.failWrite(stream)
+            throw failure
+        }
+    }
+
+    fun attached(context: android.content.Context): JSONObject? {
+        val file = File(RiftBootstrapComponentStore.root(context),
+            "shell-attached.json")
+        if (!file.exists() && !File(file.path + ".bak").exists()) return null
+        require(!Files.isSymbolicLink(file.toPath())) { "Shell attached status symlinked" }
+        val bytes = AtomicFile(file).openRead().use {
+            val buf = ByteArray(4097)
+            val count = it.read(buf)
+            require(count in 1..4096 && it.read() == -1) {
+                "Shell attached receipt oversized"
+            }
+            buf.copyOf(count)
+        }
+        return JSONObject(String(bytes, Charsets.UTF_8)).also {
+            require(it.getString("schema") == "riftos.shell.attached/1" &&
+                it.getString("sha256").matches(SHA) &&
+                it.getInt("pid") > 0) { "Shell attached receipt corrupt" }
+        }
+    }
+
+    fun reportStopped(application: Application) {
+        val file = File(RiftBootstrapComponentStore.root(application),
+            "shell-attached.json")
+        val old = runCatching { attached(application) }.getOrNull()
+        if (old?.optInt("pid") == android.os.Process.myPid()) {
+            AtomicFile(file).delete()
+        }
     }
 
     fun status(): JSONObject = JSONObject()
         .put("schema", SCHEMA)
         .put("selected", selection)
+        .put("selectedSha256", selectedSha ?: JSONObject.NULL)
         .put("lastFallback", fallbackReason)
         .put("automaticPromotionEnabled", false)
         .put("inProcessHotSwapEnabled", false)

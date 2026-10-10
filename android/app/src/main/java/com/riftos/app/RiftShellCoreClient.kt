@@ -69,6 +69,10 @@ class RiftShellCoreClient(context: Context) {
                 } else if (extras?.getString("action").orEmpty() in setOf(
                     "execute-module-stage", "execute-module-activate")) {
                     RiftCoreAdminConsent.MODULE_OPERATION_SCHEMA
+                } else if (extras?.getString("action").orEmpty() in setOf(
+                    "execute-protected-stage", "execute-protected-activate",
+                    "execute-protected-accept")) {
+                    RiftCoreAdminConsent.PROTECTED_SCHEMA
                 } else if (extras?.getString("action") == "discover-providers") {
                     "riftos.core.runtime-candidates/1"
                 } else {
@@ -129,7 +133,9 @@ class RiftShellCoreClient(context: Context) {
             "execute-rollback-proof", "execute-registry-proof", "discover-providers",
             "execute-probe-stage", "execute-probe-activate",
             "execute-module-stage", "execute-module-activate",
-            "execute-module-recovery-proof", "window-closed", "status")) {
+            "execute-module-recovery-proof",
+            "execute-protected-stage", "execute-protected-activate",
+            "execute-protected-accept", "window-closed", "status")) {
             "Invalid trusted admin UI action"
         }
         return call(RiftCoreSurfaceIpcProvider.METHOD_SHELL_ADMIN_CONSENT,
@@ -143,7 +149,8 @@ class RiftShellCoreClient(context: Context) {
                 if (dexFd != null) putParcelable("dexFd", dexFd)
                 if (manifestText != null) {
                     require(manifestText.toByteArray(Charsets.UTF_8).size in
-                        1..RiftCoreModuleManifest.MAX_MANIFEST_BYTES) {
+                        1..maxOf(RiftCoreModuleManifest.MAX_MANIFEST_BYTES,
+                            RiftProtectedComponentManifest.MAX_BYTES)) {
                         "Trusted module manifest exceeds IPC bound"
                     }
                     putString("moduleManifest", manifestText)

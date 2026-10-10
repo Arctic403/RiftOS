@@ -210,6 +210,47 @@ internal object RiftBootstrapComponentStore {
         if (marker.exists()) require(marker.delete()) { "Shell startup marker cannot be cleared" }
     }
 
+    /**
+     * Private host-only pointer update used by trusted component activation and
+     * N-1 recovery. Rehash sealed bytes before publishing a new pointer.
+     * This does NOT qualify a candidate or make it safe to run.
+     */
+    @Synchronized
+    fun writeProtectedPointer(context: Context, component: String, candidate: JSONObject) {
+        require(component == "core" || component == "shell") {
+            "Protected activation slot required"
+        }
+        require(candidate.getString("schema") == SCHEMA &&
+            candidate.getInt("api") == 1 &&
+            candidate.getString("component") == component) {
+            "Protected activation identity invalid"
+        }
+        val entrypoint = candidate.getString("entrypoint")
+        val sha = candidate.getString("sha256")
+        validate(component, entrypoint, sha)
+        require(entrypoint.startsWith("com.riftos.external.$component.")) {
+            "Protected component must use an external-only namespace"
+        }
+        verifyCandidate(dexFile(context, component, sha), sha)
+        val pointer = File(ensureRoot(context), "$component.json")
+        atomicWrite(pointer, record(component, entrypoint, sha)
+            .toString().toByteArray(Charsets.UTF_8))
+    }
+
+    @Synchronized
+    fun clearProtectedStartupMarker(context: Context, component: String) {
+        require(component == "core" || component == "shell") {
+            "Critical component marker invalid"
+        }
+        val marker = File(root(context), "$component.booting")
+        require(!Files.isSymbolicLink(marker.toPath())) {
+            "Critical startup marker symlinked"
+        }
+        if (marker.exists()) require(marker.delete()) {
+            "Critical startup marker cannot be cleared"
+        }
+    }
+
     /** Proof-only activation; Core/Shell remain protected embedded implementations. */
     @Synchronized
     fun activateProbe(context: Context, sha: String, entrypoint: String): JSONObject {

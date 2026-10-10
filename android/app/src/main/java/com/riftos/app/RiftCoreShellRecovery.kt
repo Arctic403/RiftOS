@@ -108,9 +108,28 @@ object RiftCoreShellRecovery {
         if (phase != "relaunch-requested" && phase != "waiting-for-android") {
             phase = "shell-process-gone"
             previousPid = ownerPid
-            // The dead graphical owner no longer has authority to receive
-            // input; clear the Core lease without stopping any RAPP session.
-            RiftCoreRuntime.sessions(context).requestFocusFromShell(null)
+            // If the *accepted* external graphical Shell truly disappeared,
+            // reject only that exact observed SHA/PID and restore external N-1.
+            // A pending/unaccepted Shell retains its startup marker and is
+            // recovered by the next Shell process's guarded selector.
+            val attached = runCatching {
+                RiftShellCandidateSwitch.attached(context)
+            }.getOrNull()
+            if (attached?.optInt("pid", -1) == ownerPid) {
+                val sha = attached.optString("sha256")
+                val active = runCatching {
+                    RiftBootstrapComponentStore.active(context, "shell")
+                }.getOrNull()
+                if (active?.optString("sha256") == sha &&
+                    RiftComponentReleaseLedger.isAccepted(context, "shell", sha)) {
+                    RiftProtectedRevisionRecovery.rollback(
+                        context, "shell", "android-shell-process-missing")
+                }
+            }
+            // Core remains the owner of the live RAPP/focus session, whether
+            // embedded or genuinely external. Never instantiate embedded Core
+            // just because the graphical Shell process disappeared.
+            RiftHostCoreComponents.core().focus(context, null)
         }
         if (attempts >= MAX_ATTEMPTS) {
             phase = "relaunch-attempts-exhausted"
@@ -145,8 +164,8 @@ object RiftCoreShellRecovery {
         initialize(context)
         val restore = hasSeenShell && ownerPid > 0 && ownerPid != pid
         val state = if (restore) JSONObject(snapshot.toString()) else JSONObject()
-        val apps = RiftCoreRuntime.lifecycle(context).status().getJSONArray("apps")
-        val installed = RiftCoreRuntime.packages(context).listInstalled()
+        val apps = RiftHostCoreComponents.executionView().runningApps(context)
+        val installed = RiftHostCoreComponents.core().installed(context)
         val installedIds = HashSet<String>()
         for (i in 0 until installed.length()) {
             val item = installed.optJSONObject(i) ?: continue
@@ -208,7 +227,8 @@ object RiftCoreShellRecovery {
         require(disposableId == "c12b2a-input-probe-20261008") {
             "Recovery QA requires the known disposable input probe"
         }
-        val core = RiftCoreRuntime.lifecycle(context).status()
+        val core = JSONObject().put("schema", "riftos.core.apps/1")
+            .put("apps", RiftHostCoreComponents.executionView().runningApps(context))
         val apps = core.getJSONArray("apps")
         require((0 until apps.length()).any {
             val item = apps.optJSONObject(it)
