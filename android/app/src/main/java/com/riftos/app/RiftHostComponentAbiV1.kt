@@ -38,22 +38,56 @@ interface RiftShellPresentationV1 {
     fun close()
 }
 
-/** Host-selected Core implementation. E0 intentionally has no setter/loader. */
+/**
+ * APK-owned Core V1 selector. No in-process switch is permitted: selection is
+ * one-time at bootstrap; after failure, only the known-good embedded Core runs.
+ * A staged candidate cannot be promoted without a verified receipt + pointer.
+ */
 internal object RiftHostCoreComponents {
     const val CORE_SCHEMA = "riftos.host.core-component/1"
     const val SHELL_SCHEMA = "riftos.host.shell-presentation/1"
     const val ABI_VERSION = 1
 
     private val embedded: RiftCoreComponentV1 = EmbeddedCoreComponentV1
+    @Volatile private var selected: RiftCoreComponentV1 = embedded
+    @Volatile private var selectedKind = "embedded"
 
-    fun core(): RiftCoreComponentV1 = embedded
+    fun core(): RiftCoreComponentV1 = selected
+
+    /** Called only once after host-owned recoveries in the actual Core process. */
+    @Synchronized
+    fun initializeAtBoot(application: android.app.Application) {
+        check(selected === embedded && selectedKind == "embedded") {
+            "Core startup selection cannot hot-swap a running implementation"
+        }
+        val candidate = RiftCoreCandidateSwitch.selectAtBoot(application)
+        if (candidate == null) {
+            embedded.initialize(application)
+            return
+        }
+        try {
+            candidate.initialize(application)
+            selected = candidate
+            selectedKind = "external-unaccepted"
+            // A startup marker intentionally stays durable until a future,
+            // separately authorized device acceptance. Process death or reboot
+            // before acceptance selects embedded and revokes the pointer.
+        } catch (failure: Throwable) {
+            RiftCoreCandidateSwitch.fallback(application, "external-startup-exception")
+            selected = embedded
+            selectedKind = "embedded"
+            if (failure is VirtualMachineError || failure is ThreadDeath) throw failure
+            embedded.initialize(application)
+        }
+    }
 
     fun status(): JSONObject = JSONObject()
         .put("schema", CORE_SCHEMA)
         .put("abi", ABI_VERSION)
-        .put("selected", "embedded")
-        .put("externalCoreEnabled", false)
+        .put("selected", selectedKind)
+        .put("externalCoreEnabled", selectedKind == "external-unaccepted")
         .put("externalShellEnabled", false)
+        .put("candidateSwitch", RiftCoreCandidateSwitch.status())
 }
 
 /** Delegates to the exact production Core graph; no duplicate runtime authority. */

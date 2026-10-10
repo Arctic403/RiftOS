@@ -163,6 +163,30 @@ internal object RiftBootstrapComponentStore {
         return File(root(context), component + "-" + sha + ".dex")
     }
 
+    /**
+     * E1 host fallback. Only the fixed Core pointer and its startup marker
+     * are cleared. Preserve immutable candidate bytes and qualification
+     * evidence for forensics/re-evaluation; never clear unrelated modules.
+     * There is deliberately NO Core activation writer in E1.
+     */
+    @Synchronized
+    fun resetCoreToEmbedded(context: Context) {
+        val dir = root(context)
+        require(!Files.isSymbolicLink(dir.toPath())) { "Core rollback root is symlinked" }
+        if (!dir.exists()) return
+        require(dir.isDirectory) { "Core rollback root is not a directory" }
+        val pointer = File(dir, "core.json")
+        for (suffix in listOf("", ".new", ".bak")) {
+            require(!Files.isSymbolicLink(File(pointer.path + suffix).toPath())) {
+                "Core activation rollback target is symlinked"
+            }
+        }
+        AtomicFile(pointer).delete()
+        val marker = File(dir, "core.booting")
+        require(!Files.isSymbolicLink(marker.toPath())) { "Core startup marker is symlinked" }
+        if (marker.exists()) require(marker.delete()) { "Core startup marker cannot be cleared" }
+    }
+
     /** Proof-only activation; Core/Shell remain protected embedded implementations. */
     @Synchronized
     fun activateProbe(context: Context, sha: String, entrypoint: String): JSONObject {

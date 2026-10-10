@@ -1,5 +1,17 @@
 # Build and Validation System
 
+## 2026-10-10 — E1 Core switch Kotlin/source/Builder synchronized (SOURCE ONLY)
+
+New Android `RiftCoreCandidateSwitch.kt` added to the exact Gradle Kotlin source list and `SOURCE_OWNERSHIP`. RiftOS wiring tests check one-time Core initialization, ContentProvider no-eager-init, SHA/ABI/qualification, no-duplicate-class DEX verification, interrupted boot + embedded rollback, and absence of automatic promotion/hot-swap. E1 transitive-closure audit guards the class ownership and the user-signed Builder script/selftest verifies this source, Gradle file list and protected Core switch. No Android Kotlin compilation or signed APK device gate has been run for this local patch; signed #695 remains last known good.
+
+## 2026-10-10 — E1-A cross-repository validation audit (LOCAL SOURCE ONLY)
+
+Compared current RiftOS E1-A against `workspace/Riftos-builder-main` before a user-manual signed build. All **100** Kotlin source files exactly match `android/app/build.gradle.kts` (none missing/extra), and all **35** `check:transport` `node scripts/*.mjs` entries exist. The added E1 test is JavaScript source-only; no Gradle Kotlin allowlist, manifest or Kotlin compiler change belongs to it. Builder's former static 14-script syntax preflight is replaced by a manifest derived from the checked-out `package.json` and fails on unrecognized commands. E1-A is pinned in the Builder mandatory npm check contract, with a conservative class-closure/inactive selector source check and Python Builder selftest. Signed DEX verifier now requires the existing E0 `riftos.host.core-component/1` schema. The signing/packaging workflow remains user-triggered and unchanged. This patch is local/unpushed; complete Node/Gradle/CI is not claimed.
+
+## 2026-10-10 — E0 #695 accepted; E1-A Core class-ownership audit started
+
+Manual signed APK #695 (`c92d8b72319a`) is installed; MCP verified ABI1 embedded, separate real Shell PID, three retained RAPPs and graphical RAPP smoke test. E1-A adds `scripts/test-e1-core-closure.mjs` to the mandatory `npm run check:transport` pipeline and records its ownership; the script checks Kotlin source roots, a conservative dependency graph, host-only classes and unchanged embedded selector, and **always reports `candidateReady=false`**. E1 external Core compilation/loading, narrow host callback design and candidate parity remain pending; no Builder workflow/Android runtime changes. See `docs/systems/android-host/E1_CORE_CANDIDATE.md`.
+
 ## 2026-10-10 — E0 host component V1 source guard (UNBUILT)
 
 `android/app/build.gradle.kts` adds `RiftHostComponentAbiV1.kt` to the exact maintained Kotlin compile source allowlist, with one ownership entry in `docs/SOURCE_OWNERSHIP.md`. `scripts/validate-rift-wiring.mjs` now checks ABI version and embedded-only selection, fixed source-selected Core bootstrap, read-only status, all nine RAPP-focused Core adapter methods reached from trusted IPC, and retention of probe-only critical external activation protection. The source checks do **not** prove Kotlin/Gradle compilation, a valid independent external Core DEX, live device behavior or cold-boot recovery. The separate `workspace/Riftos-builder-main` **local Builder preflight** is now aligned with this E0 route (the old hardcoded `RiftCoreRuntime` snapshot/event markers were updated, and independent ABI/Gradle/embedded-guard plus Builder selftest checks added). These Builder changes are NOT PUSHED or signed; no automatic dispatch. User retains all signed Builder triggers.

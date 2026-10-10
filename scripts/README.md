@@ -1,5 +1,7 @@
 # RiftOS Source Validation Scripts
 
+E1-A adds `test-e1-core-closure.mjs` to the root `check:transport` chain: audits real Core source roots, host ownership and transitive Kotlin dependencies while keeping external candidate readiness **false**; it does not build/load a DEX or authorize Core activation. See the Android-host E1 candidate contract.
+
 These scripts are fast source/protocol regression tests run by root `npm run check` before an Android build. Their owner and maintenance rules are documented in [`../docs/systems/build-validation/README.md`](../docs/systems/build-validation/README.md).
 
 - `validate-rift-wiring.mjs` — full runtime wiring/reachability/import/native-route/asset/syntax validation.

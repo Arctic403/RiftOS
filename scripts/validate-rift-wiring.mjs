@@ -215,7 +215,7 @@ for (const required of ['class RiftCoreApplication : Application()', 'RiftBootst
 for (const required of ['interface RiftBootstrapEntry', 'object RiftBootstrapHost',
   'fun startCore(application: Application)', 'fun prepareShell(application: Application)',
   'RiftCoreAdminRollbackProof.recover(application)', 'RiftCoreAdminRegistryProof.recover(application)',
-  'RiftHostCoreComponents.core().initialize(application)', 'RiftCoreShellRecovery.initialize(application)',
+  'RiftHostCoreComponents.initializeAtBoot(application)', 'RiftCoreShellRecovery.initialize(application)',
   'RiftMcpRuntime.relayClient(application).start()', 'RiftBrowserWindow.prepareRemoteShellWebViewDirectory()',
   'DexClassLoader(', 'Module bootstrap already in progress',
   'inProgress.exists()', 'embedded.start(application)']) {
@@ -248,7 +248,7 @@ for (const marker of ['if (id != "probe")', 'start(application, "probe"',
   'RiftBootstrapComponentStore.active(application, id)',
   'RiftBootstrapComponentStore.recoverProbe(application)',
   'RiftBootstrapComponentStore.dexFile(application, id, sha)',
-  'criticalExternalActivationEnabled", false', 'inProcessHotSwapEnabled", false',
+  'RiftHostCoreComponents.status().optBoolean("externalCoreEnabled", false)', 'inProcessHotSwapEnabled", false',
   'probeProofPresent',
   'application.classLoader.loadClass(className)']) {
   if (!bootstrapHost.includes(marker)) fail(`Bootstrap proof-only loader gate missing: ${marker}`);
@@ -271,6 +271,32 @@ const probePolicy = read(`${kotlinDir}/RiftCoreSystemCapabilities.kt`);
 const probeClient = read(`${kotlinDir}/RiftShellCoreClient.kt`);
 const probeProvider = read(`${kotlinDir}/RiftCoreSurfaceIpcProvider.kt`);
 const e0HostComponent = read(`${kotlinDir}/RiftHostComponentAbiV1.kt`);
+const e1CoreSwitch = read(`${kotlinDir}/RiftCoreCandidateSwitch.kt`);
+for (const marker of [
+  'internal object RiftCoreCandidateSwitch',
+  'RiftBootstrapComponentStore.active(application, "core")',
+  'RiftBootstrapComponentStore.resetCoreToEmbedded(application)',
+  'fun selectAtBoot(application: Application): RiftCoreComponentV1?',
+  'Independent Core qualification receipt missing',
+  'Core candidate contains an unexpected package',
+  'Core candidate duplicates an APK-owned class',
+  'Core candidate entrypoint missing',
+  'Core candidate did not implement APK-owned Core V1 ABI',
+  'Core DEX SHA mismatch',
+  'unaccepted-core-startup',
+  'automaticPromotionEnabled", false',
+  'inProcessHotSwapEnabled", false',
+]) if (!e1CoreSwitch.includes(marker)) {
+  fail(`E1 fail-safe Core selection verification missing: ${marker}`);
+}
+for (const marker of ['fun resetCoreToEmbedded(context: Context)',
+  'AtomicFile(pointer).delete()', 'core.booting']) {
+  if (!bootstrapStore.includes(marker)) fail(`E1 embedded Core rollback missing: ${marker}`);
+}
+if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreCandidateSwitch.kt"')) {
+  fail('E1 guarded Core candidate selector missing from exact Gradle Kotlin sources');
+}
+
 for (const marker of ['interface RiftCoreComponentV1',
   'interface RiftShellPresentationV1',
   'object RiftHostCoreComponents',
@@ -278,8 +304,9 @@ for (const marker of ['interface RiftCoreComponentV1',
   'SHELL_SCHEMA = "riftos.host.shell-presentation/1"',
   'ABI_VERSION = 1',
   'private val embedded: RiftCoreComponentV1 = EmbeddedCoreComponentV1',
-  'fun core(): RiftCoreComponentV1 = embedded',
-  'externalCoreEnabled", false', 'externalShellEnabled", false',
+  'fun core(): RiftCoreComponentV1 = selected',
+  'fun initializeAtBoot(application: android.app.Application)',
+  'selectedKind == "external-unaccepted"', 'externalShellEnabled", false',
   'override fun snapshot(', 'override fun installed(', 'override fun open(',
   'override fun reattach(', 'override fun stop(', 'override fun focus(',
   'override fun event(', 'override fun install(', 'override fun uninstall(']) {
@@ -301,9 +328,10 @@ for (const marker of [
   if (!e0HostComponent.includes(marker))
     fail(`E0 embedded Core delegation changed or missing: ${marker}`);
 }
-if (!bootstrapHost.includes('RiftHostCoreComponents.core().initialize(application)') ||
+if (!bootstrapHost.includes('RiftHostCoreComponents.initializeAtBoot(application)') ||
     !coreRuntime.includes('.put("hostComponents", RiftHostCoreComponents.status())') ||
-    !probeProvider.includes('RiftHostCoreComponents.core().initialize(ctx)') ||
+    !probeProvider.includes('RiftCoreShellRemoteUiBroker.ensureRegistered()') ||
+    probeProvider.includes('RiftHostCoreComponents.core().initialize(ctx)') ||
     !gradle.includes('"src/main/java/com/riftos/app/RiftHostComponentAbiV1.kt"')) {
   fail('E0 embedded host component must be selected at boot, reported and included in exact Android Kotlin source set');
 }
@@ -320,7 +348,7 @@ if (probeProvider.includes('RiftCoreRuntime.')) {
 // E0 must not accidentally activate a critical component or change the trusted
 // Android signer/PID/one-use consent, shell lease and App/Service authority.
 for (const marker of ['if (id != "probe")',
-  'criticalExternalActivationEnabled", false',
+  'RiftHostCoreComponents.status().optBoolean("externalCoreEnabled", false)',
   'RiftCoreAdminRollbackProof.recover(application)',
   'RiftCoreAdminRegistryProof.recover(application)']) {
   if (!bootstrapHost.includes(marker)) fail(`E0 bootstrap critical protection missing: ${marker}`);

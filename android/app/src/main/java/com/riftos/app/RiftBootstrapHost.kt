@@ -12,7 +12,9 @@ import java.security.MessageDigest
 /**
  * Stable Android process entrypoint and compatibility fallback. The two
  * critical components still run embedded until physical modularization proof.
- * Only "probe" may load separately installed DEX on process startup.
+ * Probe remains the only component eligible for generic bootstrap loading.
+ * Core uses a separate verified V1 selection route with embedded failback;
+ * Shell remains embedded. No production Core qualification writer is exposed.
  */
 interface RiftBootstrapEntry {
     fun start(application: Application)
@@ -49,7 +51,8 @@ internal object RiftBootstrapHost {
             .put("probeInterruptedBoot", File(root, "probe.booting").exists())
             .put("probeProofPresent", proof != null)
             .put("probeProof", proof ?: JSONObject.NULL)
-            .put("criticalExternalActivationEnabled", false)
+            .put("criticalExternalActivationEnabled",
+                RiftHostCoreComponents.status().optBoolean("externalCoreEnabled", false))
             .put("inProcessHotSwapEnabled", false)
             .put("embeddedFallbackAvailable", true)
     }
@@ -65,7 +68,7 @@ internal object RiftBootstrapHost {
             .onFailure { Log.e("RiftModuleHost", "Pending module rollback failed", it) }
         start(application, "core", object : RiftBootstrapEntry {
             override fun start(application: Application) {
-                RiftHostCoreComponents.core().initialize(application)
+                RiftHostCoreComponents.initializeAtBoot(application)
                 RiftCoreShellRecovery.initialize(application)
                 RiftMcpRuntime.relayClient(application).start()
             }
@@ -88,9 +91,8 @@ internal object RiftBootstrapHost {
     }
 
     private fun start(application: Application, id: String, embedded: RiftBootstrapEntry) {
-        // Current Android manifest components and Core services are still
-        // compiled inside the APK. Never let an experimental DEX replace
-        // either critical process entrypoint before device-proven extraction.
+        // Generic bootstrap loading remains probe-only. Core V1 candidate
+        // selection is a separate guarded component path; Shell stays embedded.
         if (id != "probe") {
             embedded.start(application)
             return

@@ -50,8 +50,11 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
     }
 
     override fun onCreate(): Boolean {
-        val ctx = context?.applicationContext ?: return false
-        RiftHostCoreComponents.core().initialize(ctx)
+        if (context?.applicationContext == null) return false
+        // Android constructs providers before Application.onCreate(). Do not
+        // initialize the embedded Core here: the main-process bootstrap must
+        // select exactly one Core implementation before any Core state exists.
+        // IPC requests are delivered only after Application.onCreate().
         RiftCoreShellRemoteUiBroker.ensureRegistered()
         return true
     }

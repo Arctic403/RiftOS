@@ -1,5 +1,13 @@
 # RiftOS Core ↔ RiftShell — canonical architecture (C1 series)
 
+## 2026-10-10 — E1 startup-only Core selection, embedded remains known-good
+
+`RiftHostCoreComponents.initializeAtBoot` now allows a *future* independently verified Core candidate only with an exact private qualification receipt and SHA/ABI/class closure checks, and keeps a durable unaccepted boot marker until separately authorized acceptance. Invalid/missing candidate or startup exception falls back embedded; interrupted process start revokes candidate pointer on next boot. ContentProvider no longer eagerly constructs Core before Application; Shell still accesses authenticated V1 Binder routes. Other direct `RiftCoreRuntime` imports still need true extraction, and no Core APK replacement/qualification writer or device-verified external Core exists. Do NOT claim external takeover is currently proven or safe.
+
+## 2026-10-10 — E0 #695 installed EMBEDDED PASS; E1-A separate Core ownership audit
+
+Manual signed APK #695 source `c92d8b72319a` was verified live: ABI1 `selected=embedded`, external Core/Shell OFF, Core PID19450 vs real graphical Shell PID19421, three retained RAPPs; the existing Module Builder RAPP launched with Core session gen1 and visible 15-node surface revision2. E0 embedded compatibility accepted. E1-A now inventories the actual executable Core transitive Kotlin closure and host-only Binder/consent/Android edges (`scripts/test-e1-core-closure.mjs`, `docs/systems/android-host/E1_CORE_CANDIDATE.md`); not an external DEX build, load or selection. E1-B/C/D remain pending and E2 activation still forbidden. Below E0 source-only notes are historical.
+
 ## 2026-10-10 — E0 Core implementation boundary (LOCAL SOURCE ONLY)
 
 Actual Core and `:riftShell` Android process split remains completed; E0 is extracting code ownership. New stable-in-APK interface `RiftCoreComponentV1` decouples **CoreRAPP** catalogue/surface/lifecycle/reattach/focus/event/install/uninstall paths from `RiftCoreSurfaceIpcProvider`. Provider keeps authentication of exact real Shell caller, ID and event bounds, Core admin consent, remote UI and desktop recovery controls. Embedded adapter delegates to **exact existing** `RiftCoreRuntime` and preserves Core-owned state, proof and attachment generations. `RiftShellPresentationV1` is declared but not yet selected or executed; current `RiftShellActivity` still owns the real graphical desktop/presenter. No external Core/Shell activation, no second Core authority, no privileged runtime registration, and no new process/restart. This is an E0 source candidate pending Kotlin compile/manual user-signed Android proof.
