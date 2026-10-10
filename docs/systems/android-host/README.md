@@ -1,5 +1,10 @@
 # Android Host
 
+## 2026-10-10 — E0 versioned component ABI and still-embedded startup (LOCAL SOURCE ONLY)
+
+Added `RiftHostComponentAbiV1.kt`: the **APK-owned** `RiftCoreComponentV1` JSON/Android-Context interface for RAPP snapshot, catalogue, open, reattach, stop, focus, bounded input events and package install/uninstall, plus the declared `RiftShellPresentationV1` lifecycle envelope for future real graphical Shell extraction. `RiftHostCoreComponents` deliberately selects ONLY `EmbeddedCoreComponentV1`; no external Core/Shell selector/setter or loader exists. `RiftBootstrapHost.startCore` calls that adapter after existing host-owned admin/registry/module recoveries, while `RiftCoreSurfaceIpcProvider` retains OS-authenticated caller identity, route validation, protected admin approval, Android components and bounded results. `RiftCoreRuntime.status` adds read-only `hostComponents` status: selected=embedded, ABI1, externalCoreEnabled=false, externalShellEnabled=false. **The critical probe-only loader guard remains locked.** No independently built portable Core exists yet. This new Kotlin source is not compiled/device-proven until the USER runs a future manual signed Builder.
+
+
 ## 2026-10-10 — Gate 2-C host interruption proof without Android process kill (UNPUSHED)
 
 The same-UID `:riftModuleHost` remains unchanged. Core now snapshots only a previously verified active module receipt with its prior activation pointer; rollback validates and restores both. The bounded `module.recovery.proof` test creates a temporary pending-startup record for the SAME already active module, runs the Core recovery code, and checks the original activation/proof nonce is restored without launching any DEX or terminating Android Core/Shell/Host processes. Direct Core consumed stage-ticket replay runs from the trusted native Admin Approvals Shell client. A later separate cold-boot proof remains necessary; no new Android process/component is registered.

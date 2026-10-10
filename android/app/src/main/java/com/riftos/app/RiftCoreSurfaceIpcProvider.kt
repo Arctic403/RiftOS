@@ -51,7 +51,7 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
 
     override fun onCreate(): Boolean {
         val ctx = context?.applicationContext ?: return false
-        RiftCoreRuntime.initialize(ctx)
+        RiftHostCoreComponents.core().initialize(ctx)
         RiftCoreShellRemoteUiBroker.ensureRegistered()
         return true
     }
@@ -110,40 +110,15 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
         val response = when (method) {
             METHOD_SNAPSHOT -> {
                 require(id.isNotBlank() && id.length <= MAX_APP_ID) { "Core IPC app ID invalid" }
-                val snapshot = RiftCoreRuntime.surfaces(ctx).snapshot(id)
-                val result = JSONObject()
-                    .put("schema", SCHEMA)
-                    .put("owner", "riftos-core")
-                    .put("corePid", Process.myPid())
-                    .put("appId", id)
-                    .put("present", snapshot != null)
-                if (snapshot != null) {
-                    val frame = snapshot.frame
-                    require(frame.nodes.size <= MAX_FRAME_NODES) { "Core IPC frame node bound" }
-                    val nodes = JSONArray()
-                    for (node in frame.nodes) {
-                        nodes.put(JSONObject()
-                            .put("kind", node.kind).put("id", node.id)
-                            .put("parentId", node.parentId)
-                            .put("x", node.x).put("y", node.y)
-                            .put("width", node.width).put("height", node.height)
-                            .put("z", node.z).put("flags", node.flags)
-                            .put("text", node.text))
-                    }
-                    result.put("attachmentGeneration", snapshot.attachmentGeneration)
-                        .put("revision", snapshot.revision)
-                        .put("layout", frame.layout)
-                        .put("nodes", nodes)
-                }
-                result
+                RiftHostCoreComponents.core().snapshot(ctx, id)
             }
             METHOD_SHELL_APPS -> JSONObject()
                 .put("schema", "riftos.core.shell-control/1")
                 .put("corePid", Process.myPid())
-                .put("apps", RiftCoreRuntime.packages(ctx).listInstalled())
+                .put("apps", RiftHostCoreComponents.core().installed(ctx))
             METHOD_SHELL_START -> {
                 require(id.isNotBlank() && id.length <= MAX_APP_ID) { "Core IPC app ID invalid" }
-                val state = RiftCoreRuntime.lifecycle(ctx).openForShell(id)
+                val state = RiftHostCoreComponents.core().open(ctx, id)
                 JSONObject().put("schema", "riftos.core.shell-control/1")
                     .put("corePid", Process.myPid())
                     .put("app", state)
@@ -155,8 +130,7 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
                 val expected = extras?.getLong("attachmentGeneration", -1L) ?: -1L
                 JSONObject().put("schema", "riftos.core.shell-control/1")
                     .put("corePid", Process.myPid())
-                    .put("app", RiftCoreRuntime.lifecycle(ctx)
-                        .reattachForShell(id, expected))
+                    .put("app", RiftHostCoreComponents.core().reattach(ctx, id, expected))
             }
             METHOD_SHELL_STOP -> {
                 require(id.isNotBlank() && id.length <= MAX_APP_ID) { "Core IPC app ID invalid" }
@@ -164,14 +138,13 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
                 require(expected > 0L) { "Core IPC shell stop requires generation" }
                 JSONObject().put("schema", "riftos.core.shell-control/1")
                     .put("corePid", Process.myPid())
-                    .put("app", RiftCoreRuntime.lifecycle(ctx).stopForShell(id, expected))
+                    .put("app", RiftHostCoreComponents.core().stop(ctx, id, expected))
             }
             METHOD_SHELL_FOCUS -> {
                 require(id.length <= MAX_APP_ID) { "Core IPC focus ID invalid" }
                 JSONObject().put("schema", "riftos.core.shell-control/1")
                     .put("corePid", Process.myPid())
-                    .put("focus", RiftCoreRuntime.sessions(ctx)
-                        .requestFocusFromShell(id.takeIf { it.isNotBlank() }))
+                    .put("focus", RiftHostCoreComponents.core().focus(ctx, id.takeIf { it.isNotBlank() }))
             }
             METHOD_SHELL_UI_POLL -> RiftCoreShellRemoteUiBroker.poll()
                 .put("corePid", Process.myPid())
@@ -273,7 +246,7 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
                 require(id.length in 1..256) { "Core package install path invalid" }
                 JSONObject().put("schema", "riftos.core.shell-control/1")
                     .put("corePid", Process.myPid())
-                    .put("packageResult", RiftCoreRuntime.buildPlatform(ctx).installRapp(id))
+                    .put("packageResult", RiftHostCoreComponents.core().install(ctx, id))
             }
             METHOD_SHELL_UNINSTALL -> {
                 require(id.isNotBlank() && id.length <= MAX_APP_ID) {
@@ -281,7 +254,7 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
                 }
                 JSONObject().put("schema", "riftos.core.shell-control/1")
                     .put("corePid", Process.myPid())
-                    .put("packageResult", RiftCoreRuntime.buildPlatform(ctx).uninstallRapp(id))
+                    .put("packageResult", RiftHostCoreComponents.core().uninstall(ctx, id))
             }
             METHOD_SHELL_EVENT -> {
                 require(id.isNotBlank() && id.length <= MAX_APP_ID) { "Core IPC app ID invalid" }
@@ -300,17 +273,16 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
                 require(text.toByteArray(Charsets.UTF_8).size <= 4096) {
                     "Core IPC event input size exceeded"
                 }
-                val event = RiftAppAbi.Event(
-                    kind = kind, targetId = b.getInt("targetId", -1),
-                    arg0 = b.getInt("arg0"), arg1 = b.getInt("arg1"),
-                    arg2 = b.getInt("arg2"), arg3 = b.getInt("arg3"),
-                    text = text
-                )
+                val event = JSONObject()
+                    .put("kind", kind).put("targetId", b.getInt("targetId", -1))
+                    .put("arg0", b.getInt("arg0")).put("arg1", b.getInt("arg1"))
+                    .put("arg2", b.getInt("arg2")).put("arg3", b.getInt("arg3"))
+                    .put("text", text)
                 val generation = b.getLong("attachmentGeneration", -1L)
                 require(generation > 0L) { "Core IPC stale generation" }
                 JSONObject().put("schema", "riftos.core.shell-control/1")
                     .put("corePid", Process.myPid())
-                    .put("receipt", RiftCoreRuntime.lifecycle(ctx).offerEvent(id, generation, event))
+                    .put("receipt", RiftHostCoreComponents.core().event(ctx, id, generation, event))
             }
             else -> error("Core IPC method unsupported")
         }

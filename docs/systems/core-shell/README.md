@@ -1,5 +1,10 @@
 # RiftOS Core ↔ RiftShell — canonical architecture (C1 series)
 
+## 2026-10-10 — E0 Core implementation boundary (LOCAL SOURCE ONLY)
+
+Actual Core and `:riftShell` Android process split remains completed; E0 is extracting code ownership. New stable-in-APK interface `RiftCoreComponentV1` decouples **CoreRAPP** catalogue/surface/lifecycle/reattach/focus/event/install/uninstall paths from `RiftCoreSurfaceIpcProvider`. Provider keeps authentication of exact real Shell caller, ID and event bounds, Core admin consent, remote UI and desktop recovery controls. Embedded adapter delegates to **exact existing** `RiftCoreRuntime` and preserves Core-owned state, proof and attachment generations. `RiftShellPresentationV1` is declared but not yet selected or executed; current `RiftShellActivity` still owns the real graphical desktop/presenter. No external Core/Shell activation, no second Core authority, no privileged runtime registration, and no new process/restart. This is an E0 source candidate pending Kotlin compile/manual user-signed Android proof.
+
+
 ## 2026-10-10 — Gate 2-C trusted replay and interrupted-start journal proof (UNPUSHED)
 
 The previously signed #689 device-proved generic `example.alternate-proof` execution, denied approvals, Core SHA rejection, failed-entrypoint rollback and restored known-good execution. To fill remaining gaps, `RiftNativeAdminApprovals.kt` adds opt-in direct **same-bearer** stage replay through the existing authenticated Shell→Core Binder path; no new public RAPP operation. `RiftCoreAdminConsent.kt` adds a separate one-use exact `module.recovery.proof` scoped to the **already active** module ID/revision and checks the same foreground Shell PID/signer. `RiftCoreModuleActivation.kt` uses its actual journal+pending marker+recover functions in a non-crashing bounded simulation and preserves a prior nonce-bound execution proof in the rollback journal. This is not Core process-kill or cold-boot recovery proof. All new source is unbuilt and unpushed, with user-owned signed Builder and no changes to critical Core/Shell components or runtime providers.

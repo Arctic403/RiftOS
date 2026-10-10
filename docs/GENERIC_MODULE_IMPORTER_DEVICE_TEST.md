@@ -1,8 +1,8 @@
 # Gate 2 generic module — user-manual device proof
 
-**Signed Android build remains USER-triggered.** The user subsequently authorized the assistant to run bounded RiftOS Local Agent UI tests and RiftShell package/install commands; these are allowed only while available and within the user's request. Do not push RiftOS without explicit permission. Signed #689 (source `72094e4df8b2`) device-proved the Gate 2 positive path and negative tests; new Gate 2-C source remains **UNBUILT/UNPUSHED** until a separate reviewed build.
+**Signed Android build remains USER-triggered.** The user authorized bounded RiftOS Local Agent UI tests and RiftShell diagnostics, not automatic Builder dispatch or repository push. Gate 2 generic module positive proof and negative stages were performed on #689; Gate 2-C **direct consumed Core stage bearer replay PASSED on signed #690** and **real journal/restore recovery simulation PASSED on signed #691** (`b352bec485073e1f9071c5398e5ed829407213ff`). Core status after #691 was healthy, original module ID/nonce historical receipt restored and no pending startup. **Real process-death/cold-boot interrupted restart is not proven**, and private failed-import directory cleanup needs its own observation. Python/Node/runtime-provider enrollment deferred until Core/Shell component extraction is complete.
 
-## Gate 2-C — Controlled recovery + direct Core replay (NEW SOURCE, not yet device-proven)
+## Gate 2-C — Controlled recovery + direct Core replay (DEVICE-PROVEN on #690/#691)
 
 **Prerequisite:** User manually dispatches signed RiftOS Builder from the eventual reviewed Gate 2-C push, installs it and verifies `core status.moduleHost.activeId=example.alternate-proof`, `proofPresent=true`, `pendingStartup=false`, no extra grants/providers. Do **not** use older #689 to look for new test buttons.
 

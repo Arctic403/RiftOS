@@ -65,7 +65,7 @@ internal object RiftBootstrapHost {
             .onFailure { Log.e("RiftModuleHost", "Pending module rollback failed", it) }
         start(application, "core", object : RiftBootstrapEntry {
             override fun start(application: Application) {
-                RiftCoreRuntime.initialize(application)
+                RiftHostCoreComponents.core().initialize(application)
                 RiftCoreShellRecovery.initialize(application)
                 RiftMcpRuntime.relayClient(application).start()
             }

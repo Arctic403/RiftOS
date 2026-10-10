@@ -206,7 +206,7 @@ for (const required of ['class RiftCoreApplication : Application()', 'RiftBootst
 for (const required of ['interface RiftBootstrapEntry', 'object RiftBootstrapHost',
   'fun startCore(application: Application)', 'fun prepareShell(application: Application)',
   'RiftCoreAdminRollbackProof.recover(application)', 'RiftCoreAdminRegistryProof.recover(application)',
-  'RiftCoreRuntime.initialize(application)', 'RiftCoreShellRecovery.initialize(application)',
+  'RiftHostCoreComponents.core().initialize(application)', 'RiftCoreShellRecovery.initialize(application)',
   'RiftMcpRuntime.relayClient(application).start()', 'RiftBrowserWindow.prepareRemoteShellWebViewDirectory()',
   'DexClassLoader(', 'Module bootstrap already in progress',
   'inProgress.exists()', 'embedded.start(application)']) {
@@ -261,6 +261,46 @@ const probeAdmin = read(`${kotlinDir}/RiftCoreAdminConsent.kt`);
 const probePolicy = read(`${kotlinDir}/RiftCoreSystemCapabilities.kt`);
 const probeClient = read(`${kotlinDir}/RiftShellCoreClient.kt`);
 const probeProvider = read(`${kotlinDir}/RiftCoreSurfaceIpcProvider.kt`);
+const e0HostComponent = read(`${kotlinDir}/RiftHostComponentAbiV1.kt`);
+for (const marker of ['interface RiftCoreComponentV1',
+  'interface RiftShellPresentationV1',
+  'object RiftHostCoreComponents',
+  'CORE_SCHEMA = "riftos.host.core-component/1"',
+  'SHELL_SCHEMA = "riftos.host.shell-presentation/1"',
+  'ABI_VERSION = 1',
+  'private val embedded: RiftCoreComponentV1 = EmbeddedCoreComponentV1',
+  'fun core(): RiftCoreComponentV1 = embedded',
+  'externalCoreEnabled", false', 'externalShellEnabled", false',
+  'override fun snapshot(', 'override fun installed(', 'override fun open(',
+  'override fun reattach(', 'override fun stop(', 'override fun focus(',
+  'override fun event(', 'override fun install(', 'override fun uninstall(']) {
+  if (!e0HostComponent.includes(marker)) fail(`E0 Core/Shell fixed host ABI missing: ${marker}`);
+}
+if (!bootstrapHost.includes('RiftHostCoreComponents.core().initialize(application)') ||
+    !coreRuntime.includes('.put("hostComponents", RiftHostCoreComponents.status())') ||
+    !probeProvider.includes('RiftHostCoreComponents.core().initialize(ctx)') ||
+    !gradle.includes('"src/main/java/com/riftos/app/RiftHostComponentAbiV1.kt"')) {
+  fail('E0 embedded host component must be selected at boot, reported and included in exact Android Kotlin source set');
+}
+for (const marker of ['.snapshot(ctx, id)', '.installed(ctx)', '.open(ctx, id)',
+  '.reattach(ctx, id, expected)', '.stop(ctx, id, expected)',
+  '.focus(ctx, id.takeIf { it.isNotBlank() })',
+  '.event(ctx, id, generation, event)', '.install(ctx, id)', '.uninstall(ctx, id)']) {
+  if (!probeProvider.includes(marker))
+    fail(`E0 Core authenticated IPC route not traversing V1 component: ${marker}`);
+}
+if (probeProvider.includes('RiftCoreRuntime.')) {
+  fail('E0 Core authenticated Binder gateway cannot bypass host-selected component for RAPP state operations');
+}
+// E0 must not accidentally activate a critical component or change the trusted
+// Android signer/PID/one-use consent, shell lease and App/Service authority.
+for (const marker of ['if (id != "probe")',
+  'criticalExternalActivationEnabled", false',
+  'RiftCoreAdminRollbackProof.recover(application)',
+  'RiftCoreAdminRegistryProof.recover(application)']) {
+  if (!bootstrapHost.includes(marker)) fail(`E0 bootstrap critical protection missing: ${marker}`);
+}
+
 const probeUi = read(`${kotlinDir}/RiftNativeAdminApprovals.kt`);
 const probeApps = read(`${kotlinDir}/RiftNativeSystemApps.kt`);
 const probeActivity = read(`${kotlinDir}/RiftShellActivity.kt`);

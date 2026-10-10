@@ -81,6 +81,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftExternalRuntimeProviders.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCoreApplication.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBootstrapHost.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftHostComponentAbiV1.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBootstrapComponentStore.kt` | `docs/systems/android-host/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBootstrapProbeService.kt` | `docs/systems/android-host/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCoreModuleManifest.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |

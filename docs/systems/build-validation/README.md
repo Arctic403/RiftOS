@@ -1,5 +1,10 @@
 # Build and Validation System
 
+## 2026-10-10 — E0 host component V1 source guard (UNBUILT)
+
+`android/app/build.gradle.kts` adds `RiftHostComponentAbiV1.kt` to the exact maintained Kotlin compile source allowlist, with one ownership entry in `docs/SOURCE_OWNERSHIP.md`. `scripts/validate-rift-wiring.mjs` now checks ABI version and embedded-only selection, fixed source-selected Core bootstrap, read-only status, all nine RAPP-focused Core adapter methods reached from trusted IPC, and retention of probe-only critical external activation protection. The source checks do **not** prove Kotlin/Gradle compilation, a valid independent external Core DEX, live device behavior or cold-boot recovery. The separate `workspace/Riftos-builder-main` **local Builder preflight** is now aligned with this E0 route (the old hardcoded `RiftCoreRuntime` snapshot/event markers were updated, and independent ABI/Gradle/embedded-guard plus Builder selftest checks added). These Builder changes are NOT PUSHED or signed; no automatic dispatch. User retains all signed Builder triggers.
+
+
 ## 2026-10-10 — Gate 2-C source contracts and exact user test gates (UNBUILT)
 
 The existing Kotlin source allowlist and documentation ownership ledger remain unchanged: no new platform Kotlin source files were added. `scripts/validate-rift-wiring.mjs` now guards safe cleanup of failed module-ID directory/payload artifacts, direct same-bearer Core Binder replay and exact one-use authenticated `module.recovery.proof` dispatch, noncrashing real-journal rollback and nonce-bound historical proof restoration. Tests are source-contract checks until the user manually dispatches the signed RiftOS Builder. The separate live-device proof must distinguish actual Core bearer replay, controlled journal recovery, and STILL UNPROVEN real Core process-death/cold-boot recovery. See `docs/GENERIC_MODULE_IMPORTER_DEVICE_TEST.md`. Do not modify Riftos-builder.
