@@ -30,7 +30,10 @@ internal object RiftCoreSystemCapabilities {
         "process.protected.kill"
     )
 
-    private val PROBE_ONLY_AUDIT = setOf("bootstrap.probe.stage", "bootstrap.probe.activate")
+    private val PROBE_ONLY_AUDIT = setOf(
+        "bootstrap.probe.stage", "bootstrap.probe.activate",
+        "module.stage", "module.activate"
+    )
     private val SAFE_ACTOR = Regex("^[A-Za-z0-9._:-]{1,96}$")
 
     /**

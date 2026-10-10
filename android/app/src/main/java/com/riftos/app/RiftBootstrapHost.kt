@@ -61,6 +61,8 @@ internal object RiftBootstrapHost {
             .onFailure { Log.e("RiftCoreAdmin", "Rollback recovery failed", it) }
         runCatching { RiftCoreAdminRegistryProof.recover(application) }
             .onFailure { Log.e("RiftCoreAdmin", "Registry recovery failed", it) }
+        runCatching { RiftCoreModuleActivation.recover(application) }
+            .onFailure { Log.e("RiftModuleHost", "Pending module rollback failed", it) }
         start(application, "core", object : RiftBootstrapEntry {
             override fun start(application: Application) {
                 RiftCoreRuntime.initialize(application)

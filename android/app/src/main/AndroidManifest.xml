@@ -48,6 +48,13 @@
             android:process=":riftBootstrapProbe"
             android:stopWithTask="true" />
 
+        <!-- Reusable trusted DEX module host; separate process, same APK UID. -->
+        <service
+            android:name=".RiftGenericModuleService"
+            android:exported="false"
+            android:process=":riftModuleHost"
+            android:stopWithTask="true" />
+
         <service
             android:name=".RiftNativeBufferCompilerService"
             android:exported="false"

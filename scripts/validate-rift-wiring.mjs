@@ -308,6 +308,110 @@ if (!probeApps.includes('adminApprovals.onActivityResult(') ||
     !probeActivity.includes('systemApps.onActivityResult(')) {
   fail('Bootstrap native Android document picker result must reach approvals UI');
 }
+// Gate 2-A: reusable module admission data contracts. This is stage-only;
+// a code execution bridge and user-approved activation are NOT yet enabled.
+const genericModuleManifest = read(`${kotlinDir}/RiftCoreModuleManifest.kt`);
+const genericModuleStore = read(`${kotlinDir}/RiftCoreModuleStore.kt`);
+for (const marker of ['riftos.module/1', 'dex-service-v1',
+  'riftos.bootstrap-entry/1', 'requestedCapabilities', 'dependencies',
+  'keys == KEYS', 'Module $key must be a JSON string',
+  'manifestDigest', 'identityDigest()', 'Module manifest requires exact v1 fields']) {
+  if (!genericModuleManifest.includes(marker)) fail(`Generic module manifest contract missing: ${marker}`);
+}
+for (const marker of ['riftos.core.module-stage/1',
+  'RiftCoreModuleManifest.parse(manifestBytes)',
+  'File.createTempFile(', 'output.fd.sync()', 'temporary.setReadOnly()',
+  'verifyDex(temporary, manifest.sha256)', 'AtomicFile(file)',
+  'File(directory, "$revision.dex")',
+  '.put("activated", false)', '.put("runtimeProviderRegistered", false)']) {
+  if (!genericModuleStore.includes(marker)) fail(`Generic module stage-only store contract missing: ${marker}`);
+}
+// Gate 2-A: only the trusted shell's one-use manifest-bound stage path.
+for (const marker of ['MODULE_STAGE = "module.stage"',
+  '"module://stage/" + manifest.identityDigest()',
+  'RiftCoreModuleStore.stage(context, input, stream)',
+  'executeModuleStage(', 'generic-module-stage', 'tickets.remove(bearer)']) {
+  if (!probeAdmin.includes(marker)) fail(`Core manifest-bound stage approval missing: ${marker}`);
+}
+for (const marker of ['"execute-module-stage" ->',
+  'RiftCoreAdminConsent.executeModuleStage(']) {
+  if (!probeProvider.includes(marker)) fail(`Core module staging Binder dispatcher missing: ${marker}`);
+}
+for (const marker of ['"execute-module-stage"',
+  'putString("moduleManifest", manifestText)',
+  'RiftCoreAdminConsent.MODULE_OPERATION_SCHEMA']) {
+  if (!probeClient.includes(marker)) fail(`Trusted module staging client contract missing: ${marker}`);
+}
+for (const marker of ['Select trusted module manifest from RiftOS Files',
+  'readGenericModuleChoice(', 'pickGenericModule(', 'stageGenericModule(',
+  'Module changed since user-approved stage request',
+  'client.adminConsent("execute-module-stage"',
+  'ParcelFileDescriptor.MODE_READ_ONLY']) {
+  if (!probeUi.includes(marker)) fail(`Trusted generic module stage UI contract missing: ${marker}`);
+}
+if (!probePolicy.includes('"module.stage"') ||
+    !probeAdmin.includes('MODULE_OPERATION_SCHEMA')) {
+  fail('Generic module stage must be audited and response-bound');
+}
+const genericModuleActivation = read(`${kotlinDir}/RiftCoreModuleActivation.kt`);
+const genericModuleService = read(`${kotlinDir}/RiftGenericModuleService.kt`);
+const androidManifest = read('android/app/src/main/AndroidManifest.xml');
+for (const marker of ['MODULE_ACTIVATE = "module.activate"',
+  'fun executeModuleActivate(', 'RiftCoreModuleStore.staged(context, id, revision)',
+  'RiftCoreModuleActivation.activate(context, id, revision)',
+  'Intent(context, RiftGenericModuleService::class.java)',
+  'generic-module-activate', 'tickets.remove(bearer)']) {
+  if (!probeAdmin.includes(marker)) fail(`Core generic module activation gate missing: ${marker}`);
+}
+for (const marker of ['"execute-module-activate" ->',
+  'RiftCoreAdminConsent.executeModuleActivate(']) {
+  if (!probeProvider.includes(marker)) fail(`Protected generic module activation Binder gateway missing: ${marker}`);
+}
+for (const marker of ['"execute-module-activate"',
+  'RiftCoreAdminConsent.MODULE_OPERATION_SCHEMA']) {
+  if (!probeClient.includes(marker)) fail(`Trusted activation response contract missing: ${marker}`);
+}
+for (const marker of ['selectGenericActivation(', 'activateGenericModule(',
+  'client.adminConsent("execute-module-activate"', 'module://activate/']) {
+  if (!probeUi.includes(marker)) fail(`Trusted generic activation consent UI missing: ${marker}`);
+}
+for (const marker of ['active.booting', 'previous.json', 'execution-proof.json',
+  'fun recover(', 'fun rollback(', 'fun pendingHost(', 'fun complete(',
+  'module-boot:', 'manifestDigest']) {
+  if (!genericModuleActivation.includes(marker))
+    fail(`Generic module activation/rollback contract missing: ${marker}`);
+}
+for (const marker of ['class RiftGenericModuleService : Service()',
+  'RiftCoreModuleActivation.pendingHost(app)',
+  'DexClassLoader(', 'RiftCoreModuleStore.file(app, id, revision)',
+  'RiftBootstrapEntry::class.java.isAssignableFrom(entry)',
+  'RiftCoreModuleActivation.complete(app, record, process)',
+  'RiftCoreModuleActivation.rollback(application)']) {
+  if (!genericModuleService.includes(marker)) fail(`Generic module host process missing: ${marker}`);
+}
+if (!bootstrapHost.includes('RiftCoreModuleActivation.recover(application)') ||
+    !androidManifest.includes('android:name=".RiftGenericModuleService"') ||
+    !androidManifest.includes('android:process=":riftModuleHost"')) {
+  fail('Generic module Core boot recovery or nonexported process declaration missing');
+}
+if (!probePolicy.includes('"module.activate"') ||
+    !read(`${kotlinDir}/RiftCoreRuntime.kt`).includes('"moduleHost"')) {
+  fail('Module activation must have Core audit and read-only execution proof status');
+}
+for (const file of ['RiftCoreModuleManifest.kt', 'RiftCoreModuleStore.kt',
+  'RiftCoreModuleActivation.kt', 'RiftGenericModuleService.kt']) {
+  if (!gradle.includes(`"src/main/java/com/riftos/app/${file}"`)) {
+    fail(`Generic module Android exact Kotlin source allowlist missing: ${file}`);
+  }
+}
+if (/ProbeV1|PROBE_ENTRYPOINT|runtime\.register/.test(
+  genericModuleManifest + genericModuleStore + genericModuleActivation + genericModuleService)) {
+  fail('Generic module execution must not hardcode ProbeV1 or touch runtime provider registration');
+}
+if (/ProbeV1|PROBE_ENTRYPOINT|executeProbeActivate|runtime\.register/.test(
+  genericModuleManifest + genericModuleStore)) {
+  fail('Generic module manifest/staging source must not depend on ProbeV1 or runtime registration');
+}
 if (gradle.includes('ProbeV1.java')) {
   fail('Independent Bootstrap ProbeV1 external fixture MUST NOT compile into RiftOS APK');
 }

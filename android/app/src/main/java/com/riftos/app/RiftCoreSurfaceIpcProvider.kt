@@ -200,7 +200,7 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
                 require(bearer.length <= 64) { "Core admin bearer exceeds bound" }
                 val operation = request.getString("operation").orEmpty()
                 val target = request.getString("target").orEmpty()
-                require(operation.length <= 64 && target.length <= 128) {
+                require(operation.length <= 64 && target.length <= 192) {
                     "Core admin consent scope exceeds bound"
                 }
                 when (request.getString("action")) {
@@ -223,6 +223,17 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
                                 ctx, caller, bearer, operation, target, fd)
                         }
                     }
+                    "execute-module-stage" -> {
+                        val descriptor = request.getParcelable<android.os.ParcelFileDescriptor>("dexFd")
+                            ?: error("Module stage requires DEX descriptor")
+                        descriptor.use { fd ->
+                            RiftCoreAdminConsent.executeModuleStage(ctx, caller, bearer,
+                                operation, target, request.getString("moduleManifest")
+                                    ?: error("Module stage requires manifest"), fd)
+                        }
+                    }
+                    "execute-module-activate" -> RiftCoreAdminConsent.executeModuleActivate(
+                        ctx, caller, bearer, operation, target)
                     "execute-probe-activate" -> RiftCoreAdminConsent.executeProbeActivate(
                         ctx, caller, bearer, operation, target)
                     "window-closed" -> RiftCoreAdminConsent.revokeForWindowClose(ctx, caller)

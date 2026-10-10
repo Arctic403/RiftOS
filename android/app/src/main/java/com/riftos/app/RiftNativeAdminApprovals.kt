@@ -40,6 +40,9 @@ internal class RiftNativeAdminApprovals(
     private var selectedProbeUri: Uri? = null
     private var selectedRiftFsProbeName: String? = null
     private var stagedProbeSha: String? = null
+    private data class ModuleChoice(val manifestText: String, val manifest: RiftCoreModuleManifest)
+    private var selectedModule: ModuleChoice? = null
+    private var stagedModule: RiftCoreModuleManifest? = null
     companion object {
         const val PROBE_PICK_REQUEST = 0x6A41
         private const val PROBE_RIFTFS_PATH = "/D:/Builds/Modules"
@@ -119,6 +122,10 @@ internal class RiftNativeAdminApprovals(
         button("Execute Core empty registry and rollback once") { executeRegistryProof() }
         button("Revoke current approval") { revoke() }
         button("Discover installed runtime candidates (read-only)") { discoverProviders() }
+        button("Select trusted module manifest from RiftOS Files") { pickGenericModule() }
+        button("Stage selected generic module once") { stageGenericModule() }
+        button("Select digest-bound generic activation") { selectGenericActivation() }
+        button("Activate selected generic module once") { activateGenericModule() }
         button("Select ProbeV1 DEX from RiftOS Files") { pickRiftFsProbeDex() }
         button("Select external ProbeV1 DEX (Android picker)") { pickProbeDex() }
         button("Stage selected DEX using one-use approval") { stageProbe() }
@@ -278,6 +285,187 @@ internal class RiftNativeAdminApprovals(
             .show()
     }
 
+    private fun readGenericModuleChoice(directory: File): ModuleChoice {
+        require(directory.isDirectory && !Files.isSymbolicLink(directory.toPath()) &&
+            directory.canonicalFile.parentFile == probeRiftFsDirectory().canonicalFile) {
+            "Generic module must live directly under the RiftOS Modules directory"
+        }
+        val file = File(directory, "module.json")
+        require(file.isFile && !Files.isSymbolicLink(file.toPath()) &&
+            file.length() in 1L..RiftCoreModuleManifest.MAX_MANIFEST_BYTES.toLong()) {
+            "Invalid generic module manifest"
+        }
+        val data = file.readBytes()
+        val manifest = RiftCoreModuleManifest.parse(data)
+        require(manifest.id == directory.name) { "Module folder and manifest identity differ" }
+        val payload = File(directory, manifest.payload)
+        require(payload.isFile && !Files.isSymbolicLink(payload.toPath()) &&
+            payload.canonicalFile.parentFile == directory.canonicalFile &&
+            payload.length() in 1L..RiftCoreModuleManifest.MAX_MODULE_BYTES) {
+            "Module DEX is missing or outside build folder"
+        }
+        return ModuleChoice(String(data, Charsets.UTF_8), manifest)
+    }
+
+    /** Generic UI discovers manifests; no app-specific names live in Core. */
+    private fun pickGenericModule() {
+        if (currentTicket != null) {
+            show("Revoke or consume earlier approval before switching module scope.")
+            return
+        }
+        selectedModule = null
+        stagedModule = null
+        val choices = runCatching {
+            val root = probeRiftFsDirectory()
+            val files = root.listFiles() ?: error("RiftOS Modules folder cannot be listed")
+            require(files.size <= 256) { "Too many build-folder entries" }
+            files.filter { it.isDirectory && !Files.isSymbolicLink(it.toPath()) }
+                .mapNotNull { dir -> runCatching { readGenericModuleChoice(dir) }.getOrNull() }
+                .sortedBy { it.manifest.id }
+                .take(32)
+        }.getOrElse { failure ->
+            show("Cannot discover generic modules: " + failure.message)
+            return
+        }
+        if (choices.isEmpty()) {
+            show("No valid module.json + DEX pairs in /D:/Builds/Modules/<module-id>/")
+            return
+        }
+        val serial = generation
+        AlertDialog.Builder(activity)
+            .setTitle("Trusted modules · same Android UID as RiftOS")
+            .setItems(choices.map {
+                it.manifest.name + " [" + it.manifest.id + "] v" + it.manifest.version
+            }.toTypedArray()) { _, position ->
+                if (!visible || generation != serial || currentTicket != null) return@setItems
+                val chosen = choices.getOrNull(position) ?: return@setItems
+                runCatching {
+                    val fresh = readGenericModuleChoice(File(
+                        probeRiftFsDirectory(), chosen.manifest.id))
+                    require(fresh.manifest.identityDigest() ==
+                        chosen.manifest.identityDigest()) {
+                        "Module changed during selection"
+                    }
+                    fresh
+                }.onSuccess { choice ->
+                    selectedModule = choice
+                    operation = RiftCoreAdminConsent.MODULE_STAGE
+                    target = "module://stage/" + choice.manifest.identityDigest()
+                    scopeText?.text = "Generic module " + choice.manifest.id +
+                        " v" + choice.manifest.version +
+                        "\nDEX SHA-256 " + choice.manifest.sha256 +
+                        "\nEntry: " + choice.manifest.entrypoint +
+                        "\nStaging imports immutable bytes only; activation requires " +
+                        "a DIFFERENT approval. DEX service code shares RiftOS Android UID."
+                    show("Selected " + choice.manifest.id + ". " +
+                        "Request one-use approval to stage; no execution yet.")
+                }.onFailure { failure ->
+                    show("Generic module selection rejected: " + failure.message)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun stageGenericModule() {
+        val choice = selectedModule ?: run {
+            show("Select a valid generic module first."); return
+        }
+        if (operation != RiftCoreAdminConsent.MODULE_STAGE ||
+            target != "module://stage/" + choice.manifest.identityDigest()) {
+            show("Select generic stage scope before requesting approval."); return
+        }
+        if (!activity.hasWindowFocus()) {
+            show("Generic stage requires trusted foreground Admin Approvals."); return
+        }
+        val ticket = currentTicket ?: run { show("No module stage approval ticket."); return }
+        val client = core ?: run { show("Core IPC unavailable."); return }
+        perform {
+            val fresh = readGenericModuleChoice(File(
+                probeRiftFsDirectory(), choice.manifest.id))
+            require(fresh.manifest.identityDigest() ==
+                choice.manifest.identityDigest()) {
+                "Module changed since user-approved stage request"
+            }
+            val dexFile = File(File(probeRiftFsDirectory(), fresh.manifest.id),
+                fresh.manifest.payload)
+            val descriptor = ParcelFileDescriptor.open(
+                dexFile, ParcelFileDescriptor.MODE_READ_ONLY)
+            descriptor.use { fd ->
+                val result = client.adminConsent("execute-module-stage", ticket,
+                    RiftCoreAdminConsent.MODULE_STAGE,
+                    "module://stage/" + choice.manifest.identityDigest(),
+                    dexFd = fd, manifestText = fresh.manifestText)
+                require(result.getBoolean("staged") &&
+                    !result.optBoolean("activated", true) &&
+                    result.getString("manifestDigest") ==
+                        choice.manifest.identityDigest()) {
+                    "Core did not confirm exact generic module stage"
+                }
+                activity.runOnUiThread {
+                    if (currentTicket == ticket) currentTicket = null
+                    selectedModule = null
+                    stagedModule = choice.manifest
+                }
+                "Core staged generic module " + choice.manifest.id +
+                    " SHA " + choice.manifest.sha256.take(16) +
+                    "… WITHOUT execution. Request separate activation approval."
+            }
+        }
+    }
+
+    private fun selectGenericActivation() {
+        if (currentTicket != null) {
+            show("Revoke or consume previous approval before changing scope.")
+            return
+        }
+        val module = stagedModule ?: run {
+            show("Stage a user-approved generic module before activation.")
+            return
+        }
+        operation = RiftCoreAdminConsent.MODULE_ACTIVATE
+        target = "module://activate/" + module.id + "/" + module.identityDigest()
+        scopeText?.text = "Activate trusted module " + module.id +
+            " v" + module.version + "\nDEX SHA " + module.sha256 +
+            "\nEntry " + module.entrypoint +
+            "\nThis code executes in nonexported :riftModuleHost with the SAME " +
+            "RiftOS app UID; it is not a sandbox. Fresh one-use user approval required."
+        show("Request a NEW approval for this exact staged module identity.")
+    }
+
+    private fun activateGenericModule() {
+        val module = stagedModule ?: run {
+            show("Stage generic module first."); return
+        }
+        val expected = "module://activate/" + module.id + "/" + module.identityDigest()
+        if (operation != RiftCoreAdminConsent.MODULE_ACTIVATE || target != expected) {
+            show("Select exact staged generic module activation scope first."); return
+        }
+        if (!activity.hasWindowFocus()) {
+            show("Generic activation requires trusted foreground window."); return
+        }
+        val ticket = currentTicket ?: run {
+            show("No fresh generic activation approval ticket."); return
+        }
+        val client = core ?: run { show("Core IPC unavailable."); return }
+        perform {
+            val result = client.adminConsent("execute-module-activate", ticket,
+                RiftCoreAdminConsent.MODULE_ACTIVATE, expected)
+            activity.runOnUiThread {
+                if (currentTicket == ticket) currentTicket = null
+            }
+            require(result.optBoolean("activated") &&
+                result.optBoolean("serviceStartRequested") &&
+                result.optString("id") == module.id &&
+                result.optString("manifestDigest") == module.identityDigest()) {
+                "Core did not confirm matching module activation request"
+            }
+            "Core requested trusted generic module " + module.id + " v" +
+                module.version + " in separate :riftModuleHost process. " +
+                "Check core status moduleHost.proofPresent for actual execution."
+        }
+    }
+
     private fun selectProbeActivation() {
         if (currentTicket != null) {
             show("Revoke or consume the previous approval first.")
@@ -417,6 +605,16 @@ internal class RiftNativeAdminApprovals(
                     "Allow ONE Core-only EMPTY runtime registry creation, signer " +
                         "verification and mandatory rollback? This does NOT " +
                         "register, enable or install any runtime provider."
+                } else if (requestedOperation == RiftCoreAdminConsent.MODULE_STAGE) {
+                    "Allow ONE content-addressed import of this exact trusted module " +
+                        "manifest and matching DEX? STAGE ONLY, no execution or provider " +
+                        "registration. A later activation would execute code with the " +
+                        "RiftOS APK Android UID, not an isolated security sandbox."
+                } else if (requestedOperation == RiftCoreAdminConsent.MODULE_ACTIVATE) {
+                    "Allow ONE activation of the exact SHA-bound trusted module in " +
+                        "nonexported :riftModuleHost? It executes with the RiftOS " +
+                        "Android UID. This is NOT an untrusted-code sandbox; Core " +
+                        "and Shell remain embedded. Rollback applies to startup failure."
                 } else if (requestedOperation == RiftCoreAdminConsent.PROBE_STAGE) {
                     "Allow ONE fixed external ProbeV1 DEX to be staged read-only " +
                         "in Core app storage? No execution, provider registration or app installation."
@@ -457,6 +655,12 @@ internal class RiftNativeAdminApprovals(
                 } else if (operation == RiftCoreAdminRegistryProof.OPERATION) {
                     "Core approved ONE empty registry/rollback proof; no provider installation. " +
                         "Execute before 45-second expiry or revoke."
+                } else if (operation == RiftCoreAdminConsent.MODULE_STAGE) {
+                    "Core approved ONE exact manifest-bound generic module stage. " +
+                        "Execute before 45-second expiry; no code runs during staging."
+                } else if (operation == RiftCoreAdminConsent.MODULE_ACTIVATE) {
+                    "Core approved ONE exact staged module activation. Start within 45 " +
+                        "seconds; confirm actual execution using core status.moduleHost."
                 } else if (operation == RiftCoreAdminConsent.PROBE_STAGE) {
                     "Core approved ONE selected ProbeV1 DEX staging. Execute staging within 45 seconds."
                 } else if (operation == RiftCoreAdminConsent.PROBE_ACTIVATE) {
@@ -610,6 +814,8 @@ internal class RiftNativeAdminApprovals(
         selectedProbeUri = null
         selectedRiftFsProbeName = null
         stagedProbeSha = null
+        selectedModule = null
+        stagedModule = null
         // Core invalidates ALL unconsumed approvals from the exact OS-attested
         // real shell PID on native window close, even if the UI lost its token.
         worker.execute {

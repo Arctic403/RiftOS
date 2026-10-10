@@ -63,6 +63,9 @@ class RiftShellCoreClient(context: Context) {
                 } else if (extras?.getString("action").orEmpty() in setOf(
                     "execute-probe-stage", "execute-probe-activate")) {
                     RiftCoreAdminConsent.PROBE_SCHEMA
+                } else if (extras?.getString("action").orEmpty() in setOf(
+                    "execute-module-stage", "execute-module-activate")) {
+                    RiftCoreAdminConsent.MODULE_OPERATION_SCHEMA
                 } else if (extras?.getString("action") == "discover-providers") {
                     "riftos.core.runtime-candidates/1"
                 } else {
@@ -117,11 +120,12 @@ class RiftShellCoreClient(context: Context) {
     fun adminConsent(
         action: String, ticket: String = "",
         operation: String = "", target: String = "", approved: Boolean = false,
-        dexFd: ParcelFileDescriptor? = null
+        dexFd: ParcelFileDescriptor? = null, manifestText: String? = null
     ): JSONObject {
         require(action in setOf("request", "decide", "revoke", "consume-proof",
             "execute-rollback-proof", "execute-registry-proof", "discover-providers",
             "execute-probe-stage", "execute-probe-activate",
+            "execute-module-stage", "execute-module-activate",
             "window-closed", "status")) {
             "Invalid trusted admin UI action"
         }
@@ -134,6 +138,13 @@ class RiftShellCoreClient(context: Context) {
                 putString("target", target)
                 putBoolean("approved", approved)
                 if (dexFd != null) putParcelable("dexFd", dexFd)
+                if (manifestText != null) {
+                    require(manifestText.toByteArray(Charsets.UTF_8).size in
+                        1..RiftCoreModuleManifest.MAX_MANIFEST_BYTES) {
+                        "Trusted module manifest exceeds IPC bound"
+                    }
+                    putString("moduleManifest", manifestText)
+                }
             })
     }
 

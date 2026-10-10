@@ -36,6 +36,9 @@ internal object RiftCoreAdminConsent {
     const val PROBE_TARGET = "bootstrap://probe/ProbeV1"
     const val PROBE_ENTRYPOINT = "com.riftos.bootstrap.proof.ProbeV1"
     const val PROBE_SCHEMA = "riftos.bootstrap.probe-operation/1"
+    const val MODULE_STAGE = "module.stage"
+    const val MODULE_ACTIVATE = "module.activate"
+    const val MODULE_OPERATION_SCHEMA = "riftos.core.module-operation/1"
 
     private val random = SecureRandom()
     private val lock = Any()
@@ -60,6 +63,10 @@ internal object RiftCoreAdminConsent {
             (operation == RiftCoreAdminRegistryProof.OPERATION &&
                 target == RiftCoreAdminRegistryProof.TARGET) ||
             (operation == PROBE_STAGE && target == PROBE_TARGET) ||
+            (operation == MODULE_STAGE &&
+                target.matches(Regex("^module://stage/[0-9a-f]{64}$"))) ||
+            (operation == MODULE_ACTIVATE &&
+                target.matches(Regex("^module://activate/[a-z][a-z0-9._-]{0,79}/[0-9a-f]{64}$"))) ||
             (operation == PROBE_ACTIVATE &&
                 target.matches(Regex("^bootstrap://probe/[0-9a-f]{64}$")))
 
@@ -303,6 +310,127 @@ internal object RiftCoreAdminConsent {
                     .put("failureType", diagnostic.optString("lastFailureType", "unknown"))
                     .put("failureErrno", diagnostic.optInt("lastFailureErrno", 0))
 
+            }
+        }
+    }
+
+    /**
+     * Generic v1 module import. Metadata is first bound into the short-lived
+     * user-approved target, then Core independently validates the manifest
+     * and exact DEX digest. Does not register providers or run code.
+     */
+    fun executeModuleStage(
+        context: Context, callerPid: Int, bearer: String,
+        operation: String, target: String, manifestText: String,
+        descriptor: ParcelFileDescriptor
+    ): JSONObject {
+        val shell = RiftCoreShellRecovery.status()
+        require(shell.optInt("shellPid", -1) == callerPid &&
+            shell.optBoolean("foregroundLease", false) &&
+            shell.optString("phase") == "connected") {
+            "Core module stage requires foreground trusted RiftShell"
+        }
+        return synchronized(lock) {
+            val value = ticket(context, callerPid, bearer)
+            require(value.approved && operation == MODULE_STAGE &&
+                operation == value.operation && target == value.target &&
+                validScope(operation, target)) {
+                "Core module stage scope not independently approved"
+            }
+            // Verify the manifest identity before consuming the ticket, but
+            // never open or trust a path from either the manifest or RAPP.
+            val input = manifestText.toByteArray(Charsets.UTF_8)
+            val manifest = RiftCoreModuleManifest.parse(input)
+            require(target == "module://stage/" + manifest.identityDigest()) {
+                "Core module stage manifest was changed after approval"
+            }
+            RiftCoreSystemCapabilities.recordDecision(
+                context, ACTOR, operation, "consumed", "generic-module-stage"
+            )
+            tickets.remove(bearer)
+            try {
+                val staged = FileInputStream(descriptor.fileDescriptor).use { stream ->
+                    RiftCoreModuleStore.stage(context, input, stream)
+                }
+                require(staged.getString("manifestDigest") ==
+                    manifest.identityDigest()) { "Core module revision differs from approval" }
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "staged", "verified-module-only"
+                )
+                JSONObject().put("schema", MODULE_OPERATION_SCHEMA)
+                    .put("id", staged.getString("id"))
+                    .put("version", staged.getString("version"))
+                    .put("sha256", staged.getString("sha256"))
+                    .put("manifestDigest", staged.getString("manifestDigest"))
+                    .put("staged", true)
+                    .put("activated", false)
+            } catch (failure: Exception) {
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "failed", "module-stage-rejected"
+                )
+                throw failure
+            }
+        }
+    }
+
+    /**
+     * Core-only generic activation: exact staged module ID/revision, separate
+     * 45-second user approval, installed signer and foreground Shell identity.
+     * No untrusted manifest or filesystem path can select the Android service.
+     */
+    fun executeModuleActivate(
+        context: Context, callerPid: Int, bearer: String,
+        operation: String, target: String
+    ): JSONObject {
+        val shell = RiftCoreShellRecovery.status()
+        require(shell.optInt("shellPid", -1) == callerPid &&
+            shell.optBoolean("foregroundLease", false) &&
+            shell.optString("phase") == "connected") {
+            "Generic module activation requires foreground trusted Shell"
+        }
+        return synchronized(lock) {
+            val value = ticket(context, callerPid, bearer)
+            require(value.approved && value.operation == MODULE_ACTIVATE &&
+                value.target == target && operation == value.operation &&
+                validScope(operation, target)) {
+                "Generic module activation must match exact approved identity"
+            }
+            val suffix = target.removePrefix("module://activate/")
+            val split = suffix.lastIndexOf('/')
+            require(split in 1 until suffix.lastIndex) {
+                "Invalid generic module ID/revision scope"
+            }
+            val id = suffix.substring(0, split)
+            val revision = suffix.substring(split + 1)
+            // Check sealed staged metadata before consuming, but the user
+            // must approve fresh activation independently of staging.
+            RiftCoreModuleStore.staged(context, id, revision)
+            RiftCoreSystemCapabilities.recordDecision(
+                context, ACTOR, operation, "consumed", "generic-module-activate"
+            )
+            tickets.remove(bearer)
+            try {
+                val activated = RiftCoreModuleActivation.activate(context, id, revision)
+                require(context.startService(
+                    Intent(context, RiftGenericModuleService::class.java)
+                ) != null) { "Generic module host service did not start" }
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "activated", "generic-module-host"
+                )
+                JSONObject().put("schema", MODULE_OPERATION_SCHEMA)
+                    .put("id", id)
+                    .put("version", activated.getString("version"))
+                    .put("sha256", activated.getString("sha256"))
+                    .put("manifestDigest", revision)
+                    .put("activated", true)
+                    .put("serviceStartRequested", true)
+            } catch (error: Exception) {
+                runCatching { RiftCoreModuleActivation.rollback(context) }
+                    .onFailure { error.addSuppressed(it) }
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "failed", "generic-module-activation-rejected"
+                )
+                throw error
             }
         }
     }

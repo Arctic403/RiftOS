@@ -127,6 +127,14 @@ object RiftCoreRuntime {
             .put("coreApps", lifecycle(context).status())
             .put("shellRecovery", RiftCoreShellRecovery.status())
             .put("bootstrapHost", RiftBootstrapHost.status(context))
+            .put("moduleHost", runCatching {
+                RiftCoreModuleActivation.status(context)
+            }.getOrElse { failure ->
+                JSONObject().put("schema", RiftCoreModuleActivation.STATUS_SCHEMA)
+                    .put("state", "invalid-or-recovery-required")
+                    .put("proofPresent", false)
+                    .put("error", failure.javaClass.simpleName)
+            })
             .put("systemCapabilities", RiftCoreSystemCapabilities.status(context))
             .put("adminConsent", RiftCoreAdminConsent.status(context))
             .put("adminRollbackProof", RiftCoreAdminRollbackProof.status(context))
