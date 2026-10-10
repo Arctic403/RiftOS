@@ -30,6 +30,7 @@ internal object RiftCoreSystemCapabilities {
         "process.protected.kill"
     )
 
+    private val PROBE_ONLY_AUDIT = setOf("bootstrap.probe.stage", "bootstrap.probe.activate")
     private val SAFE_ACTOR = Regex("^[A-Za-z0-9._:-]{1,96}$")
 
     /**
@@ -50,10 +51,12 @@ internal object RiftCoreSystemCapabilities {
         outcome: String, reason: String
     ): JSONObject {
         require(SAFE_ACTOR.matches(actor)) { "Core system capability actor invalid" }
-        require(operation in RESTRICTED) { "Unknown Core system capability" }
+        require(operation in RESTRICTED || operation in PROBE_ONLY_AUDIT) {
+            "Unknown Core system capability or proof operation"
+        }
         require(outcome in setOf(
             "requested", "approved", "denied", "revoked", "expired", "consumed",
-            "rolled-back", "failed"
+            "rolled-back", "failed", "staged", "activated"
         )) { "Core admin decision outcome invalid" }
         require(reason.matches(SAFE_ACTOR)) { "Core admin audit reason invalid" }
         synchronized(LOCK) {

@@ -87,6 +87,12 @@ class RiftNativeSystemApps(
         return true
     }
 
+    /** Only the trusted native Admin Approvals window owns this picker. */
+    fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?): Boolean {
+        if (!adminApprovalsInitialized) return false
+        return adminApprovals.onActivityResult(requestCode, resultCode, data)
+    }
+
     fun onDesktopClosed(id: String): Boolean {
         return when (id.trim().lowercase()) {
             "terminal" -> {

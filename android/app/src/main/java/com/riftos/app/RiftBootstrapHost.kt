@@ -25,6 +25,20 @@ internal object RiftBootstrapHost {
 
     fun status(context: android.content.Context): JSONObject {
         val root = RiftBootstrapComponentStore.root(context)
+        val proof = runCatching {
+            val marker = android.util.AtomicFile(File(root, "probe-proof.json"))
+            val bytes = marker.openRead().use { stream ->
+                val bounded = ByteArray(4097)
+                val count = stream.read(bounded)
+                require(count in 1..4096 && stream.read() == -1) { "Probe proof oversized" }
+                bounded.copyOf(count)
+            }
+            JSONObject(String(bytes, Charsets.UTF_8)).also {
+                require(it.optString("schema") == "riftos.bootstrap-probe-proof/1") {
+                    "Invalid probe proof"
+                }
+            }
+        }.getOrNull()
         return JSONObject()
             .put("schema", "riftos.bootstrap-host/1")
             .put("coreActivationPresent", File(root, "core.json").isFile)
@@ -33,7 +47,8 @@ internal object RiftBootstrapHost {
             .put("shellInterruptedBoot", File(root, "shell.booting").exists())
             .put("probeActivationPresent", File(root, "probe.json").isFile)
             .put("probeInterruptedBoot", File(root, "probe.booting").exists())
-            .put("probeProofPresent", File(root, "probe-proof.json").isFile)
+            .put("probeProofPresent", proof != null)
+            .put("probeProof", proof ?: JSONObject.NULL)
             .put("criticalExternalActivationEnabled", false)
             .put("inProcessHotSwapEnabled", false)
             .put("embeddedFallbackAvailable", true)

@@ -254,6 +254,55 @@ for (const marker of ['internal object RiftBootstrapComponentStore',
   'require(!File(dir, "probe.booting").exists())']) {
   if (!bootstrapStore.includes(marker)) fail(`Bootstrap staged activation/rollback contract missing: ${marker}`);
 }
+// Bootstrap external ProbeV1 is a separate proof gate. It must never
+// bypass C1.4 caller PID, APK signer, one-use ticket, foreground lease or
+// the original C2-A no-provider transaction.
+const probeAdmin = read(`${kotlinDir}/RiftCoreAdminConsent.kt`);
+const probePolicy = read(`${kotlinDir}/RiftCoreSystemCapabilities.kt`);
+const probeClient = read(`${kotlinDir}/RiftShellCoreClient.kt`);
+const probeProvider = read(`${kotlinDir}/RiftCoreSurfaceIpcProvider.kt`);
+const probeUi = read(`${kotlinDir}/RiftNativeAdminApprovals.kt`);
+const probeApps = read(`${kotlinDir}/RiftNativeSystemApps.kt`);
+const probeActivity = read(`${kotlinDir}/RiftShellActivity.kt`);
+for (const marker of ['PROBE_STAGE = "bootstrap.probe.stage"',
+  'PROBE_ACTIVATE = "bootstrap.probe.activate"',
+  'PROBE_ENTRYPOINT = "com.riftos.bootstrap.proof.ProbeV1"',
+  'fun executeProbeStage(', 'fun executeProbeActivate(',
+  'RiftBootstrapComponentStore.stage(', 'RiftBootstrapComponentStore.activateProbe(',
+  'RiftBootstrapComponentStore.rollbackProbe(context)',
+  'FileInputStream(descriptor.fileDescriptor)',
+  'shell.optBoolean("foregroundLease", false)',
+  'tickets.remove(bearer)', 'installedSigner(context)']) {
+  if (!probeAdmin.includes(marker)) fail(`Bootstrap Core one-use stage/activate proof contract missing: ${marker}`);
+}
+if (!probePolicy.includes('PROBE_ONLY_AUDIT') ||
+    !probePolicy.includes('operation in RESTRICTED || operation in PROBE_ONLY_AUDIT') ||
+    !probePolicy.includes('"staged", "activated"')) {
+  fail('Bootstrap stage/activate must be auditable without enabling generic elevation');
+}
+for (const marker of ['"execute-probe-stage" ->', '"execute-probe-activate" ->',
+  'getParcelable<android.os.ParcelFileDescriptor>("dexFd")',
+  'RiftCoreAdminConsent.executeProbeStage(', 'RiftCoreAdminConsent.executeProbeActivate(']) {
+  if (!probeProvider.includes(marker)) fail(`Bootstrap protected Core Binder gateway missing: ${marker}`);
+}
+for (const marker of ['"execute-probe-stage", "execute-probe-activate"',
+  'putParcelable("dexFd", dexFd)', 'RiftCoreAdminConsent.PROBE_SCHEMA']) {
+  if (!probeClient.includes(marker)) fail(`Bootstrap trusted Shell Core client guard missing: ${marker}`);
+}
+for (const marker of ['Intent.ACTION_OPEN_DOCUMENT', 'Intent.CATEGORY_OPENABLE',
+  'FLAG_GRANT_READ_URI_PERMISSION', 'PROBE_PICK_REQUEST',
+  'fun onActivityResult(', 'execute-probe-stage', 'execute-probe-activate',
+  'Select external ProbeV1 DEX', 'digest-bound probe activation',
+  'activity.contentResolver.openFileDescriptor(uri, "r")']) {
+  if (!probeUi.includes(marker)) fail(`Bootstrap native user approval/picker missing: ${marker}`);
+}
+if (!probeApps.includes('adminApprovals.onActivityResult(') ||
+    !probeActivity.includes('systemApps.onActivityResult(')) {
+  fail('Bootstrap native Android document picker result must reach approvals UI');
+}
+if (gradle.includes('ProbeV1.java')) {
+  fail('Independent Bootstrap ProbeV1 external fixture MUST NOT compile into RiftOS APK');
+}
 for (const required of ['object RiftCoreRuntime', 'fun initialize(context: Context)',
   'fun packages(context: Context)', 'fun runtimes(context: Context)',
   'fun buildPlatform(context: Context)', 'fun status(context: Context)',

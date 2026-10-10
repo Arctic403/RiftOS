@@ -1,0 +1,43 @@
+name: Build external RiftOS bootstrap probe DEX
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  external-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout RiftOS proof source
+        uses: actions/checkout@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android tools
+        uses: android-actions/setup-android@v3
+      - name: Install only external DEX compile tools
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Compile independently from APK
+        run: bash bootstrap/probe-proof/build-probe.sh
+      - name: Verify raw DEX artifact, exclude embedded ABI
+        shell: bash
+        run: |
+          file bootstrap/probe-proof/out/probe-v1.dex
+          test "$(head -c 4 bootstrap/probe-proof/out/probe-v1.dex)" = "dex"
+          (cd bootstrap/probe-proof && sha256sum -c out/probe-v1.sha256)
+          if grep -aq 'com/riftos/app/RiftBootstrapEntry;' bootstrap/probe-proof/out/probe-v1.dex; then
+            echo 'Host ABI reference is expected; compiled implementation must remain external.'
+          fi
+      - name: Export separate DEX for Android document picker
+        uses: actions/upload-artifact@v4
+        with:
+          name: riftos-external-probe-v1-dex
+          path: |
+            bootstrap/probe-proof/out/probe-v1.dex
+            bootstrap/probe-proof/out/probe-v1.sha256
+          if-no-files-found: error

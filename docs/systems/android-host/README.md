@@ -1,5 +1,9 @@
 # Android Host
 
+## 2026-10-09 — Trusted native external DEX proof user flow (SOURCE ONLY)
+
+Admin Approvals owns system picker for separately compiled ProbeV1 DEX; its two Core signed/PID-checked one-use approvals first stage read-only SAF descriptor bytes, then activate precisely the verified SHA-256 through separate nonexported `:riftBootstrapProbe`. A user-manual external javac+D8 artifact workflow, independent from user-manual RiftOS APK Builder, supplies the DEX. Android Core/Shell manifest and process boundaries remain unchanged; critical dynamic replacement remains disabled. No external DEX binary or installed physical proof exists yet. Detailed gates in `BOOTSTRAP_HOST_MIGRATION.md`.
+
 ## 2026-10-09 — Immutable staged probe component architecture (SOURCE ONLY)
 
 With signed RiftOS #680 live and the previous C2-A positive registry test confirmed by screenshot plus Core audit, the bootstrap host now gains `RiftBootstrapComponentStore`. It can stage content-addressed read-only DEX revisions and atomically select an internal noncritical `probe` activation with previous-revision fallback and boot-interruption recovery. The installed Core/Shell remain embedded and protected; external Core/Shell activation is explicitly disabled until device proof. The nonexported `:riftBootstrapProbe` Service is separately process-scoped and stays inert without future native Core authorization. There is **no user-facing installer/consent IPC, loaded external probe, new signed APK, or live hot swap** at this checkpoint. See `BOOTSTRAP_HOST_MIGRATION.md`; user alone starts Builder.

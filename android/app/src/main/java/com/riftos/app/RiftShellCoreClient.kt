@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import android.os.Process
+import android.os.ParcelFileDescriptor
 import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
@@ -59,6 +60,9 @@ class RiftShellCoreClient(context: Context) {
                     RiftCoreAdminRollbackProof.SCHEMA
                 } else if (extras?.getString("action") == "execute-registry-proof") {
                     RiftCoreAdminRegistryProof.SCHEMA
+                } else if (extras?.getString("action").orEmpty() in setOf(
+                    "execute-probe-stage", "execute-probe-activate")) {
+                    RiftCoreAdminConsent.PROBE_SCHEMA
                 } else if (extras?.getString("action") == "discover-providers") {
                     "riftos.core.runtime-candidates/1"
                 } else {
@@ -112,10 +116,12 @@ class RiftShellCoreClient(context: Context) {
      */
     fun adminConsent(
         action: String, ticket: String = "",
-        operation: String = "", target: String = "", approved: Boolean = false
+        operation: String = "", target: String = "", approved: Boolean = false,
+        dexFd: ParcelFileDescriptor? = null
     ): JSONObject {
         require(action in setOf("request", "decide", "revoke", "consume-proof",
             "execute-rollback-proof", "execute-registry-proof", "discover-providers",
+            "execute-probe-stage", "execute-probe-activate",
             "window-closed", "status")) {
             "Invalid trusted admin UI action"
         }
@@ -127,6 +133,7 @@ class RiftShellCoreClient(context: Context) {
                 putString("operation", operation)
                 putString("target", target)
                 putBoolean("approved", approved)
+                if (dexFd != null) putParcelable("dexFd", dexFd)
             })
     }
 

@@ -329,6 +329,7 @@ class RiftShellActivity : Activity() {
     @Deprecated("Activity result compatibility")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (ready && systemApps.onActivityResult(requestCode, resultCode, data)) return
         if (ready && browser.onActivityResult(requestCode, resultCode, data)) return
         if (ready) workspaceApps.onActivityResult(requestCode, resultCode, data)
     }

@@ -2,6 +2,9 @@ package com.riftos.app
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Intent
+import android.net.Uri
+import android.os.ParcelFileDescriptor
 import android.graphics.Typeface
 import android.view.ViewGroup
 import android.widget.Button
@@ -32,6 +35,10 @@ internal class RiftNativeAdminApprovals(
     private var currentTicket: String? = null
     private var statusView: TextView? = null
     private var generation = 0L
+    private var selectedProbeUri: Uri? = null
+    private var stagedProbeSha: String? = null
+    companion object { const val PROBE_PICK_REQUEST = 0x6A41 }
+
 
     fun open() {
         desktop.handle("desktop.window.open", JSONObject()
@@ -103,7 +110,11 @@ internal class RiftNativeAdminApprovals(
         button("Execute Core empty registry and rollback once") { executeRegistryProof() }
         button("Revoke current approval") { revoke() }
         button("Discover installed runtime candidates (read-only)") { discoverProviders() }
-        button("Refresh Core ticket status") { refresh() }
+        button("Select external ProbeV1 DEX (Android picker)") { pickProbeDex() }
+        button("Stage selected DEX using one-use approval") { stageProbe() }
+        button("Select digest-bound probe activation scope") { selectProbeActivation() }
+        button("Activate and start isolated probe once") { activateProbe() }
+                button("Refresh Core ticket status") { refresh() }
         // More distinct test modes must remain reachable on small phones.
         desktop.attachContent("admin-permissions", ScrollView(activity).apply {
             isFillViewport = true
@@ -124,6 +135,126 @@ internal class RiftNativeAdminApprovals(
             activity.runOnUiThread {
                 if (visible && serial == generation && !activity.isDestroyed) show(result)
             }
+        }
+    }
+
+    /** Android owns document selection; UI never trusts caller-supplied paths. */
+    @Suppress("DEPRECATION")
+    private fun pickProbeDex() {
+        if (currentTicket != null) {
+            show("Revoke or consume the earlier approval before choosing another DEX.")
+            return
+        }
+        selectedProbeUri = null
+        stagedProbeSha = null
+        operation = RiftCoreAdminConsent.PROBE_STAGE
+        target = RiftCoreAdminConsent.PROBE_TARGET
+        scopeText?.text = "Fixed external probe: select a separate ProbeV1 DEX. " +
+            "Staging needs approval and cannot install a runtime provider."
+        try {
+            activity.startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }, PROBE_PICK_REQUEST)
+            show("Choose the separately compiled ProbeV1 .dex file.")
+        } catch (error: Exception) {
+            show("System picker unavailable: " + (error.message ?: "unknown"))
+        }
+    }
+
+    fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+        if (requestCode != PROBE_PICK_REQUEST) return false
+        if (!visible || currentTicket != null) return true
+        val uri = if (resultCode == Activity.RESULT_OK) data?.data else null
+        if (uri == null || uri.scheme != "content") {
+            show("DEX selection cancelled or unsupported; choose a document provider.")
+            return true
+        }
+        selectedProbeUri = uri
+        stagedProbeSha = null
+        operation = RiftCoreAdminConsent.PROBE_STAGE
+        target = RiftCoreAdminConsent.PROBE_TARGET
+        scopeText?.text = "External ProbeV1 DEX selected. Request scoped administrator test " +
+            "and Allow once before staging. No activation yet."
+        show("Selected a document-provided DEX. Approval is still required.")
+        return true
+    }
+
+    private fun selectProbeActivation() {
+        if (currentTicket != null) {
+            show("Revoke or consume the previous approval first.")
+            return
+        }
+        val sha = stagedProbeSha ?: run {
+            show("Stage the approved external DEX first.")
+            return
+        }
+        operation = RiftCoreAdminConsent.PROBE_ACTIVATE
+        target = "bootstrap://probe/" + sha
+        scopeText?.text = "Activation is bound to SHA-256 " + sha.take(16) +
+            "… and launches only the nonexported isolated probe Service."
+        show("Request a new scoped approval for this exact staged SHA-256.")
+    }
+
+    private fun stageProbe() {
+        if (operation != RiftCoreAdminConsent.PROBE_STAGE ||
+            target != RiftCoreAdminConsent.PROBE_TARGET) {
+            show("Select the external ProbeV1 DEX stage scope first.")
+            return
+        }
+        if (!activity.hasWindowFocus()) {
+            show("Probe staging requires the trusted window foreground.")
+            return
+        }
+        val uri = selectedProbeUri ?: run { show("Choose a DEX file first."); return }
+        val ticket = currentTicket ?: run { show("No stage approval ticket."); return }
+        val client = core ?: run { show("Core IPC unavailable."); return }
+        perform {
+            val descriptor = activity.contentResolver.openFileDescriptor(uri, "r")
+                ?: error("Cannot open the selected DEX read-only")
+            descriptor.use { fd ->
+                val result = client.adminConsent("execute-probe-stage", ticket,
+                    RiftCoreAdminConsent.PROBE_STAGE,
+                    RiftCoreAdminConsent.PROBE_TARGET, dexFd = fd)
+                val sha = result.getString("sha256")
+                require(result.getBoolean("staged") &&
+                    sha.matches(Regex("^[0-9a-f]{64}$"))) {
+                    "Core did not verify a staged DEX"
+                }
+                activity.runOnUiThread {
+                    if (currentTicket == ticket) currentTicket = null
+                    stagedProbeSha = sha
+                    selectedProbeUri = null
+                }
+                "Core staged immutable external DEX SHA-256 " + sha.take(16) +
+                    "… No execution. Select digest-bound activation, request a NEW approval."
+            }
+        }
+    }
+
+    private fun activateProbe() {
+        if (operation != RiftCoreAdminConsent.PROBE_ACTIVATE ||
+            !target.matches(Regex("^bootstrap://probe/[0-9a-f]{64}$"))) {
+            show("Select digest-bound probe activation after staging first.")
+            return
+        }
+        if (!activity.hasWindowFocus()) {
+            show("Probe activation requires the trusted window foreground.")
+            return
+        }
+        val ticket = currentTicket ?: run { show("No activation approval ticket."); return }
+        val expectedTarget = target
+        val client = core ?: run { show("Core IPC unavailable."); return }
+        perform {
+            val result = client.adminConsent("execute-probe-activate", ticket,
+                RiftCoreAdminConsent.PROBE_ACTIVATE, expectedTarget)
+            activity.runOnUiThread { if (currentTicket == ticket) currentTicket = null }
+            if (result.optBoolean("activated") &&
+                result.optBoolean("probeProcessRequested")) {
+                "Core activated SHA " + result.getString("sha256").take(16) +
+                    "… and requested the separate probe service. Verify fresh process proof in Core."
+            } else "Core did not confirm probe activation."
         }
     }
 
@@ -175,6 +306,12 @@ internal class RiftNativeAdminApprovals(
                     "Allow ONE Core-only EMPTY runtime registry creation, signer " +
                         "verification and mandatory rollback? This does NOT " +
                         "register, enable or install any runtime provider."
+                } else if (requestedOperation == RiftCoreAdminConsent.PROBE_STAGE) {
+                    "Allow ONE fixed external ProbeV1 DEX to be staged read-only " +
+                        "in Core app storage? No execution, provider registration or app installation."
+                } else if (requestedOperation == RiftCoreAdminConsent.PROBE_ACTIVATE) {
+                    "Allow ONE activation of the displayed exact SHA-256 revision " +
+                        "in a separate nonexported probe Service? Core and Shell remain embedded."
                 } else {
                     "Allow ONE no-effect authorization proof? " +
                         "This grants NO system-file access."
@@ -209,6 +346,10 @@ internal class RiftNativeAdminApprovals(
                 } else if (operation == RiftCoreAdminRegistryProof.OPERATION) {
                     "Core approved ONE empty registry/rollback proof; no provider installation. " +
                         "Execute before 45-second expiry or revoke."
+                } else if (operation == RiftCoreAdminConsent.PROBE_STAGE) {
+                    "Core approved ONE selected ProbeV1 DEX staging. Execute staging within 45 seconds."
+                } else if (operation == RiftCoreAdminConsent.PROBE_ACTIVATE) {
+                    "Core approved ONE SHA-256-bound isolated probe activation. Execute within 45 seconds."
                 } else "Core approved ONE no-effect ticket. Consume or revoke it before expiry."
             } else "Core denied/cancelled the request; zero elevated privileges."
         }
@@ -355,6 +496,8 @@ internal class RiftNativeAdminApprovals(
         statusView = null
         scopeText = null
         currentTicket = null
+        selectedProbeUri = null
+        stagedProbeSha = null
         // Core invalidates ALL unconsumed approvals from the exact OS-attested
         // real shell PID on native window close, even if the UI lost its token.
         worker.execute {

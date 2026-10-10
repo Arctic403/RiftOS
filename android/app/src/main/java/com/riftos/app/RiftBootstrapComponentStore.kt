@@ -188,10 +188,15 @@ internal object RiftBootstrapComponentStore {
      * outside bootstrap-components are modified. Can be called after failure.
      */
     @Synchronized
-    fun recoverProbe(context: Context): Boolean {
+    fun recoverProbe(context: Context): Boolean = restoreProbe(context, true)
+
+    @Synchronized
+    fun rollbackProbe(context: Context): Boolean = restoreProbe(context, false)
+
+    private fun restoreProbe(context: Context, requireInterrupted: Boolean): Boolean {
         val dir = root(context)
         val marker = File(dir, "probe.booting")
-        if (!marker.exists()) return false
+        if (requireInterrupted && !marker.exists()) return false
         val prior = atomicRead(File(dir, "probe.previous.json"))
             ?: error("Probe interrupted without rollback record")
         val fallback = JSONObject(String(prior, Charsets.UTF_8))
@@ -211,7 +216,7 @@ internal object RiftBootstrapComponentStore {
                 previous.getString("sha256"))
             atomicWrite(File(dir, "probe.json"), previous.toString().toByteArray(Charsets.UTF_8))
         }
-        require(marker.delete()) { "Cannot clear interrupted probe marker" }
+        if (marker.exists()) require(marker.delete()) { "Cannot clear interrupted probe marker" }
         return true
     }
 

@@ -214,6 +214,17 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
                         ctx, caller, bearer, operation, target)
                     "execute-registry-proof" -> RiftCoreAdminConsent.executeRegistryProof(
                         ctx, caller, bearer, operation, target)
+                    "execute-probe-stage" -> {
+                        @Suppress("DEPRECATION")
+                        val dexFd = request.getParcelable<android.os.ParcelFileDescriptor>("dexFd")
+                            ?: error("Core probe stage requires SAF file descriptor")
+                        dexFd.use { fd ->
+                            RiftCoreAdminConsent.executeProbeStage(
+                                ctx, caller, bearer, operation, target, fd)
+                        }
+                    }
+                    "execute-probe-activate" -> RiftCoreAdminConsent.executeProbeActivate(
+                        ctx, caller, bearer, operation, target)
                     "window-closed" -> RiftCoreAdminConsent.revokeForWindowClose(ctx, caller)
                     "discover-providers" -> RiftCoreAdminConsent.discoverProviderCandidates(ctx, caller)
                     "status" -> RiftCoreAdminConsent.status(ctx)

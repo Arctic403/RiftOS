@@ -1,5 +1,9 @@
 # RiftOS Patch History
 
+## 2026-10-09 — Native Core-authorized Bootstrap Probe importer SOURCE checkpoint
+
+After signed #682 confirmed live and two retained RAPPs present, added Android document picker and two explicit native one-use approvals for **fixed ProbeV1 only**, using existing installed APK signer + exact Shell Binder PID/foreground lease/45s and Core audit. Shell forwards only user-picked SAF FD through existing protected ContentProvider; Core immutable-stages under SHA-256, separately approves exact hash activation and starts the nonexported isolated probe Service. Failed service launch attempts previous-revision rollback; Core/Shell and C2-A proof are not replaced. `RiftCoreSystemCapabilities` accepts probe-only audit names without enabling `software.install` or `runtime.register` generic effects. Added read-only bounded probe proof process receipt. Standalone javac+D8 script and separate manual workflow produce external DEX, never part of RiftOS APK. Synchronized Builder preflight/selftest and source validator. **Source only: no Kotlin compilation, APK build, external DEX compilation/run or physical device proof performed for this new gate. User manually builds APK and separately triggers external DEX artifact job.**
+
 ## 2026-10-09 — Bootstrap ComponentStore proof-only staged revisions (SOURCE, NOT DEVICE)
 
 After user-manual signed Builder #680 (`494be44e6348`) booted, user screenshot and Core audit recorded **C2-A positive physical PASS**: one-use scoped `runtime.register` requested→approved→consumed→rolled-back, empty registry created/removed, no journal/registered provider/grant. Negative deny/replay/expiry tests and C2-B2 real third-party enrollment remain separate.

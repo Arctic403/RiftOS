@@ -1,5 +1,9 @@
 # RiftOS Roadmap
 
+## 2026-10-09 — First external DEX proof: trusted native staged/activate SOURCE candidate
+
+Native SAF picker in Admin Approvals + Core signer/PID/one-use scoped `bootstrap.probe.stage` and SHA-bound `bootstrap.probe.activate` are implemented in source. DEX bytes arrive as read-only descriptor, stored immutable/hash-addressed in Core storage; separate one-use approval activates only `:riftBootstrapProbe`, never Core/Shell. Manually triggered external probe artifact workflow compiles raw DEX outside RiftOS APK. Next user-manual signed APK build/device proof MUST test Core/Shell/RAPP parity, stage, second approval, isolated process proof, malformed DEX, replay/denial/expiry and previous-version rollback. Then design generic installer and actual Core/Shell extraction. **New gate is source-only/unpushed, not compiled or device accepted**. C2-B2 real runtime enrollment still separately on HOLD.
+
 ## 2026-10-09 — Bootstrap Host: staged DEX revisions / proof-only rollout
 
 After installed #680 and physically passing the **positive** C2-A create/rollback path (negative cases remain), the next coordinated bootstrap source gate introduces `RiftBootstrapComponentStore`: bounded SHA-256 read-only stage, Android AtomicFile activation pointer, previous-revision rollback on interrupted module startup, and a non-exported, inert `:riftBootstrapProbe` Android service for independent crash containment. Critical external Core/Shell activation is hard-disabled while their implementations remain APK-owned. **Not yet finished:** trusted Core-authorized native module importer/consent UI, external proof DEX, real module install/activation/recovery on device, portable Core extraction, shell extraction, independent processes and C++ service ABI. Source-only, no new signed device proof. Continue user-manual Builder at milestone/Android-risk gate; do not resume C2-B2 without separate approval/test scope.

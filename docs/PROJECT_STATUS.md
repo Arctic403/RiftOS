@@ -1,5 +1,9 @@
 # RiftOS Project Status
 
+## 2026-10-09 — Bootstrap Probe native install path ready in SOURCE (not APK/device-proven)
+
+Current installed signed baseline remains #682 (`22f52dfcc859`), with two retained RAPPs and no external activation. New unpushed local checkpoint connects native Admin Approvals → SAF picker → Core-authenticated read-only Binder FD staging → second SHA256-bound one-use approval → isolated nonexported probe Service start. Includes manual-only independent javac+D8 external ProbeV1 artifact workflow. No generic module installer: only the fixed ProbeV1 proof scope. C2-A positive DEVICE PASS remains intact, negative replay/deny/expiry gates separate; C2-B2 real provider registration still HOLD. No new signed Kotlin/Gradle/device proof. See `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md`.
+
 ## 2026-10-09 — Bootstrap store staged/recovery proof source checkpoint
 
 **Installed baseline:** manual signed RiftOS #680 source `494be44e6348`, live Core/Shell and two retained RAPPs. C2-A positive execution now has user screenshot + Core audit PASS, zero target/registry/scratch/journal/grants; C2-A negative cases not fully proven, and C2-B2 real provider admission remains unimplemented.

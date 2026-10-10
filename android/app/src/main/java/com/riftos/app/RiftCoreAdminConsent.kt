@@ -6,6 +6,9 @@ import android.content.pm.PackageManager
 import android.os.Binder
 import android.os.Build
 import android.os.Process
+import android.os.ParcelFileDescriptor
+import android.content.Intent
+import java.io.FileInputStream
 import android.os.SystemClock
 import org.json.JSONObject
 import java.security.MessageDigest
@@ -28,6 +31,12 @@ internal object RiftCoreAdminConsent {
     private const val ACTOR = "riftos.native-admin-panel"
     private const val TTL_MS = 45_000L
     private const val MAX_TICKETS = 8
+    const val PROBE_STAGE = "bootstrap.probe.stage"
+    const val PROBE_ACTIVATE = "bootstrap.probe.activate"
+    const val PROBE_TARGET = "bootstrap://probe/ProbeV1"
+    const val PROBE_ENTRYPOINT = "com.riftos.bootstrap.proof.ProbeV1"
+    const val PROBE_SCHEMA = "riftos.bootstrap.probe-operation/1"
+
     private val random = SecureRandom()
     private val lock = Any()
 
@@ -49,7 +58,10 @@ internal object RiftCoreAdminConsent {
             (operation == RiftCoreAdminRollbackProof.OPERATION &&
                 target == RiftCoreAdminRollbackProof.TARGET) ||
             (operation == RiftCoreAdminRegistryProof.OPERATION &&
-                target == RiftCoreAdminRegistryProof.TARGET)
+                target == RiftCoreAdminRegistryProof.TARGET) ||
+            (operation == PROBE_STAGE && target == PROBE_TARGET) ||
+            (operation == PROBE_ACTIVATE &&
+                target.matches(Regex("^bootstrap://probe/[0-9a-f]{64}$")))
 
     @Suppress("DEPRECATION")
     private fun installedSigner(context: Context): String {
@@ -291,6 +303,111 @@ internal object RiftCoreAdminConsent {
                     .put("failureType", diagnostic.optString("lastFailureType", "unknown"))
                     .put("failureErrno", diagnostic.optInt("lastFailureErrno", 0))
 
+            }
+        }
+    }
+
+    /**
+     * Trusted fixed-proof import: only real foreground RiftShell, installed
+     * APK signer, approved one-use ticket and selected SAF read descriptor.
+     * No arbitrary app or runtime registration is ever granted.
+     */
+    fun executeProbeStage(
+        context: Context, callerPid: Int, bearer: String,
+        operation: String, target: String, descriptor: ParcelFileDescriptor
+    ): JSONObject {
+        val shell = RiftCoreShellRecovery.status()
+        require(shell.optInt("shellPid", -1) == callerPid &&
+            shell.optBoolean("foregroundLease", false) &&
+            shell.optString("phase") == "connected") {
+            "Probe import requires foreground trusted RiftShell"
+        }
+        return synchronized(lock) {
+            val value = ticket(context, callerPid, bearer)
+            require(value.approved && value.operation == PROBE_STAGE &&
+                value.target == PROBE_TARGET &&
+                operation == value.operation && target == value.target) {
+                "Probe import requires exact approved scope"
+            }
+            RiftCoreSystemCapabilities.recordDecision(
+                context, ACTOR, operation, "consumed", "fixed-probe-stage"
+            )
+            tickets.remove(bearer)
+            try {
+                // Only this fixed probe entrypoint can be imported through
+                // this limited proof action, never an arbitrary class/path.
+                val staged = FileInputStream(descriptor.fileDescriptor).use { input ->
+                    RiftBootstrapComponentStore.stage(
+                        context, "probe", PROBE_ENTRYPOINT, input)
+                }
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "staged", "verified-dex-only"
+                )
+                JSONObject().put("schema", PROBE_SCHEMA)
+                    .put("staged", true)
+                    .put("sha256", staged.getString("sha256"))
+                    .put("activated", false)
+            } catch (error: Exception) {
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "failed", "probe-stage-rejected"
+                )
+                throw error
+            }
+        }
+    }
+
+    /**
+     * Digest-bound activation is separately approved AFTER staging. Launch
+     * only the inert, nonexported Android :riftBootstrapProbe service.
+     * It does not replace or restart Core/Shell or change the RAPP registry.
+     */
+    fun executeProbeActivate(
+        context: Context, callerPid: Int, bearer: String,
+        operation: String, target: String
+    ): JSONObject {
+        val shell = RiftCoreShellRecovery.status()
+        require(shell.optInt("shellPid", -1) == callerPid &&
+            shell.optBoolean("foregroundLease", false) &&
+            shell.optString("phase") == "connected") {
+            "Probe activation requires foreground trusted RiftShell"
+        }
+        return synchronized(lock) {
+            val value = ticket(context, callerPid, bearer)
+            require(value.approved && value.operation == PROBE_ACTIVATE &&
+                value.target == target && operation == value.operation &&
+                validScope(operation, target)) {
+                "Probe activation requires approved matching SHA-256"
+            }
+            RiftCoreSystemCapabilities.recordDecision(
+                context, ACTOR, operation, "consumed", "digest-bound-probe"
+            )
+            tickets.remove(bearer)
+            val sha = target.removePrefix("bootstrap://probe/")
+            try {
+                // Prior proof must not be mistaken for a new execution.
+                val marker = android.util.AtomicFile(java.io.File(
+                    RiftBootstrapComponentStore.root(context), "probe-proof.json"))
+                val result = RiftBootstrapComponentStore.activateProbe(
+                    context, sha, PROBE_ENTRYPOINT)
+                marker.delete()
+                context.startService(Intent(context, RiftBootstrapProbeService::class.java))
+                    ?: error("Probe service did not start")
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "activated", "isolated-probe-process"
+                )
+                JSONObject().put("schema", PROBE_SCHEMA)
+                    .put("activated", true)
+                    .put("sha256", result.getString("sha256"))
+                    .put("probeProcessRequested", true)
+            } catch (error: Exception) {
+                // Any activation written before launch failure must be
+                // restored without needing to kill production Core/Shell.
+                runCatching { RiftBootstrapComponentStore.rollbackProbe(context) }
+                    .onFailure { error.addSuppressed(it) }
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "failed", "probe-activation-rejected"
+                )
+                throw error
             }
         }
     }
