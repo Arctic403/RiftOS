@@ -334,6 +334,15 @@ for (const marker of ['riftos.core.module-stage/1',
   '.put("activated", false)', '.put("runtimeProviderRegistered", false)']) {
   if (!genericModuleStore.includes(marker)) fail(`Generic module stage-only store contract missing: ${marker}`);
 }
+// Gate 2-C: reject consumed Core token replay and recover an interrupted
+// startup using the actual Core journal without killing any protected process.
+for (const marker of ['pruneEmptyFailedStages(base)',
+  'val createdDirectory = !directory.exists()', 'var newDexCommitted = false',
+  'if (newDexCommitted && !record.exists()) destination.delete()',
+  'if (createdDirectory && directory.listFiles()?.isEmpty() == true)']) {
+  if (!genericModuleStore.includes(marker))
+    fail(`Module failed-stage cleanup missing: ${marker}`);
+}
 // Gate 2-A: only the trusted shell's one-use manifest-bound stage path.
 for (const marker of ['MODULE_STAGE = "module.stage"',
   '"module://stage/" + manifest.identityDigest()',
@@ -411,6 +420,32 @@ for (const file of ['RiftCoreModuleManifest.kt', 'RiftCoreModuleStore.kt',
   if (!gradle.includes(`"src/main/java/com/riftos/app/${file}"`)) {
     fail(`Generic module Android exact Kotlin source allowlist missing: ${file}`);
   }
+}
+for (const marker of ['MODULE_RECOVERY_PROOF = "module.recovery.proof"',
+  'MODULE_RECOVERY_SCHEMA = "riftos.core.module-recovery-proof/1"',
+  'fun executeModuleRecoveryProof(', 'RiftCoreModuleActivation.proveInterruptedStartRecovery(',
+  'tickets.remove(bearer)', 'module://recover/']) {
+  if (!probeAdmin.includes(marker)) fail(`Bounded recovery approval missing: ${marker}`);
+}
+for (const marker of ['fun proveInterruptedStartRecovery(',
+  'writeRecord(previous(context), backup)',
+  'backup.put("proof", oldProof)', 'proofMatches(context, old, oldProof)',
+  'require(recover(context))', 'priorProofRestored',
+  'coreProcessTerminated', 'moduleExecuted']) {
+  if (!genericModuleActivation.includes(marker))
+    fail(`Core real-journal non-crashing recovery proof missing: ${marker}`);
+}
+for (const marker of ['proveCoreStageReplay(', 'stageWithSameBearer()',
+  'val replayFailure = runCatching { stageWithSameBearer() }.exceptionOrNull()',
+  'Admin ticket absent or used', 'Prove Core consumed stage ticket replay',
+  'selectGenericRecoveryProof(', 'proveGenericRecovery(',
+  'execute-module-recovery-proof']) {
+  if (!probeUi.includes(marker)) fail(`Trusted negative-test UI contract missing: ${marker}`);
+}
+if (!probeProvider.includes('"execute-module-recovery-proof"') ||
+    !probeClient.includes('"execute-module-recovery-proof"') ||
+    !probePolicy.includes('"module.recovery.proof"')) {
+  fail('Bounded recovery proof must route only via audited trusted Core IPC');
 }
 if (/ProbeV1|PROBE_ENTRYPOINT|runtime\.register/.test(
   genericModuleManifest + genericModuleStore + genericModuleActivation + genericModuleService)) {

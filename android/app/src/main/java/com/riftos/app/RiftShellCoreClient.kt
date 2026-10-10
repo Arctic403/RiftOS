@@ -63,6 +63,9 @@ class RiftShellCoreClient(context: Context) {
                 } else if (extras?.getString("action").orEmpty() in setOf(
                     "execute-probe-stage", "execute-probe-activate")) {
                     RiftCoreAdminConsent.PROBE_SCHEMA
+                } else if (extras?.getString("action") ==
+                    "execute-module-recovery-proof") {
+                    RiftCoreAdminConsent.MODULE_RECOVERY_SCHEMA
                 } else if (extras?.getString("action").orEmpty() in setOf(
                     "execute-module-stage", "execute-module-activate")) {
                     RiftCoreAdminConsent.MODULE_OPERATION_SCHEMA
@@ -126,7 +129,7 @@ class RiftShellCoreClient(context: Context) {
             "execute-rollback-proof", "execute-registry-proof", "discover-providers",
             "execute-probe-stage", "execute-probe-activate",
             "execute-module-stage", "execute-module-activate",
-            "window-closed", "status")) {
+            "execute-module-recovery-proof", "window-closed", "status")) {
             "Invalid trusted admin UI action"
         }
         return call(RiftCoreSurfaceIpcProvider.METHOD_SHELL_ADMIN_CONSENT,

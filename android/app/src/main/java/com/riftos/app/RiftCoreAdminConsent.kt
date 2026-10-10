@@ -38,6 +38,8 @@ internal object RiftCoreAdminConsent {
     const val PROBE_SCHEMA = "riftos.bootstrap.probe-operation/1"
     const val MODULE_STAGE = "module.stage"
     const val MODULE_ACTIVATE = "module.activate"
+    const val MODULE_RECOVERY_PROOF = "module.recovery.proof"
+    const val MODULE_RECOVERY_SCHEMA = "riftos.core.module-recovery-proof/1"
     const val MODULE_OPERATION_SCHEMA = "riftos.core.module-operation/1"
 
     private val random = SecureRandom()
@@ -67,6 +69,8 @@ internal object RiftCoreAdminConsent {
                 target.matches(Regex("^module://stage/[0-9a-f]{64}$"))) ||
             (operation == MODULE_ACTIVATE &&
                 target.matches(Regex("^module://activate/[a-z][a-z0-9._-]{0,44}/[0-9a-f]{64}$"))) ||
+            (operation == MODULE_RECOVERY_PROOF &&
+                target.matches(Regex("^module://recover/[a-z][a-z0-9._-]{0,44}/[0-9a-f]{64}$"))) ||
             (operation == PROBE_ACTIVATE &&
                 target.matches(Regex("^bootstrap://probe/[0-9a-f]{64}$")))
 
@@ -431,6 +435,54 @@ internal object RiftCoreAdminConsent {
                     context, ACTOR, operation, "failed", "generic-module-activation-rejected"
                 )
                 throw error
+            }
+        }
+    }
+
+    /**
+     * Isolated, explicitly approved Core proof of interrupted-start rollback.
+     * It never kills a process, launches the module or changes active module ID.
+     */
+    fun executeModuleRecoveryProof(
+        context: Context, callerPid: Int, bearer: String,
+        operation: String, target: String
+    ): JSONObject {
+        val shell = RiftCoreShellRecovery.status()
+        require(shell.optInt("shellPid", -1) == callerPid &&
+            shell.optBoolean("foregroundLease", false) &&
+            shell.optString("phase") == "connected") {
+            "Core recovery proof requires foreground trusted Shell"
+        }
+        return synchronized(lock) {
+            val ticket = ticket(context, callerPid, bearer)
+            require(ticket.approved && operation == MODULE_RECOVERY_PROOF &&
+                ticket.operation == operation && ticket.target == target &&
+                validScope(operation, target)) {
+                "Core recovery proof scope not independently approved"
+            }
+            val suffix = target.removePrefix("module://recover/")
+            val boundary = suffix.lastIndexOf('/')
+            require(boundary in 1 until suffix.lastIndex) {
+                "Invalid Core module recovery proof target"
+            }
+            val id = suffix.substring(0, boundary)
+            val revision = suffix.substring(boundary + 1)
+            RiftCoreSystemCapabilities.recordDecision(
+                context, ACTOR, operation, "consumed", "bounded-module-recovery-proof"
+            )
+            tickets.remove(bearer)
+            try {
+                val result = RiftCoreModuleActivation.proveInterruptedStartRecovery(
+                    context, id, revision)
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "recovered", "pending-journal-restored"
+                )
+                result
+            } catch (failure: Exception) {
+                RiftCoreSystemCapabilities.recordDecision(
+                    context, ACTOR, operation, "failed", "recovery-proof-rejected"
+                )
+                throw failure
             }
         }
     }

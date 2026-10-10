@@ -97,6 +97,18 @@ internal object RiftCoreModuleActivation {
         return manifest
     }
 
+    /** Historical completion receipt belongs to an exact activated nonce. */
+    private fun proofMatches(context: Context, active: JSONObject, receipt: JSONObject): Boolean =
+        receipt.optString("schema") == PROOF_SCHEMA &&
+            receipt.optString("id") == active.optString("id") &&
+            receipt.optString("version") == active.optString("version") &&
+            receipt.optString("sha256") == active.optString("sha256") &&
+            receipt.optString("manifestDigest") == active.optString("manifestDigest") &&
+            receipt.optString("nonce") == active.optString("nonce") &&
+            receipt.optString("process") == context.packageName + ":riftModuleHost" &&
+            receipt.optInt("pid") > 0 &&
+            receipt.optInt("pid") != Process.myPid()
+
     /**
      * Core-only transaction. Previous slot is persisted BEFORE pending marker.
      * The marker is fsync'd BEFORE updating active pointer. Crash at any point
@@ -113,7 +125,13 @@ internal object RiftCoreModuleActivation {
             val backup = JSONObject()
                 .put("schema", PREVIOUS_SCHEMA)
                 .put("present", prior != null)
-            if (prior != null) backup.put("record", prior)
+            if (prior != null) {
+                backup.put("record", prior)
+                val oldProof = readRecord(proof(context))
+                if (oldProof != null && proofMatches(context, prior, oldProof)) {
+                    backup.put("proof", oldProof)
+                }
+            }
             writeRecord(previous(context), backup)
             val bytes = ByteArray(16).also { random.nextBytes(it) }
             val nonce = bytes.joinToString("") { "%02x".format(it.toInt() and 255) }
@@ -187,6 +205,64 @@ internal object RiftCoreModuleActivation {
             receipt
         }
 
+    /**
+     * Trusted Core-only deterministic test of the real interrupted-start
+     * rollback routine. No Android process is terminated and no DEX runs.
+     * Only the already active verified module may be used; before returning
+     * the exact prior pointer AND historical proof must be restored.
+     */
+    fun proveInterruptedStartRecovery(
+        context: Context, id: String, revision: String
+    ): JSONObject = synchronized(lock) {
+        require(!marker(context).exists()) { "Module recovery proof requires clean startup" }
+        val before = readRecord(active(context))
+            ?: error("Module recovery proof requires existing active module")
+        require(before.getString("id") == id &&
+            before.getString("manifestDigest") == revision) {
+            "Recovery proof cannot switch active module identity"
+        }
+        validate(context, before)
+        val beforeProof = readRecord(proof(context))
+            ?: error("Recovery proof requires earlier verified execution receipt")
+        require(proofMatches(context, before, beforeProof)) {
+            "Recovery proof refused unverified previous execution"
+        }
+        try {
+            activate(context, id, revision) // write real previous journal + pending marker
+            require(marker(context).isFile &&
+                pendingHost(context).getString("nonce") != before.getString("nonce")) {
+                "Recovery proof could not create fresh pending startup"
+            }
+            require(recover(context)) { "Interrupted module recovery was not executed" }
+            val after = readRecord(active(context))
+                ?: error("Core failed to restore active module after simulated interruption")
+            val afterProof = readRecord(proof(context))
+                ?: error("Core failed to restore prior execution receipt")
+            require(!marker(context).exists() &&
+                after.getString("nonce") == before.getString("nonce") &&
+                after.getString("id") == before.getString("id") &&
+                after.getString("manifestDigest") == revision &&
+                proofMatches(context, after, afterProof) &&
+                afterProof.getString("nonce") == beforeProof.getString("nonce")) {
+                "Interrupted startup recovery did not restore exact prior active proof"
+            }
+            JSONObject().put("schema", "riftos.core.module-recovery-proof/1")
+                .put("recovered", true)
+                .put("simulatedPendingStartup", true)
+                .put("coreProcessTerminated", false)
+                .put("moduleExecuted", false)
+                .put("id", id)
+                .put("manifestDigest", revision)
+                .put("previousNonce", before.getString("nonce"))
+                .put("restoredNonce", after.getString("nonce"))
+                .put("priorProofRestored", true)
+                .put("pendingStartup", false)
+        } finally {
+            // Never deliberately leave a pending activation after test failure.
+            if (marker(context).exists()) recover(context)
+        }
+    }
+
     /** Roll back a failed or interrupted module startup, never wipe RAPPs. */
     fun recover(context: Context): Boolean = synchronized(lock) {
         if (!marker(context).exists()) return@synchronized false
@@ -209,9 +285,17 @@ internal object RiftCoreModuleActivation {
         if (prior.getBoolean("present")) {
             val old = prior.getJSONObject("record")
             validate(context, old)
+            val oldProof = prior.optJSONObject("proof")
+            require(oldProof == null || proofMatches(context, old, oldProof)) {
+                "Core previous module proof does not match restored activation"
+            }
             writeRecord(active(context), old)
-        } else AtomicFile(active(context)).delete()
-        AtomicFile(proof(context)).delete()
+            if (oldProof != null) writeRecord(proof(context), oldProof)
+            else AtomicFile(proof(context)).delete()
+        } else {
+            AtomicFile(active(context)).delete()
+            AtomicFile(proof(context)).delete()
+        }
         require(pending.delete()) { "Cannot clear module rollback marker" }
     }
 
@@ -222,15 +306,7 @@ internal object RiftCoreModuleActivation {
         val pending = marker(context).exists()
         val savedProof = readRecord(proof(context))
         val matching = current != null && !pending && savedProof != null &&
-            savedProof.optString("schema") == PROOF_SCHEMA &&
-            savedProof.optString("id") == current.optString("id") &&
-            savedProof.optString("manifestDigest") == current.optString("manifestDigest") &&
-            savedProof.optString("nonce") == current.optString("nonce") &&
-            savedProof.optString("sha256") == current.optString("sha256") &&
-            savedProof.optString("process") ==
-                context.packageName + ":riftModuleHost" &&
-            savedProof.optInt("pid") > 0 &&
-            savedProof.optInt("pid") != Process.myPid()
+            proofMatches(context, current, savedProof)
         JSONObject().put("schema", STATUS_SCHEMA)
             .put("singleActivationSlot", true)
             .put("active", valid != null)

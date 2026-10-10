@@ -234,6 +234,9 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
                     }
                     "execute-module-activate" -> RiftCoreAdminConsent.executeModuleActivate(
                         ctx, caller, bearer, operation, target)
+                    "execute-module-recovery-proof" ->
+                        RiftCoreAdminConsent.executeModuleRecoveryProof(
+                            ctx, caller, bearer, operation, target)
                     "execute-probe-activate" -> RiftCoreAdminConsent.executeProbeActivate(
                         ctx, caller, bearer, operation, target)
                     "window-closed" -> RiftCoreAdminConsent.revokeForWindowClose(ctx, caller)

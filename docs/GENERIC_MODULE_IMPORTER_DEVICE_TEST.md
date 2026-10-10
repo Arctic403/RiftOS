@@ -1,6 +1,27 @@
 # Gate 2 generic module — user-manual device proof
 
-**USER-OWNED DEVICE TESTS ONLY.** The assistant does not trigger signed APK builds, pack/install RAPPs, use Local Agent, or perform mobile UI tests. Gate 2 source must first be reviewed and explicitly pushed with permission. Current signed #685 is Gate 1 only; it cannot run Gate 2 tests.
+**Signed Android build remains USER-triggered.** The user subsequently authorized the assistant to run bounded RiftOS Local Agent UI tests and RiftShell package/install commands; these are allowed only while available and within the user's request. Do not push RiftOS without explicit permission. Signed #689 (source `72094e4df8b2`) device-proved the Gate 2 positive path and negative tests; new Gate 2-C source remains **UNBUILT/UNPUSHED** until a separate reviewed build.
+
+## Gate 2-C — Controlled recovery + direct Core replay (NEW SOURCE, not yet device-proven)
+
+**Prerequisite:** User manually dispatches signed RiftOS Builder from the eventual reviewed Gate 2-C push, installs it and verifies `core status.moduleHost.activeId=example.alternate-proof`, `proofPresent=true`, `pendingStartup=false`, no extra grants/providers. Do **not** use older #689 to look for new test buttons.
+
+**Direct Core consumed-ticket replay (trusted UI opt-in):**
+1. In Admin Approvals, select the existing `example.alternate-proof` manifest. Confirm operation `module.stage` and exact digest target. Request scoped administrator test and select Allow once.
+2. Press **Prove Core consumed stage ticket replay**, rather than ordinary Stage. The trusted Shell makes **two** protected Binder calls with the identical bearer, manifest, descriptor content and target. First call must return a valid, staged-but-not-executed receipt. Second call **must** fail inside Core with `Admin ticket absent or used`. UI explicitly prints `Core direct replay PASS` only if those two conditions hold. Any second success or other error is a **failure**.
+3. Recheck `core status`: original module active ID/proof nonce unchanged, no pending startup, tickets=0, grants=0, three RAPPs retained.
+
+**Recovery journal simulation (trusted UI opt-in, does not crash Core):**
+1. Following the successful replay proof, **Select bounded module recovery proof**. The approved target must be `module://recover/example.alternate-proof/<same SHA-bound manifest revision>`, operation `module.recovery.proof`. Request a new independent consent and Allow once.
+2. Press **Prove interrupted startup recovery once**. Core verifies the module is *already* active with a valid historical proof. It writes the **real** previous-active and previous-proof journal, creates the actual pending-startup marker via `activate` for that same module, then runs the **same** `recover` path used after an interrupted startup. There is **no Android process termination**, **no external DEX execution**, **no module-ID switch**.
+3. Success must show `Core interrupted startup journal/rollback PASS` and a Core reply `riftos.core.module-recovery-proof/1`, `recovered=true`, `simulatedPendingStartup=true`, `priorProofRestored=true`, and identical previous/restored nonce. The final `core status` must match the exact original active module, proof nonce and PID, `pendingStartup=false`, 0 tickets/grants, Core+Shell and 3 RAPPs intact.
+4. **This tests real journal/restore logic but NOT actual power-loss, host-process death or cold-start sequencing.** Keep that stronger proof a separate explicitly planned, bounded device gate.
+
+**Failed SHA admission cleanup regression:**
+1. Copy the known-good DEX into a disposable public `D:/Builds/Modules/example.neg-sha-2/` and write a valid manifest with that ID but an intentionally wrong lowercase 64-character SHA, with no capabilities/dependencies.
+2. Approve one exact `module.stage` through trusted UI. Core must return `Core module length or digest mismatch` and NOT activate.
+3. Core now removes a newly created empty private module ID directory after failed stage and safely prunes legacy empty failed-stage directories before applying the max-32-ID quota. It must **never** remove a directory with staged metadata or the current active module. To prove cleanup thoroughly, use a Core-owned read-only stage inventory/diagnostic in a future gate; public file listing alone does not show private Core storage.
+4. Remove only the disposable **public** negative fixture, not Core-private files. Verify known-good `core status` unchanged.
 
 ## Positive proof
 

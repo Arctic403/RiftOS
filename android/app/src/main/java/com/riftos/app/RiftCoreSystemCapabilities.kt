@@ -32,7 +32,7 @@ internal object RiftCoreSystemCapabilities {
 
     private val PROBE_ONLY_AUDIT = setOf(
         "bootstrap.probe.stage", "bootstrap.probe.activate",
-        "module.stage", "module.activate"
+        "module.stage", "module.activate", "module.recovery.proof"
     )
     private val SAFE_ACTOR = Regex("^[A-Za-z0-9._:-]{1,96}$")
 

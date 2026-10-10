@@ -1,5 +1,9 @@
 # Build and Validation System
 
+## 2026-10-10 — Gate 2-C source contracts and exact user test gates (UNBUILT)
+
+The existing Kotlin source allowlist and documentation ownership ledger remain unchanged: no new platform Kotlin source files were added. `scripts/validate-rift-wiring.mjs` now guards safe cleanup of failed module-ID directory/payload artifacts, direct same-bearer Core Binder replay and exact one-use authenticated `module.recovery.proof` dispatch, noncrashing real-journal rollback and nonce-bound historical proof restoration. Tests are source-contract checks until the user manually dispatches the signed RiftOS Builder. The separate live-device proof must distinguish actual Core bearer replay, controlled journal recovery, and STILL UNPROVEN real Core process-death/cold-boot recovery. See `docs/GENERIC_MODULE_IMPORTER_DEVICE_TEST.md`. Do not modify Riftos-builder.
+
 ## 2026-10-10 — Gate 2 source documentation ownership preflight (manual Builder run 38026894107)
 
 Signed manual Builder from RiftOS source `09f46329d8687bb9c39496c3bbca560a4b308c15` passed the 99-source native wiring check but halted in `scripts/validate-rift-docs.mjs` before Gradle/Kotlin. The four newly introduced files `RiftCoreModuleManifest.kt`, `RiftCoreModuleStore.kt`, `RiftCoreModuleActivation.kt` and `RiftGenericModuleService.kt` were omitted from `docs/SOURCE_OWNERSHIP.md`. Their ledger owners are Core/Shell, Android Host and Build Validation, with concise descriptions in the owning system READMEs. **Source-level documentation repair only; Android/Kotlin compilation is still unverified**, and the user triggers the next signed build manually. Do not weaken the documentation validator, disable its source coverage or alter the independent Builder pipeline.

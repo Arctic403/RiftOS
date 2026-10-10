@@ -127,6 +127,21 @@ internal object RiftCoreModuleStore {
     }
 
     /**
+     * Recover empty module-ID directories left behind by older failed stages.
+     * Never touches directories with any content or follows symlinks.
+     */
+    private fun pruneEmptyFailedStages(base: File) {
+        for (child in base.listFiles().orEmpty()) {
+            if (child.isDirectory && !Files.isSymbolicLink(child.toPath()) &&
+                child.name.matches(SAFE_ID) && !child.name.startsWith("riftos.") &&
+                child.canonicalFile.parentFile == base &&
+                child.listFiles()?.isEmpty() == true) {
+                child.delete()
+            }
+        }
+    }
+
+    /**
      * The approved input stream and bounded manifest are both caller-provided;
      * Core checks EVERY field, SHA and size again before sealing private bytes.
      * A crash during staging may leave an unreferenced DEX, never activation.
@@ -135,15 +150,19 @@ internal object RiftCoreModuleStore {
         synchronized(lock) {
             val manifest = RiftCoreModuleManifest.parse(manifestBytes)
             val base = root(context)
+            pruneEmptyFailedStages(base)
             val ids = base.listFiles()?.filter { it.isDirectory }.orEmpty()
             require(ids.size <= MAX_MODULE_IDS &&
                 (ids.size < MAX_MODULE_IDS || ids.any { it.name == manifest.id })) {
                 "Core module-id limit exceeded"
             }
             val directory = directory(context, manifest.id)
+            val createdDirectory = !directory.exists()
             require(directory.isDirectory || directory.mkdirs()) {
                 "Cannot create Core module directory"
             }
+            var newDexCommitted = false
+            try {
             val revision = manifest.identityDigest()
             val existingRevisions = directory.listFiles()?.count {
                 it.isFile && it.name.endsWith(".json")
@@ -185,6 +204,7 @@ internal object RiftCoreModuleStore {
                     require(!destination.exists() && temporary.renameTo(destination)) {
                         "Cannot commit immutable Core module DEX"
                     }
+                    newDexCommitted = true
                 } finally {
                     if (temporary.exists()) temporary.delete()
                 }
@@ -210,6 +230,18 @@ internal object RiftCoreModuleStore {
                 .put("staged", true)
                 .put("activated", false)
                 .put("runtimeProviderRegistered", false)
+            } catch (failure: Throwable) {
+                // Never discard a preexisting revision, active module or journal.
+                // A fresh DEX without committed metadata is an incomplete stage.
+                val revision = manifest.identityDigest()
+                val record = File(directory, "$revision.json")
+                val destination = File(directory, "$revision.dex")
+                if (newDexCommitted && !record.exists()) destination.delete()
+                if (createdDirectory && directory.listFiles()?.isEmpty() == true) {
+                    directory.delete()
+                }
+                throw failure
+            }
         }
 
     fun inventory(context: Context): JSONObject = synchronized(lock) {

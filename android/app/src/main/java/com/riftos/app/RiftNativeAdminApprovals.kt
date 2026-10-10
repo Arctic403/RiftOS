@@ -124,8 +124,11 @@ internal class RiftNativeAdminApprovals(
         button("Discover installed runtime candidates (read-only)") { discoverProviders() }
         button("Select trusted module manifest from RiftOS Files") { pickGenericModule() }
         button("Stage selected generic module once") { stageGenericModule() }
+        button("Prove Core consumed stage ticket replay") { proveCoreStageReplay() }
         button("Select digest-bound generic activation") { selectGenericActivation() }
         button("Activate selected generic module once") { activateGenericModule() }
+        button("Select bounded module recovery proof") { selectGenericRecoveryProof() }
+        button("Prove interrupted startup recovery once") { proveGenericRecovery() }
         button("Select ProbeV1 DEX from RiftOS Files") { pickRiftFsProbeDex() }
         button("Select external ProbeV1 DEX (Android picker)") { pickProbeDex() }
         button("Stage selected DEX using one-use approval") { stageProbe() }
@@ -414,6 +417,70 @@ internal class RiftNativeAdminApprovals(
         }
     }
 
+    /**
+     * Trusted-UI-only direct Core bearer replay regression. The SAME ticket,
+     * scope, validated manifest and read-only DEX are sent twice over Binder.
+     * The first call stages, the second MUST be rejected inside Core.
+     */
+    private fun proveCoreStageReplay() {
+        val choice = selectedModule ?: run {
+            show("Select a generic module before Core replay proof."); return
+        }
+        val digest = choice.manifest.identityDigest()
+        val expected = "module://stage/" + digest
+        if (operation != RiftCoreAdminConsent.MODULE_STAGE || target != expected) {
+            show("Select exact module.stage scope before Core replay proof."); return
+        }
+        if (!activity.hasWindowFocus()) {
+            show("Core ticket replay proof requires trusted foreground window."); return
+        }
+        val ticket = currentTicket ?: run {
+            show("Core replay proof requires a fresh one-use stage approval."); return
+        }
+        val client = core ?: run { show("Core IPC unavailable."); return }
+        perform {
+            val fresh = readGenericModuleChoice(
+                File(probeRiftFsDirectory(), choice.manifest.id))
+            require(fresh.manifest.identityDigest() == digest) {
+                "Replay proof manifest changed after administrator approval"
+            }
+            val dexFile = File(File(probeRiftFsDirectory(), fresh.manifest.id),
+                fresh.manifest.payload)
+            fun stageWithSameBearer(): JSONObject {
+                ParcelFileDescriptor.open(dexFile, ParcelFileDescriptor.MODE_READ_ONLY).use { fd ->
+                    return client.adminConsent("execute-module-stage", ticket,
+                        RiftCoreAdminConsent.MODULE_STAGE, expected,
+                        dexFd = fd, manifestText = fresh.manifestText)
+                }
+            }
+            val first = stageWithSameBearer()
+            require(first.optBoolean("staged") &&
+                first.optString("manifestDigest") == digest &&
+                !first.optBoolean("activated", true)) {
+                "First Core stage did not attest exact revision"
+            }
+            // Core has already consumed this bearer; UI has deliberately
+            // not cleared the local reference before the second Binder call.
+            val replayFailure = runCatching { stageWithSameBearer() }.exceptionOrNull()
+            activity.runOnUiThread {
+                if (currentTicket == ticket) currentTicket = null
+                selectedModule = null
+                stagedModule = choice.manifest
+            }
+            require(replayFailure != null) {
+                "SECURITY FAILURE: Core accepted the same approved stage bearer twice"
+            }
+            require(replayFailure.message.orEmpty().contains(
+                "Admin ticket absent or used")) {
+                "Replay failed, but not with expected Core consumed-bearer rejection: " +
+                    replayFailure.javaClass.simpleName
+            }
+            "Core direct replay PASS: first digest-bound stage accepted; " +
+                "second protected Binder call with SAME consumed bearer denied. " +
+                "Module remains staged, not activated."
+        }
+    }
+
     private fun selectGenericActivation() {
         if (currentTicket != null) {
             show("Revoke or consume previous approval before changing scope.")
@@ -463,6 +530,65 @@ internal class RiftNativeAdminApprovals(
             "Core requested trusted generic module " + module.id + " v" +
                 module.version + " in separate :riftModuleHost process. " +
                 "Check core status moduleHost.proofPresent for actual execution."
+        }
+    }
+
+    private fun selectGenericRecoveryProof() {
+        if (currentTicket != null) {
+            show("Revoke or consume prior approval before changing recovery scope.")
+            return
+        }
+        val module = stagedModule ?: run {
+            show("Stage the already active known-good module before recovery proof.")
+            return
+        }
+        operation = RiftCoreAdminConsent.MODULE_RECOVERY_PROOF
+        target = "module://recover/" + module.id + "/" + module.identityDigest()
+        scopeText?.text = "Bounded Core interrupted-start recovery proof\n" +
+            "Active module must ALREADY be: " + module.id +
+            " v" + module.version + "\nSHA " + module.sha256 +
+            "\nNo process kill, no DEX execution, no new module activation. " +
+            "Core simulates its pending startup journal and restores exact prior " +
+            "active revision and its authenticated historical execution receipt."
+        show("Request a NEW scoped approval to prove Core journal recovery.")
+    }
+
+    private fun proveGenericRecovery() {
+        val module = stagedModule ?: run {
+            show("Stage known-good active module before recovery proof."); return
+        }
+        val expected = "module://recover/" + module.id + "/" + module.identityDigest()
+        if (operation != RiftCoreAdminConsent.MODULE_RECOVERY_PROOF || target != expected) {
+            show("Select bounded module recovery proof scope first."); return
+        }
+        if (!activity.hasWindowFocus()) {
+            show("Recovery proof requires trusted foreground Admin Approvals."); return
+        }
+        val ticket = currentTicket ?: run {
+            show("No one-use Core recovery proof ticket."); return
+        }
+        val client = core ?: run { show("Core IPC unavailable."); return }
+        perform {
+            val result = client.adminConsent("execute-module-recovery-proof", ticket,
+                RiftCoreAdminConsent.MODULE_RECOVERY_PROOF, expected)
+            activity.runOnUiThread {
+                if (currentTicket == ticket) currentTicket = null
+            }
+            require(result.optBoolean("recovered") &&
+                result.optBoolean("simulatedPendingStartup") &&
+                result.optBoolean("priorProofRestored") &&
+                !result.optBoolean("pendingStartup", true) &&
+                !result.optBoolean("coreProcessTerminated", true) &&
+                !result.optBoolean("moduleExecuted", true) &&
+                result.optString("id") == module.id &&
+                result.optString("manifestDigest") == module.identityDigest() &&
+                result.optString("previousNonce") ==
+                    result.optString("restoredNonce")) {
+                "Core recovery proof did not restore exact previous module and receipt"
+            }
+            "Core interrupted startup journal/rollback PASS: prior active " +
+                module.id + " and original execution proof nonce restored. " +
+                "No process killed or external code executed."
         }
     }
 
@@ -610,6 +736,11 @@ internal class RiftNativeAdminApprovals(
                         "manifest and matching DEX? STAGE ONLY, no execution or provider " +
                         "registration. A later activation would execute code with the " +
                         "RiftOS APK Android UID, not an isolated security sandbox."
+                } else if (requestedOperation == RiftCoreAdminConsent.MODULE_RECOVERY_PROOF) {
+                    "Allow ONE exact Core module interrupted-start JOURNAL recovery " +
+                        "simulation? The selected module must already be active. " +
+                        "No process is killed, no DEX is executed and no module " +
+                        "ID is changed. Core must restore its earlier proof nonce."
                 } else if (requestedOperation == RiftCoreAdminConsent.MODULE_ACTIVATE) {
                     "Allow ONE activation of the exact SHA-bound trusted module in " +
                         "nonexported :riftModuleHost? It executes with the RiftOS " +
@@ -658,6 +789,9 @@ internal class RiftNativeAdminApprovals(
                 } else if (operation == RiftCoreAdminConsent.MODULE_STAGE) {
                     "Core approved ONE exact manifest-bound generic module stage. " +
                         "Execute before 45-second expiry; no code runs during staging."
+                } else if (operation == RiftCoreAdminConsent.MODULE_RECOVERY_PROOF) {
+                    "Core approved ONE bounded startup-journal recovery proof. " +
+                        "Execute within 45 seconds; verify same prior nonce in Core status."
                 } else if (operation == RiftCoreAdminConsent.MODULE_ACTIVATE) {
                     "Core approved ONE exact staged module activation. Start within 45 " +
                         "seconds; confirm actual execution using core status.moduleHost."
