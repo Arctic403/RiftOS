@@ -272,7 +272,93 @@ const probeClient = read(`${kotlinDir}/RiftShellCoreClient.kt`);
 const probeProvider = read(`${kotlinDir}/RiftCoreSurfaceIpcProvider.kt`);
 const e0HostComponent = read(`${kotlinDir}/RiftHostComponentAbiV1.kt`);
 const e1CoreSwitch = read(`${kotlinDir}/RiftCoreCandidateSwitch.kt`);
+const shellCandidateSwitch = read(`${kotlinDir}/RiftShellCandidateSwitch.kt`);
+const graphicalShellAbi = read(`${kotlinDir}/RiftShellComponentAbiV1.kt`);
+const shellActivityForSwitch = read(`${kotlinDir}/RiftShellActivity.kt`);
+for (const marker of [
+  'interface RiftShellGraphicalComponentV1',
+  'interface RiftShellPlatformServicesV1',
+  'internal class RiftShellPlatformServicesAdapter',
+  'fun attach(activity: Activity, container: FrameLayout,',
+  'fun event(id: String, generation: Long, payload: JSONObject): JSONObject',
+  'fun snapshot(id: String): JSONObject',
+  'client.offerEvent(id, generation, RiftAppAbi.Event(',
+  'client.reportDesktop(snapshot)',
+]) if (!graphicalShellAbi.includes(marker)) {
+  fail(`S genuine graphical Shell V1 host ABI is missing: ${marker}`);
+}
+for (const marker of [
+  'internal object RiftShellCandidateSwitch',
+  'RiftBootstrapComponentStore.active(application, "shell")',
+  'RiftBootstrapComponentStore.resetShellToEmbedded(application)',
+  'Independent Shell qualification missing',
+  'Shell candidate class shadows host APK',
+  'Shell candidate does not implement native graphical V1 contract',
+  'unaccepted-shell-startup',
+  'automaticPromotionEnabled", false',
+]) if (!shellCandidateSwitch.includes(marker)) {
+  fail(`S guarded external graphical Shell selector missing: ${marker}`);
+}
+for (const marker of [
+  'RiftShellCandidateSwitch.selectAtBoot(application)',
+  'candidate.attach(this, host,',
+  'RiftShellPlatformServicesAdapter(externalCore)',
+  'private var externalShell: RiftShellGraphicalComponentV1? = null',
+  'externalShell?.onResume()',
+  'externalShell?.onPause()',
+  'externalShell?.onDestroy()',
+  'RiftShellCandidateSwitch.fallback(application, "external-shell-attach-exception")',
+]) if (!shellActivityForSwitch.includes(marker)) {
+  fail(`S external graphical Shell lifecycle path not reachable: ${marker}`);
+}
+if (!gradle.includes('"src/main/java/com/riftos/app/RiftShellComponentAbiV1.kt"') ||
+    !gradle.includes('"src/main/java/com/riftos/app/RiftShellCandidateSwitch.kt"') ||
+    !bootstrapStore.includes('fun resetShellToEmbedded(context: Context)')) {
+  fail('S external graphical Shell host contract missing from mandatory Gradle/rollback');
+}
+
 const coreRecoveryDiagnostics = read(`${kotlinDir}/RiftCoreRecoveryDiagnostics.kt`);
+const componentReleaseLedger = read(`${kotlinDir}/RiftComponentReleaseLedger.kt`);
+const coreSupervisor = read(`${kotlinDir}/RiftCoreRecoverySupervisorService.kt`);
+for (const marker of [
+  'internal object RiftComponentReleaseLedger',
+  'riftos.host.revisions/1',
+  'fun recordPrepared(context: Context, id: String, qualified: JSONObject)',
+  'fun acceptProven(context: Context, id: String, sha: String)',
+  'fun recoveryTarget(context: Context, id: String)',
+  'fun failed(context: Context, id: String, reason: String)',
+  'Quarantined component revision cannot be reactivated',
+  'Revision executable digest mismatch',
+  'lastKnownGood',
+  'AtomicFile(path)',
+]) if (!componentReleaseLedger.includes(marker)) {
+  fail(`H protected Core/Shell revision journal missing: ${marker}`);
+}
+for (const marker of [
+  'class RiftCoreRecoverySupervisorService : Service()',
+  'riftos.host.core-supervisor/1',
+  'Application.getProcessName() == packageName + ":riftCoreSupervisor"',
+  'manager.runningAppProcesses ?: return',
+  'state", "core-process-missing"',
+  'AtomicFile(file)',
+  'automaticRestartGuaranteed", false',
+  'override fun onDestroy()',
+]) if (!coreSupervisor.includes(marker)) {
+  fail(`H independent Core observation contract missing: ${marker}`);
+}
+if (!gradle.includes('"src/main/java/com/riftos/app/RiftComponentReleaseLedger.kt"') ||
+    !gradle.includes('"src/main/java/com/riftos/app/RiftCoreRecoverySupervisorService.kt"') ||
+    !manifest.includes('android:name=".RiftCoreRecoverySupervisorService"') ||
+    !manifest.includes('android:process=":riftCoreSupervisor"') ||
+    !manifest.includes('android:exported="false"') ||
+    !bootstrapHost.includes('RiftCoreRecoverySupervisorService::class.java') ||
+    !coreRuntime.includes('.put("coreRecoverySupervisor", RiftCoreRecoverySupervisorService.status(context))') ||
+    !coreRuntime.includes('.put("externalCoreRevisions", RiftComponentReleaseLedger.status(context, "core"))') ||
+    !coreRuntime.includes('.put("externalShellRevisions", RiftComponentReleaseLedger.status(context, "shell"))') ||
+    !e1CoreSwitch.includes('RiftComponentReleaseLedger.failed(application, "core", reason)')) {
+  fail('H external revision ledger/observer not fully included in manifest, Android Kotlin and Core startup/status');
+}
+
 for (const marker of [
   'internal object RiftCoreRecoveryDiagnostics',
   'fun recoverHistoricalExit(app: Application)',

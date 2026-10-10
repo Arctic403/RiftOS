@@ -1,5 +1,9 @@
 # Android Host
 
+## 2026-10-10 — Core/Shell revision ledger and separate observation source
+
+Main branch hosts `RiftComponentReleaseLedger` (SHA-checked pending, proven, quarantine state), `RiftCoreRecoverySupervisorService` (nonexported separate Android process for best-effort Core observation, **does not guarantee automatic process restart**), and guarded `RiftShellCandidateSwitch` (inactive without host-qualified external Shell). The platform `RiftShellActivity` now offers `RiftShellGraphicalComponentV1` before constructing any embedded desktop on the candidate path, using authenticated `RiftShellCoreClient` through a scoped `RiftShellPlatformServicesV1` adapter. Embedded Shell remains default/recoverable. MCP/relay stays APK-owned. Host/device failure recovery and last-known-good external Core/Shell automatic rollback remain unproven until a real artifact builder/qualifier/pointer activator/watcher is implemented and tested. GitHub backup is a restore-only snapshot; development on `main`.
+
 ## 2026-10-10 — H diagnostic evidence added, host completion pending
 
 New `RiftCoreRecoveryDiagnostics` is a fixed APK-owned, app-private bounded recorder for Android historical main-process exit context (API 30+), optional accessible native trace excerpt/hash, and caught/fatal candidate Java stacks. It preserves Android's original uncaught-exception handler and reports `fullPlatformTraceGuaranteed=false`. `RiftBootstrapHost` invokes the historical survey before optional Core selection, Core status surfaces limited metadata, and Builder/Gradle/validator pin the owner. This makes failures more diagnosable; **it does not independently watch a dead Core, immediately restart it, implement a trusted external Core installer/qualifier/activation, or recover last-known-good external N-1**. Device proof is pending. See [H-C-R-S-F roadmap](EXTERNAL_CORE_SHELL_ROADMAP.md).

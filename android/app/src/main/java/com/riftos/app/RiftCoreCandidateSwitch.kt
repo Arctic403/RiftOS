@@ -176,6 +176,8 @@ internal object RiftCoreCandidateSwitch {
     fun fallback(application: Application, reason: String) {
         lastSelection = "embedded"
         lastFallback = reason
+        runCatching { RiftComponentReleaseLedger.failed(application, "core", reason) }
+            .onFailure { Log.w(TAG, "Core revision quarantine journal unavailable", it) }
         try {
             RiftBootstrapComponentStore.resetCoreToEmbedded(application)
         } catch (failure: Throwable) {

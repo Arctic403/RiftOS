@@ -187,6 +187,29 @@ internal object RiftBootstrapComponentStore {
         if (marker.exists()) require(marker.delete()) { "Core startup marker cannot be cleared" }
     }
 
+    /**
+     * Shell owns its independent :riftShell process; a failed unaccepted
+     * graphical implementation revokes only its fixed activation pointer.
+     * The embedded graphical Activity remains available during migration.
+     */
+    @Synchronized
+    fun resetShellToEmbedded(context: Context) {
+        val dir = root(context)
+        require(!Files.isSymbolicLink(dir.toPath())) { "Shell rollback root is symlinked" }
+        if (!dir.exists()) return
+        require(dir.isDirectory) { "Shell rollback root is invalid" }
+        val pointer = File(dir, "shell.json")
+        for (suffix in listOf("", ".new", ".bak")) {
+            require(!Files.isSymbolicLink(File(pointer.path + suffix).toPath())) {
+                "Shell rollback target symlinked"
+            }
+        }
+        AtomicFile(pointer).delete()
+        val marker = File(dir, "shell.booting")
+        require(!Files.isSymbolicLink(marker.toPath())) { "Shell marker symlinked" }
+        if (marker.exists()) require(marker.delete()) { "Shell startup marker cannot be cleared" }
+    }
+
     /** Proof-only activation; Core/Shell remain protected embedded implementations. */
     @Synchronized
     fun activateProbe(context: Context, sha: String, entrypoint: String): JSONObject {

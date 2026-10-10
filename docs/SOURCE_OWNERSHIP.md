@@ -84,6 +84,8 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftHostComponentAbiV1.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCoreCandidateSwitch.kt` | `docs/systems/android-host/README.md` + `docs/systems/android-host/E1_CORE_CANDIDATE.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCoreRecoveryDiagnostics.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftComponentReleaseLedger.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftCoreRecoverySupervisorService.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBootstrapComponentStore.kt` | `docs/systems/android-host/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBootstrapProbeService.kt` | `docs/systems/android-host/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCoreModuleManifest.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
@@ -109,6 +111,8 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftRemoteShellExecutor.kt` | `docs/systems/core-shell/README.md` + `docs/systems/shell/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRemoteShellUiClient.kt` | `docs/systems/core-shell/README.md` + `docs/systems/browser/README.md` + `docs/PUBLIC_SURFACES.md` |
 | `android/app/src/main/java/com/riftos/app/RiftShellActivity.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/README.md` + `docs/systems/desktop/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftShellComponentAbiV1.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftShellCandidateSwitch.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftShellCoreClient.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftShellRappHost.kt` | `docs/systems/core-shell/README.md` + `docs/systems/desktop/README.md` + `docs/systems/riftbuild/README.md` + `docs/PUBLIC_SURFACES.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCoreAppExecutor.kt` | `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |

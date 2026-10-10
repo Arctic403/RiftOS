@@ -56,6 +56,7 @@ class RiftShellActivity : Activity() {
     }
     private var ready = false
     private var active = false
+    private var externalShell: RiftShellGraphicalComponentV1? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,6 +78,28 @@ class RiftShellActivity : Activity() {
             }
             insets
         }
+        // A qualified external graphical component owns the ENTIRE desktop
+        // branch. The embedded window manager is never constructed when it
+        // successfully attaches, and remains the protected default otherwise.
+        val candidate = RiftShellCandidateSwitch.selectAtBoot(application)
+        if (candidate != null) {
+            try {
+                val externalCore = RiftShellCoreClient(applicationContext)
+                val restore = runCatching { externalCore.claimRecovery() }.getOrNull()
+                setContentView(host)
+                candidate.attach(this, host,
+                    RiftShellPlatformServicesAdapter(externalCore), restore)
+                externalShell = candidate
+                return
+            } catch (failure: Throwable) {
+                android.util.Log.e("RiftShellActivity",
+                    "External graphical Shell startup rejected", failure)
+                RiftShellCandidateSwitch.fallback(application, "external-shell-attach-exception")
+                runCatching { candidate.onDestroy() }
+                host.removeAllViews()
+            }
+        }
+
         val workspaceRecords = RiftWorkspaceRecords.get(this)
         workspaceWatcher = RiftWorkspaceWatcher(this, { _ -> Unit }, workspaceRecords)
         Thread({ runCatching { workspaceWatcher.start() } },
@@ -292,6 +315,7 @@ class RiftShellActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        externalShell?.let { it.onResume(); return }
         active = true
         if (ready) {
             browser.onResume()
@@ -304,11 +328,17 @@ class RiftShellActivity : Activity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        externalShell?.let { it.onWindowFocusChanged(hasFocus); return }
         if (!ready) return
         if (hasFocus) restoreFocus() else runCatching { core.focus(null) }
     }
 
     override fun onPause() {
+        if (externalShell != null) {
+            externalShell?.onPause()
+            super.onPause()
+            return
+        }
         active = false
         if (ready) {
             runCatching { core.focus(null) }
@@ -329,6 +359,7 @@ class RiftShellActivity : Activity() {
     @Deprecated("Activity result compatibility")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (externalShell?.onActivityResult(requestCode, resultCode, data) == true) return
         if (ready && systemApps.onActivityResult(requestCode, resultCode, data)) return
         if (ready && browser.onActivityResult(requestCode, resultCode, data)) return
         if (ready) workspaceApps.onActivityResult(requestCode, resultCode, data)
@@ -336,11 +367,20 @@ class RiftShellActivity : Activity() {
 
     @Deprecated("Back navigation compatibility")
     override fun onBackPressed() {
+        if (externalShell?.onBackPressed() == true) return
         if (ready && desktop.handleBack()) return
         super.onBackPressed()
     }
 
     override fun onDestroy() {
+        if (externalShell != null) {
+            runCatching { externalShell?.onDestroy() }
+            externalShell = null
+            stateReporter.shutdownNow()
+            mainHandler.removeCallbacks(reportTick)
+            super.onDestroy()
+            return
+        }
         active = false
         ready = false
         mainHandler.removeCallbacks(reportTick)

@@ -73,6 +73,10 @@ internal object RiftBootstrapHost {
                 RiftHostCoreComponents.initializeAtBoot(application)
                 RiftCoreShellRecovery.initialize(application)
                 RiftMcpRuntime.relayClient(application).start()
+                runCatching {
+                    application.startService(android.content.Intent(
+                        application, RiftCoreRecoverySupervisorService::class.java))
+                }.onFailure { Log.w(TAG, "Separate Core observer unavailable", it) }
             }
         })
     }

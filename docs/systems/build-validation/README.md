@@ -1,5 +1,9 @@
 # Build and Validation System
 
+## 2026-10-10 — Core/Shell host migration exact source preflight
+
+Added `RiftComponentReleaseLedger.kt`, `RiftCoreRecoverySupervisorService.kt`, `RiftShellCandidateSwitch.kt`, `RiftShellComponentAbiV1.kt` to exact Gradle Kotlin inventory and `docs/SOURCE_OWNERSHIP.md`. AndroidManifest now declares a nonexported `:riftCoreSupervisor` Service; RiftOS validator checks Shell ABI/selector/lifecycle, immutable Core/Shell revision metadata and Core observer. Separate Builder `riftos-build.sh` requires the new source/manifest markers; `test-builder-contracts.py` verifies preflight presence, and `verify-riftos-apk.sh` requires `riftos.host.revisions/1`, `riftos.host.core-supervisor/1`, `riftos.shell.candidate-switch/1`. Full source npm/Gradle/Kotlin/DEX and signed APK proof **not run by assistant**. User continues manual signed builds on normal `main`. Recovery backup not used.
+
 ## 2026-10-10 — H recovery diagnostics mandatory Kotlin and signed DEX contract
 
 New `RiftCoreRecoveryDiagnostics.kt` is an APK host diagnostic dependency, explicitly listed in Gradle's `verifyRiftOsAndroidSources` Kotlin allowlist and `SOURCE_OWNERSHIP`. `scripts/validate-rift-wiring.mjs` and coordinated Builder preflight/Python selftest require its bounded AtomicFile/Android exit evidence/uncaught handler delegation, BootstrapHost startup hook and Core read-only status; final `verify-riftos-apk.sh` requires `riftos.core.recovery-diagnostics/1` in the signed classes.dex. No automatic Core activation, signed Builder dispatch, Kotlin compilation or device result follows from the source-only checks. H3 remains unaccepted.

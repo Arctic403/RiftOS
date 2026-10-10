@@ -48,6 +48,13 @@
             android:process=":riftBootstrapProbe"
             android:stopWithTask="true" />
 
+        <!-- Host-owned Core liveness evidence; Android may still terminate it. -->
+        <service
+            android:name=".RiftCoreRecoverySupervisorService"
+            android:exported="false"
+            android:process=":riftCoreSupervisor"
+            android:stopWithTask="false" />
+
         <!-- Reusable trusted DEX module host; separate process, same APK UID. -->
         <service
             android:name=".RiftGenericModuleService"
