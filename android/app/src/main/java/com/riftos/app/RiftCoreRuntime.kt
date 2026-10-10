@@ -126,6 +126,7 @@ object RiftCoreRuntime {
             .put("appSurfaces", surfaces(context).list())
             .put("coreApps", lifecycle(context).status())
             .put("shellRecovery", RiftCoreShellRecovery.status())
+            .put("bootstrapHost", RiftBootstrapHost.status(context))
             .put("systemCapabilities", RiftCoreSystemCapabilities.status(context))
             .put("adminConsent", RiftCoreAdminConsent.status(context))
             .put("adminRollbackProof", RiftCoreAdminRollbackProof.status(context))

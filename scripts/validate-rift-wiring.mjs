@@ -193,12 +193,26 @@ if (!desktop.includes('LauncherApp("mcp", "Rift MCP", "⇄")')) fail('Rift MCP i
 
 // C1.0 Core/Shell split: only Core owns installation/runtime/build authority.
 const coreApplication = read(`${kotlinDir}/RiftCoreApplication.kt`);
+const bootstrapHost = read(`${kotlinDir}/RiftBootstrapHost.kt`);
 const coreRuntime = read(`${kotlinDir}/RiftCoreRuntime.kt`);
 const rappHost = read(`${kotlinDir}/RiftRappHost.kt`);
 const platformBuild = read(`${kotlinDir}/RiftBuildPlatformTools.kt`);
-for (const required of ['class RiftCoreApplication : Application()', 'RiftCoreRuntime.initialize(this)',
+for (const required of ['class RiftCoreApplication : Application()', 'RiftBootstrapHost.startCore(this)',
   'Application.getProcessName()', 'applicationInfo.processName']) {
   if (!coreApplication.includes(required)) fail(`C1.0 app-process bootstrap missing: ${required}`);
+}
+for (const required of ['interface RiftBootstrapEntry', 'object RiftBootstrapHost',
+  'fun startCore(application: Application)', 'fun prepareShell(application: Application)',
+  'RiftCoreAdminRollbackProof.recover(application)', 'RiftCoreAdminRegistryProof.recover(application)',
+  'RiftCoreRuntime.initialize(application)', 'RiftCoreShellRecovery.initialize(application)',
+  'RiftMcpRuntime.relayClient(application).start()', 'RiftBrowserWindow.prepareRemoteShellWebViewDirectory()',
+  'DexClassLoader(', 'Module bootstrap already in progress',
+  'inProgress.exists()', 'embedded.start(application)']) {
+  if (!bootstrapHost.includes(required)) fail(`Bootstrap host compatibility/recovery contract missing: ${required}`);
+}
+if (!coreApplication.includes('RiftBootstrapHost.prepareShell(this)') ||
+    !gradle.includes('"src/main/java/com/riftos/app/RiftBootstrapHost.kt"')) {
+  fail('Bootstrap host must own both Android process entrypoints and be declared in exact Kotlin sources');
 }
 for (const required of ['object RiftCoreRuntime', 'fun initialize(context: Context)',
   'fun packages(context: Context)', 'fun runtimes(context: Context)',
@@ -732,8 +746,8 @@ for (const required of [
 ]) if (!nativeSystemApps.includes(required)) {
   fail(`C1.3-D native system window must use remote Core package authority: ${required}`);
 }
-if (!coreApplication.includes('RiftMcpRuntime.relayClient(this).start()') ||
-    !coreApplication.includes('RiftBrowserWindow.prepareRemoteShellWebViewDirectory()') ||
+if (!bootstrapHost.includes('RiftMcpRuntime.relayClient(application).start()') ||
+    !bootstrapHost.includes('RiftBrowserWindow.prepareRemoteShellWebViewDirectory()') ||
     !browserWindow.includes('fun prepareRemoteShellWebViewDirectory()') ||
     !browserWindow.includes('WebView.setDataDirectorySuffix("riftShell")') ||
     hasWebKitDependency(coreApplication)) {
@@ -747,7 +761,7 @@ if (!coreApplication.includes('RiftMcpRuntime.relayClient(this).start()') ||
 const coreShellRecovery = read(`${kotlinDir}/RiftCoreShellRecovery.kt`);
 const localAgent = read(`${kotlinDir}/RiftVortexLocalAgent.kt`);
 if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreShellRecovery.kt"') ||
-    !coreApplication.includes('RiftCoreShellRecovery.initialize(this)')) {
+    !bootstrapHost.includes('RiftCoreShellRecovery.initialize(application)')) {
   fail('C1.3-E Core-owned remote-shell recovery watchdog missing from compiled default process');
 }
 for (const required of [
@@ -969,7 +983,7 @@ for (const marker of [
 ]) if (!(c14Tickets + c14Policy).includes(marker)) {
   fail(`C1.4-C1 exact-scope Core authorization/revocation/audit missing: ${marker}`);
 }
-if (!coreApplication.includes('RiftCoreAdminRollbackProof.recover(this)') ||
+if (!bootstrapHost.includes('RiftCoreAdminRollbackProof.recover(application)') ||
     !coreRuntime.includes('"adminRollbackProof", RiftCoreAdminRollbackProof.status(context)') ||
     !coreIpcProvider.includes('"execute-rollback-proof" -> RiftCoreAdminConsent.executeRollbackProof(') ||
     !coreIpcProvider.includes('"window-closed" -> RiftCoreAdminConsent.revokeForWindowClose(') ||
@@ -1064,7 +1078,7 @@ for (const marker of [
 ]) if (!c14Tickets.includes(marker)) fail(`C1.4-C2-A Core ticket/scope/audit guard missing: ${marker}`);
 for (const marker of [
   '"execute-registry-proof" -> RiftCoreAdminConsent.executeRegistryProof(',
-  'RiftCoreAdminRegistryProof.recover(this)',
+  'RiftCoreAdminRegistryProof.recover(application)',
   '"adminRegistryProof", RiftCoreAdminRegistryProof.status(context)',
   'Select isolated runtime registry proof scope',
   'Execute Core empty registry and rollback once',
@@ -1072,7 +1086,7 @@ for (const marker of [
   'val errno = response.optInt("failureErrno", 0)',
   'Core C2-A registry transaction FAILED at',
   'No success claimed; inspect Core registry/journal status.'
-]) if (!(coreIpcProvider + coreApplication + coreRuntime +
+]) if (!(coreIpcProvider + coreApplication + bootstrapHost + coreRuntime +
   productionClient + c14AdminUi).includes(marker)) {
   fail(`C1.4-C2-A trusted Core Binder + native UI or interrupted cleanup missing: ${marker}`);
 }

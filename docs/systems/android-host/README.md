@@ -1,5 +1,11 @@
 # Android Host
 
+## 2026-10-09 — Bootstrap Host compatibility boundary (SOURCE ONLY)
+
+`RiftCoreApplication` now delegates default-process Core startup and remote-`:riftShell` WebView preparation to `RiftBootstrapHost`. With no external activation file (the only shipping configuration), the original embedded Core recovery, Core runtime, Shell recovery, MCP relay and browser data-directory sequence remains unchanged. An optional hash-verified, read-only, app-private DEX entrypoint is defined for future separately delivered Core/Shell implementations at **process startup only**. It is NOT a working hot-swap, a component installer, or a completed Core/Shell extraction, and it has not been built/device tested.
+
+See [Bootstrap Host Migration](BOOTSTRAP_HOST_MIGRATION.md) for exact contract, guards, blockers and remaining gates. The user manually runs the existing signed Builder; source proof does not promote C2-A, C2-B2 or this migration to Android DEVICE PASS.
+
 ## 2026-10-09 — C1.4-C1 Core process startup interrupted journal recovery SOURCE CANDIDATE
 
 Default-process `RiftCoreApplication.onCreate` attempts `RiftCoreAdminRollbackProof.recover` before `RiftCoreRuntime.initialize`: only a fixed journalled Core virtual-C: canary `/C:/RiftOS/.c14c-rollback.txt` can be removed after an interrupted first privileged proof transaction. A recovery failure is logged, and future proof calls independently re-run recovery and fail closed; no unrelated app/RAPP lifecycle is stopped. No secondary shell or RAPP process can perform this recovery. Android app sandbox, OS filesystem restrictions and no-root assumption are preserved. No build/device process-crash proof yet. Separate C1.3-E real production graphical process restart remains previously signed-device-proven, but B-ticket old-shell-PID revocation across another actual kill remains a C1.4-C hardening test requiring specific user approval.

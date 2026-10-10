@@ -1,5 +1,9 @@
 # RiftOS Roadmap
 
+## 2026-10-09 — Minimal APK Bootstrap Host migration (new architectural workstream; SOURCE checkpoint only)
+
+User authorized a coordinated migration to a tiny stable APK host with independently replaceable RiftOS Core, Shell, UI, services and runtimes. Clean source `3c8a7bd5f6f5` was archived before changes. First source checkpoint adds `RiftBootstrapHost`: existing default Core/Shell startup delegates through the host and retains full embedded fallback; optional hash-verified DEX entrypoint is selected at process startup only. Core status exposes passive host diagnostics. All actual Kotlin/C++ Core/Shell implementation still ships in the APK. See `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` for required gates: compile/device-prove embedded parity, installer/atomic activation/recovery, external Core, external Shell, process-safe C++ services, final signed regression. Do **not** count this as full migration, live-editing, Kotlin compilation, signed APK or device pass. Keep C1.4-C2-A signed-device proof and C2-B2 HOLD independent; user alone initiates the existing Builder.
+
 ## 2026-10-09 — C1.4-C2-A physical #678 errno 13 hardlink failure: exclusive-create proof patch SOURCE
 
 User-signed and installed RiftOS #678 (Builder run 38007385307, source `272f39b2ec11`). Screenshot and live MCP `core status` independently show the *exact* C2-A failure: `atomic-create-only-publish`, `ErrnoException`, **errno 13 / EACCES** after one-use native approval consumed. This proves both the Java and Android native **hard-link** paths failed at publication; not a signer, ticket, or scratch-write problem. The Core registry, scratch and journal were all absent afterward; grants stayed at zero, Core and Shell separate and both intentionally retained RAPPs present. The old zero-candidate C2-B1 read-only discovery had already passed. **C2-A remains NOT device passed.**

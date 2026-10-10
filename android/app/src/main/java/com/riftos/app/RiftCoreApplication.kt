@@ -26,24 +26,14 @@ class RiftCoreApplication : Application() {
             }.getOrDefault("")
         }
         if (currentProcess == applicationInfo.processName) {
-            // C1.4-C1: reconcile any interrupted isolated C: canary before
-            // accepting new Core admin effects. Failure leaves that effect
-            // fail-closed but does not destroy unrelated Core/RAPP services.
-            runCatching { RiftCoreAdminRollbackProof.recover(this) }
-                .onFailure { android.util.Log.e("RiftCoreAdmin", "Rollback recovery failed", it) }
-            // C1.4-C2-A: recover a journalled temporary empty provider registry
-            // before Core runtime discovery; never erase a configured registry.
-            runCatching { RiftCoreAdminRegistryProof.recover(this) }
-                .onFailure { android.util.Log.e("RiftCoreAdmin", "Registry recovery failed", it) }
-            RiftCoreRuntime.initialize(this)
-            RiftCoreShellRecovery.initialize(this)
-            // C1.3-D: MCP/relay belongs to the default Core Android process.
-            RiftMcpRuntime.relayClient(this).start()
+            // The APK enters the selected Core bootstrap component. The
+            // embedded compatibility entry preserves C1.4 recovery ordering.
+            RiftBootstrapHost.startCore(this)
         } else if (currentProcess == packageName + ":riftShell" && Build.VERSION.SDK_INT >= 28) {
             // Android WebView requires its own browser data directory per
             // process; otherwise moving the real browser into RiftShell may
             // fail due to the Core/browser helper process holding the lock.
-            RiftBrowserWindow.prepareRemoteShellWebViewDirectory()
+            RiftBootstrapHost.prepareShell(this)
         }
     }
 }

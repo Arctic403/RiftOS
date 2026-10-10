@@ -1,5 +1,9 @@
 # RiftOS Public and Cross-Layer Surfaces
 
+## 2026-10-09 — Bootstrap Host diagnostic/entrypoint surface (SOURCE ONLY)
+
+`RiftBootstrapEntry.start(Application)` is an APK-shared, version-1 Kotlin interface reserved for optional process-start DEX modules. `RiftBootstrapHost` selects only app-private hash-checked `core`/`shell` DEX if an explicit activation record exists, otherwise runs the same embedded Core/Shell startup. `core status` adds passive `bootstrapHost` (schema `riftos.bootstrap-host/1`), reporting activation-file presence, interrupted boot markers, `inProcessHotSwapEnabled:false`, and `embeddedFallbackAvailable:true`; these are status only, NOT registry installs or admin permissions. No RAPP or remote caller can activate components through this new surface; no separate external Core/Shell implementation has been built or device-proven. See `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md`.
+
 ## 2026-10-09 — C2-A physical errno13 does NOT expand Core admin capability
 
 On signed #678 the exact one-use `runtime.register` EMPTY registry proof failed because Android denied hard-link creation (`atomic-create-only-publish / ErrnoException / errno 13`). Core still had no live registry or journal, zero providers or elevated grants. The internal C2-A proof now uses private `Os.open(O_CREAT|O_EXCL|O_NOFOLLOW)`, journalled write/fsync and immediate verified rollback instead; Core runtime registry readers lock out partial changes and fail closed on pending journal. The external Binder admin contract is unchanged: exact native Shell PID+signer+TTL+operation/target, one-use approval and versioned success or safely rolled-back failure with bounded stage/type/errno. This is not a general `runtime.register` API, no RAPP can use it and no C2-B2 provider enrollment is enabled. User-signed on-device success still required.
