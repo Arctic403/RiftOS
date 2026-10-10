@@ -83,6 +83,10 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftBootstrapHost.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBootstrapComponentStore.kt` | `docs/systems/android-host/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBootstrapProbeService.kt` | `docs/systems/android-host/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |
+| `android/app/src/main/java/com/riftos/app/RiftCoreModuleManifest.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftCoreModuleStore.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftCoreModuleActivation.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftGenericModuleService.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` |
 | `bootstrap/probe-proof/ProbeV1.java` | `bootstrap/probe-proof/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |
 | `bootstrap/probe-proof/build-probe.sh` | `bootstrap/probe-proof/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |
 | `.github/workflows/build-bootstrap-probe.yml` | `bootstrap/probe-proof/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |

@@ -1,5 +1,9 @@
 # Android Host
 
+## 2026-10-10 — Generic external DEX module host (Gate 2, source checked; user device proof pending)
+
+`RiftGenericModuleService.kt` declares the **single** nonexported `:riftModuleHost` process for approved generic DEX entrypoints; it does not contain application-specific module classes and is not an independent Android security UID. The Core-owned `RiftCoreModuleManifest.kt`, `RiftCoreModuleStore.kt` and `RiftCoreModuleActivation.kt` validate strict module identity/digest, stage sealed bytes, and coordinate a bounded one-use activation with previous-version rollback and nonce/PID execution receipt. The user must separately approve stage and activation in the trusted native UI. The original fixed ProbeV1 remains available, and generic runtime-provider APK registration stays restricted. This is a source/ownership checkpoint, **not a successful signed APK or device proof**. See `docs/GENERIC_MODULE_IMPORTER_GATE2.md` and the user-owned test plan `docs/GENERIC_MODULE_IMPORTER_DEVICE_TEST.md`.
+
 ## 2026-10-09 — Trusted native external DEX proof user flow (SOURCE ONLY)
 
 Admin Approvals owns system picker for separately compiled ProbeV1 DEX; its two Core signed/PID-checked one-use approvals first stage read-only SAF descriptor bytes, then activate precisely the verified SHA-256 through separate nonexported `:riftBootstrapProbe`. A user-manual external javac+D8 artifact workflow, independent from user-manual RiftOS APK Builder, supplies the DEX. Android Core/Shell manifest and process boundaries remain unchanged; critical dynamic replacement remains disabled. No external DEX binary or installed physical proof exists yet. Detailed gates in `BOOTSTRAP_HOST_MIGRATION.md`.

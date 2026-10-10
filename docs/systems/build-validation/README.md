@@ -1,5 +1,9 @@
 # Build and Validation System
 
+## 2026-10-10 — Gate 2 source documentation ownership preflight (manual Builder run 38026894107)
+
+Signed manual Builder from RiftOS source `09f46329d8687bb9c39496c3bbca560a4b308c15` passed the 99-source native wiring check but halted in `scripts/validate-rift-docs.mjs` before Gradle/Kotlin. The four newly introduced files `RiftCoreModuleManifest.kt`, `RiftCoreModuleStore.kt`, `RiftCoreModuleActivation.kt` and `RiftGenericModuleService.kt` were omitted from `docs/SOURCE_OWNERSHIP.md`. Their ledger owners are Core/Shell, Android Host and Build Validation, with concise descriptions in the owning system READMEs. **Source-level documentation repair only; Android/Kotlin compilation is still unverified**, and the user triggers the next signed build manually. Do not weaken the documentation validator, disable its source coverage or alter the independent Builder pipeline.
+
 ## 2026-10-09 — C2-A EACCES device #678, O_EXCL+Core reader barrier source and Builder contracts
 
 Real signed user #678 reports `atomic-create-only-publish`, `ErrnoException`, errno=13, and Core audit consumed→failed; Android rejects hardlink creation. Core status confirmed no target/scratch/journal and no extra grants. To fix this without replacing an existing registry, the isolated EMPTY test exclusively opens `registry.json` using `O_CREAT|O_EXCL|O_NOFOLLOW|O_WRONLY`, mode 0600, writes+fsyncs via acquired FD and verifies exact bytes. During this temporary operation, all Core runtime registry readers serialize on the proof monitor and require pending journal cleared; Core restart recovery recognizes only own scratch + exact-prefix target before deleting, fail-closes unknown bytes. This is not a production atomic name swap. RiftOS wiring and Builder shell/python contracts require these guards and reject hardlink/rename reintroduction. **No actual Kotlin/APK/physical test yet on new source**, user manually runs signed Builder; C2-B2 blocked.
