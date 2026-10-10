@@ -1027,14 +1027,19 @@ for (const marker of [
   '"providers", JSONArray()', '"installedCoreSignerSha256"',
   'check(!target.exists() && !scratch.exists())',
   'prefs.edit().putBoolean(PENDING, true)',
-  'stream.fd.sync()', 'java.nio.file.Files.createLink(target.toPath(), scratch.toPath())',
+  'stream.fd.sync()', 'stage = "exclusive-create-only-publish"',
+  // Signed physical #678 proves both hard-link APIs return EACCES. Only
+  // kernel-enforced O_CREAT|O_EXCL|O_NOFOLLOW and Core read serialization
+  // may replace that strategy; it cannot overwrite any live registry.
+  'android.system.Os.open(target.absolutePath, flags, 0x180)',
+  'android.system.OsConstants.O_CREAT',
+  'android.system.OsConstants.O_EXCL',
+  'android.system.OsConstants.O_NOFOLLOW',
+  'fun <T> withSafeRegistryRead(context: Context, read: () -> T): T',
+  'check(!pending(context).getBoolean(PENDING, false))',
+  'scratchExact', 'expected.copyOfRange(0, bytes.size)',
   'published.getJSONArray("providers").length() == 0',
   'check(file.delete())', '.remove(PENDING).remove(DIR_CREATED).commit()',
-  // Android non-replacing hard-link publication must remain fail-closed,
-  // including the API-unavailable Android Os.link fallback.
-  'catch (unavailable: UnsupportedOperationException)',
-  'catch (failure: java.nio.file.FileSystemException)',
-  'android.system.Os.link(scratch.absolutePath, target.absolutePath)',
   'transactionFailureStage = stage',
   '"lastFailureStage", lastFailureStage',
   '"lastFailureType", lastFailureType',
@@ -1077,8 +1082,26 @@ if (!adminUiAllowedActions.includes('"execute-registry-proof"')) {
 if (c14Registry.includes('PackageInstaller(') ||
     c14Registry.includes('killProcess(') ||
     c14Registry.includes('addProvider(') ||
-    c14Registry.includes('providers", JSONArray().put(')) {
+    c14Registry.includes('providers", JSONArray().put(') ||
+    c14Registry.includes('java.nio.file.Files.createLink(') ||
+    c14Registry.includes('android.system.Os.link(') ||
+    c14Registry.includes('renameTo(') ||
+    c14Registry.includes('java.nio.file.Files.move(')) {
   fail('C1.4-C2-A MUST remain a no-provider reversible registry proof');
+}
+
+// C2-A target publication is a journalled exclusive-create write, NOT a
+// pathname-atomic rename/link. Every Core registry consumer must block on the
+// proof lock while it writes; a persisted pending journal rejects reads after
+// an interrupted transaction until safe recovery finishes.
+const c14RegistryConsumers = read(`${kotlinDir}/RiftExternalRuntimeProviders.kt`);
+for (const marker of [
+  'RiftCoreAdminRegistryProof.withSafeRegistryRead(app)',
+  'return@withSafeRegistryRead emptyList<Provider>()',
+  'fun status(): JSONObject =',
+  'private fun providers(): List<Provider> ='
+]) if (!c14RegistryConsumers.includes(marker)) {
+  fail(`C1.4-C2-A Core runtime registry reader transaction lock missing: ${marker}`);
 }
 
 // C1.4-C2-B1: READ-ONLY Android-attested runtime candidate discovery.

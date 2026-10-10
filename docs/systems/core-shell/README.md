@@ -1,5 +1,11 @@
 # RiftOS Core ↔ RiftShell — canonical architecture (C1 series)
 
+## 2026-10-09 — C2-A real Android #678 hardlink EACCES and bounded Core-only exclusive-create proof
+
+Build #678 real Android screenshot plus `core status.adminRegistryProof` show `lastFailureStage=atomic-create-only-publish`, `lastFailureType=ErrnoException`, `lastFailureErrno=13`. Core audit was exact native ticket requested→approved→consumed→failed, with no residual registry, scratch or recovery journal and no grants. The hard-link strategy is incompatible with this device. Rather than an unsafe replacing `rename()` or trying another hard-link call, C2-A temporarily uses `Os.open` with kernel `O_CREAT|O_EXCL|O_NOFOLLOW`, restrictive private mode, single file descriptor write/fsync, exact marker+Core signer verification, and guaranteed deletion on successful test. Core's `RiftExternalRuntimeProviders.providers()/status()` readers are synchronized with the proof and reject pending recovery so no partial payload is parsed; a journal-verified scratch authorizes cleanup of only an expected-prefix interrupted target. Unknown file content remains untouched and fails closed. This is **Core-observed transaction serialization, not atomic filesystem pathname replacement**, and it grants no system privilege or production provider admission. User manual signed positive+negative device tests required before C2-A pass or C2-B2.
+
+
+
 ## 2026-10-09 — C2-A failure-stage tracing after signed #676 protected registry transaction failed
 
 Signed device #676 Core accepted/consumed a legitimate exact native `runtime.register` one-use ticket then audited `failed/registry-proof-rejected`. Core still reported **no registry and no pending journal**, but the old ContentProvider IPC propagated an exception as a missing JSON response, hiding the failing operation stage. C2-B1 read-only no-candidate discovery passed separately. Two missing RAPPs were intentionally removed by user, not lost.

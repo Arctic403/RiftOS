@@ -1,5 +1,11 @@
 # RiftOS Public and Cross-Layer Surfaces
 
+## 2026-10-09 — C2-A physical errno13 does NOT expand Core admin capability
+
+On signed #678 the exact one-use `runtime.register` EMPTY registry proof failed because Android denied hard-link creation (`atomic-create-only-publish / ErrnoException / errno 13`). Core still had no live registry or journal, zero providers or elevated grants. The internal C2-A proof now uses private `Os.open(O_CREAT|O_EXCL|O_NOFOLLOW)`, journalled write/fsync and immediate verified rollback instead; Core runtime registry readers lock out partial changes and fail closed on pending journal. The external Binder admin contract is unchanged: exact native Shell PID+signer+TTL+operation/target, one-use approval and versioned success or safely rolled-back failure with bounded stage/type/errno. This is not a general `runtime.register` API, no RAPP can use it and no C2-B2 provider enrollment is enabled. User-signed on-device success still required.
+
+
+
 ## 2026-10-09 — C2-A exact registry proof failure visibility (SOURCE; device acceptance pending)
 
 On user-signed #676, `execute-registry-proof` consumed its exact native-approved ticket but raised a Core transaction exception; no registry or journal persisted and Shell displayed `Core IPC response JSON missing`. **Root cause not yet identified.** Same-shape response `riftos.core.admin-registry-proof/1` may now report `transactionCommitted:false`, `rolledBack:false`, `registryRestored:true`, `providerRegistered:false`, `pendingJournal:false`, and sanitized `failureStage`, `failureType`, `failureErrno` **only when Core verifies absence of live registry, scratch and pending journal**. Any unsafe incomplete cleanup still throws, never returns a benign failure response. `core status.adminRegistryProof` additionally exposes conservative `pathStatusAvailable`, `registryExists`, `temporaryRegistryExists`, `lastFailureStage/Type/Errno`; unknown path states are treated as occupied. No user-selected arbitrary targets, app admin rights, credential leakage or general provider enrollment are added. Java NIO create-only hardlink may retry Android kernel `Os.link` under the same exclusive non-replace semantics. Physical retest required.

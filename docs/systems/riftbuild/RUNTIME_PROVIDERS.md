@@ -1,5 +1,10 @@
 # C0.2.5 — External runtime/tool-provider boundary (migration gate A)
 
+## 2026-10-09 — C2-A temporary empty-registry proof and guarded Core readers
+
+User-signed RiftOS #678 proved Android hardlink publication fails with `ErrnoException errno 13` even after Java NIO/native link fallback. The isolated C2-A signed Core **EMPTY** registry proof now uses `Os.open` with `O_CREAT|O_EXCL|O_NOFOLLOW` to create the target only if it did not exist; writing/fsyncing through the exclusive descriptor is NOT a pathname-atomic rename/link. The Core `RiftExternalRuntimeProviders.providers()` and `status()` readers serialize with the same isolated transaction monitor via `RiftCoreAdminRegistryProof.withSafeRegistryRead`, refusing reads when a pending crash-recovery journal exists, so **Core execution/status cannot interpret partial transient registry bytes**. Recovery may delete only an exact Core signer-stamped marker or an expected prefix backed by its verified journal/scratch, and fails closed for unknown content. No provider is enrolled and no generic runtime.registration privilege is enabled. This remains TEST ONLY; C2-B2 will require independently designed, proven production-quality cross-process atomic registration/replacement. No positive signed C2-A device result on the new strategy yet.
+
+
 This contract is owned by RiftOS **only as a generic platform interface**. QuickJS, Rift++, JVM compilers, D8, and all project tools must eventually be separately installed providers. No language/compiler implementation belongs inside the permanent base APK.
 
 ## Current status: source implementation / pending real-device proof

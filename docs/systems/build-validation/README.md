@@ -1,5 +1,11 @@
 # Build and Validation System
 
+## 2026-10-09 — C2-A EACCES device #678, O_EXCL+Core reader barrier source and Builder contracts
+
+Real signed user #678 reports `atomic-create-only-publish`, `ErrnoException`, errno=13, and Core audit consumed→failed; Android rejects hardlink creation. Core status confirmed no target/scratch/journal and no extra grants. To fix this without replacing an existing registry, the isolated EMPTY test exclusively opens `registry.json` using `O_CREAT|O_EXCL|O_NOFOLLOW|O_WRONLY`, mode 0600, writes+fsyncs via acquired FD and verifies exact bytes. During this temporary operation, all Core runtime registry readers serialize on the proof monitor and require pending journal cleared; Core restart recovery recognizes only own scratch + exact-prefix target before deleting, fail-closes unknown bytes. This is not a production atomic name swap. RiftOS wiring and Builder shell/python contracts require these guards and reject hardlink/rename reintroduction. **No actual Kotlin/APK/physical test yet on new source**, user manually runs signed Builder; C2-B2 blocked.
+
+
+
 ## 2026-10-09 — C2-A build #676 protected registry failure, Android create-only retry and typed diagnostics
 
 USER-signed RiftOS #676 (`30bebf009e88`) booted and passed C2-B1 read-only zero-candidate discovery, but C2-A's already-approved consumed ticket failed Core proof. Audit `consumed → failed/registry-proof-rejected`; absent registry/journal afterward; underlying exception not available in existing IPC. Source fix keeps `Files.createLink` and optional **non-overwriting** Android `Os.link` retry (never use `renameTo`, replacement, or unjournalled direct registry write), stages failures before/during/after filesystem effects, exposes sanitized `lastFailureStage/Type/Errno` in Core status and ensures typed `transactionCommitted:false` result only after no target/scratch/journal remains. Exact signer, foreground Shell PID, one-use ticket, crash journal/recovery and zero-provider invariant unchanged. Source and Builder preflight enforce diagnostic, rollback and security guards; device/signed proof pending. User-only manual Builder and device test for C2-A risk checkpoint before starting C2-B2 despite general major-milestone build policy.

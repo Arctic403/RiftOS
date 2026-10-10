@@ -97,13 +97,22 @@ internal object RiftCoreAdminRegistryProof {
             val expected = marker(context)
             for (item in listOf(target, scratch)) {
                 if (item.exists()) {
-                    // A killed Core may leave a partially written scratch
-                    // file, but the published target must always be exact.
+                    // Interrupted exclusive-create writes may leave a partial
+                    // target; never remove an unverified path or file.
                     val bounded = item.isFile &&
                         item.length() <= expected.size.toLong()
                     val bytes = if (bounded) item.readBytes() else ByteArray(0)
-                    val expectedPrefix = item == scratch && bounded &&
-                        bytes.contentEquals(expected.copyOfRange(0, bytes.size))
+                    // Under Android's private-app filesystem, hard links may
+                    // be denied. The exclusive-create target can be interrupted
+                    // mid-write. Only accept its prefix when OUR fully verified
+                    // journalled scratch is still present. Never delete an
+                    // unknown/replaced production registry.
+                    val scratchExact = scratch.isFile &&
+                        scratch.length() == expected.size.toLong() &&
+                        scratch.readBytes().contentEquals(expected)
+                    val expectedPrefix = bounded &&
+                        bytes.contentEquals(expected.copyOfRange(0, bytes.size)) &&
+                        (item == scratch || (item == target && scratchExact))
                     check(bounded &&
                         (bytes.contentEquals(expected) || expectedPrefix)) {
                         "Core C2 interrupted registry proof contains unknown data; manual inspection required"
@@ -173,24 +182,22 @@ internal object RiftCoreAdminRegistryProof {
             check(scratch.readBytes().contentEquals(expected)) {
                 "Core C2 temporary registry bytes differ"
             }
-            // An ordinary POSIX rename can REPLACE a concurrently created
-            // production registry. An atomic hard link is create-only: it
-            // fails closed if the live registry exists, without overwriting.
-            // Same private directory/filesystem; no Android root is needed.
-            stage = "atomic-create-only-publish"
-            // Android's framework syscall has the same non-replacing POSIX
-            // hard-link contract as java.nio; use it only when the Java API
-            // itself is unavailable. An actual filesystem/permission failure
-            // must still fail closed, never fall back to replacing rename.
-            try {
-                java.nio.file.Files.createLink(target.toPath(), scratch.toPath())
-            } catch (unavailable: UnsupportedOperationException) {
-                android.system.Os.link(scratch.absolutePath, target.absolutePath)
-            } catch (failure: java.nio.file.FileSystemException) {
-                // Both routes are create-only and kernel-enforced: retry
-                // Android's native link(2), never rename/replace the target.
-                // EEXIST, permission or filesystem denial still fails closed.
-                android.system.Os.link(scratch.absolutePath, target.absolutePath)
+            // Signed #678 proved Android rejects both hard-link APIs with
+            // EACCES (errno=13). Use a kernel-enforced O_CREAT|O_EXCL open
+            // instead: this MUST fail if the final registry already exists,
+            // and must never follow a symlink or replace production content.
+            // Unlike rename/link this is not pathname-atomic during the
+            // write; all Core registry readers therefore share the lock below
+            // and cannot observe partial transaction bytes.
+            stage = "exclusive-create-only-publish"
+            val flags = android.system.OsConstants.O_WRONLY or
+                android.system.OsConstants.O_CREAT or
+                android.system.OsConstants.O_EXCL or
+                android.system.OsConstants.O_NOFOLLOW
+            FileOutputStream(android.system.Os.open(target.absolutePath, flags, 0x180))
+                .use { stream ->
+                stream.write(expected)
+                stream.fd.sync()
             }
             stage = "verify-published-registry"
             check(target.readBytes().contentEquals(expected)) {
@@ -210,11 +217,23 @@ internal object RiftCoreAdminRegistryProof {
             throw failure
         } finally {
             stage = "restore-absent-registry"
-            // Remove ONLY exactly matched proof bytes; never delete an unknown
-            // file if another actor replaced this private reserved target.
+            // Never remove unverified production registry data. A failed
+            // O_EXCL write can leave a prefix, but only while OUR verified
+            // scratch file and persisted pending journal prove ownership.
+            val scratchExact = scratch.isFile &&
+                scratch.length() == expected.size.toLong() &&
+                scratch.readBytes().contentEquals(expected)
             for (file in listOf(target, scratch)) {
                 if (file.exists()) {
-                    check(file.isFile && file.readBytes().contentEquals(expected)) {
+                    check(file.canonicalPath == file.absolutePath && file.isFile &&
+                        file.length() <= expected.size.toLong()) {
+                        "Core C2 rollback refuses unknown registry file"
+                    }
+                    val bytes = file.readBytes()
+                    val knownPrefix = bytes.contentEquals(
+                        expected.copyOfRange(0, bytes.size)
+                    ) && (file == scratch || (file == target && scratchExact))
+                    check(bytes.contentEquals(expected) || knownPrefix) {
                         "Core C2 rollback refuses to remove unknown registry data"
                     }
                     check(file.delete()) { "Core C2 registry rollback removal failed" }
@@ -255,6 +274,19 @@ internal object RiftCoreAdminRegistryProof {
             throw failure
         }
     }
+
+    /**
+     * Guard the entire Core registry read while the transient C2-A target can
+     * be written through O_EXCL. Other readers block until rollback finishes,
+     * and a crash journal prevents exposing incomplete registry bytes.
+     */
+    fun <T> withSafeRegistryRead(context: Context, read: () -> T): T =
+        synchronized(lock) {
+            check(!pending(context).getBoolean(PENDING, false)) {
+                "Core temporary registry transaction is pending recovery"
+            }
+            read()
+        }
 
     fun status(context: Context): JSONObject = synchronized(lock) {
         // Read-only diagnostics must still work when the path guard itself

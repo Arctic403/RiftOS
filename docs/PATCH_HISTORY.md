@@ -1,5 +1,11 @@
 # RiftOS Patch History
 
+## 2026-10-09 — C2-A signed #678 Android hardlink EACCES root cause and guarded O_EXCL candidate fix
+
+User screenshot showed `Core C2-A registry transaction FAILED at atomic-create-only-publish (ErrnoException, errno=13)`. MCP on installed source `272f39b2ec11`, run 38007385307/#678 confirmed failure in Core audit, zero registry/scratch/recovery journal afterward, zero admin grants, Core+Shell alive, retained `riftbuild-hosted` and `riftpp-compiler-lab`. The extra Android `Os.link` fallback proved equally denied; no more blind hardlink retries. Replaced ONLY disposable C2-A EMPTY test publication with kernel non-overwriting exclusive `Os.open(O_CREAT|O_EXCL|O_NOFOLLOW,0600)` and immediate write/fsync/exact signer-stamped verification/rollback. This method is NOT pathname-atomic during write; synchronized Core runtime provider reads and pending-journal fail-close prevent partial interpretation. Journal recovery requires verified scratch before accepting a partial target and only deletes own expected-prefix bytes; unknown files remain untouched. All privileged ticket/signer/role restrictions remain unchanged. Source validation + Builder contracts updated. **Kotlin compiled APK and positive device proof pending**, C2-B2 on hold.
+
+
+
 ## 2026-10-09 — Manual Builder 38006658730 preflight regression fixed; C2-A signed retest still pending
 
 User-manual Builder run **38006658730**, using RiftOS source `b87820dba3e7`, reached `Build RiftOS APK` after Builder selftests, Java/Node/Android SDK/Gradle setup and alpha-signing restore. The build then **stopped before source check/Kotlin compilation** in Builder's C2-A preflight: `native Core registry consent/rollback UI missing: Core C2-A registry transaction FAILED at $stage ($kind)`. This was a **false-positive exact-string contract**: the native UI intentionally formats a safe optional Android errno using `$type` rather than the former `$kind`. Its actual failure warning, no-success wording and one-use security behavior remain present.

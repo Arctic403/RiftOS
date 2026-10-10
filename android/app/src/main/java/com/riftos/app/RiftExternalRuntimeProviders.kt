@@ -63,8 +63,9 @@ class RiftExternalRuntimeProviders(context: Context) {
     }
 
     /** Registry entries are installed platform configuration, never app manifests. */
-    private fun providers(): List<Provider> {
-        if (!registry.exists()) return emptyList()
+    private fun providers(): List<Provider> =
+        RiftCoreAdminRegistryProof.withSafeRegistryRead(app) {
+            if (!registry.exists()) return@withSafeRegistryRead emptyList<Provider>()
         require(registry.isFile && registry.length() in 1..MAX_REGISTRY_BYTES) {
             "Runtime provider registry size or type is invalid"
         }
@@ -78,7 +79,7 @@ class RiftExternalRuntimeProviders(context: Context) {
         }
         val kinds = HashSet<String>()
         val ids = HashSet<String>()
-        return (0 until entries.length()).map { index ->
+        (0 until entries.length()).map { index ->
             val value = entries.getJSONObject(index)
             val provider = Provider(
                 id = value.getString("id"),
@@ -248,8 +249,9 @@ class RiftExternalRuntimeProviders(context: Context) {
         return sha256(certificates.single())
     }
 
-    fun status(): JSONObject {
-        val entries = JSONArray()
+    fun status(): JSONObject =
+        RiftCoreAdminRegistryProof.withSafeRegistryRead(app) {
+            val entries = JSONArray()
         for (p in providers()) {
             val failure = runCatching { verifyInstalled(p) }.exceptionOrNull()
             entries.put(
@@ -262,7 +264,7 @@ class RiftExternalRuntimeProviders(context: Context) {
                     .put("error", failure?.message ?: JSONObject.NULL)
             )
         }
-        return JSONObject()
+        JSONObject()
             .put("schema", "riftos-runtime-status/1")
             .put("registrySchema", REGISTRY_SCHEMA)
             .put("registered", entries.length())
