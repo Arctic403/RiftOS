@@ -1064,7 +1064,9 @@ for (const marker of [
   'Select isolated runtime registry proof scope',
   'Execute Core empty registry and rollback once',
   'client.adminConsent("execute-registry-proof"',
-  'Core C2-A registry transaction FAILED at $stage ($kind)'
+  'val errno = response.optInt("failureErrno", 0)',
+  'Core C2-A registry transaction FAILED at',
+  'No success claimed; inspect Core registry/journal status.'
 ]) if (!(coreIpcProvider + coreApplication + coreRuntime +
   productionClient + c14AdminUi).includes(marker)) {
   fail(`C1.4-C2-A trusted Core Binder + native UI or interrupted cleanup missing: ${marker}`);

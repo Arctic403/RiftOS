@@ -1,5 +1,10 @@
 # RiftOS Roadmap
 
+## 2026-10-09 — C1.4-C2-A Builder run 38006658730 failed obsolete UI marker; fixed in source/Builder contracts
+
+USER manual run `38006658730` on RiftOS `b87820dba3e7` passed setup and Builder selftests, then **failed Builder C2-A preflight before Kotlin compilation**. The Builder expected the literal `FAILED at $stage ($kind)`; the current native failure UI correctly uses `$type` to include optional Android errno and an explicit `No success claimed` message. Synchronized Builder preflight/selftest and RiftOS wiring validator to assert the meaningful failure/errno/no-success safeguards **without pinning a local variable name**. This patch does NOT alter runtime behavior, admission scope, or signing; source-only 7/7 targeted contract checks and project audits passed. **Next USER action: manually rerun signed Builder and install if green; C2-A signed device test and actual registry rollback still pending. C2-B2 remains HOLD.**
+
+
 ## 2026-10-09 — C1.4-C2-A signed #676 device blocker: fail-closed Android link compatibility + bounded root-cause diagnostics SOURCE PATCH
 
 Signed USER Builder #676/source `30bebf009e88` successfully booted Core and remote Shell. The two missing RAPPs were deliberately **uninstalled by the user**; the remaining `riftbuild-hosted` and `riftpp-compiler-lab` are expected. C2-B1 read-only installed-runtime discovery returned **zero candidates/zero registrations** correctly, but C2-A's exact native-approved one-use `runtime.register` ticket was consumed twice and **FAILED** (`registry-proof-rejected`); no runtime registry or pending journal remained. The protected Core IPC originally hid the underlying exception as `Core IPC response JSON missing`. The true failing filesystem stage is **not yet known** from that build.

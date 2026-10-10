@@ -1,5 +1,12 @@
 # RiftOS Patch History
 
+## 2026-10-09 — Manual Builder 38006658730 preflight regression fixed; C2-A signed retest still pending
+
+User-manual Builder run **38006658730**, using RiftOS source `b87820dba3e7`, reached `Build RiftOS APK` after Builder selftests, Java/Node/Android SDK/Gradle setup and alpha-signing restore. The build then **stopped before source check/Kotlin compilation** in Builder's C2-A preflight: `native Core registry consent/rollback UI missing: Core C2-A registry transaction FAILED at $stage ($kind)`. This was a **false-positive exact-string contract**: the native UI intentionally formats a safe optional Android errno using `$type` rather than the former `$kind`. Its actual failure warning, no-success wording and one-use security behavior remain present.
+
+Corrected the RiftOS wiring validator and Builder preflight to check stable user-visible failure wording, numeric errno lookup and explicit no-success warning independently, instead of pinning a Kotlin local variable name. Builder selftest now protects these markers. Verified **7/7 focused source/contract checks** against the live source and both project audits passed (RiftOS has a pre-existing filename heuristic). No Core runtime implementation, APK signing pipeline or Android permissions were changed by this correction. This checkpoint remains SOURCE-only; **new Kotlin/Gradle compilation and signed C2-A positive/negative device proof are pending USER's manual rerun**. C2-B2 remains on hold.
+
+
 ## 2026-10-09 — C1.4-C2-A signed #676 transaction blocker diagnostic + same-security Android hardlink retry
 
 After user-manual signed APK #676 on source `30bebf009e88`, the real `:riftShell` and Core were alive, C2-B1 empty read-only discovery succeeded, two intentionally uninstalled RAPPs were absent as expected, but C2-A consumed its one-use `runtime.register` ticket twice and recorded `failed/registry-proof-rejected`. C2-A target and journal were absent, but Core Binder hid the true failure as `Core IPC response JSON missing`.
