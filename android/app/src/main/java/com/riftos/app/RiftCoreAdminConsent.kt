@@ -66,7 +66,7 @@ internal object RiftCoreAdminConsent {
             (operation == MODULE_STAGE &&
                 target.matches(Regex("^module://stage/[0-9a-f]{64}$"))) ||
             (operation == MODULE_ACTIVATE &&
-                target.matches(Regex("^module://activate/[a-z][a-z0-9._-]{0,79}/[0-9a-f]{64}$"))) ||
+                target.matches(Regex("^module://activate/[a-z][a-z0-9._-]{0,44}/[0-9a-f]{64}$"))) ||
             (operation == PROBE_ACTIVATE &&
                 target.matches(Regex("^bootstrap://probe/[0-9a-f]{64}$")))
 

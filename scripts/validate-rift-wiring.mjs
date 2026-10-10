@@ -312,6 +312,14 @@ if (!probeApps.includes('adminApprovals.onActivityResult(') ||
 // a code execution bridge and user-approved activation are NOT yet enabled.
 const genericModuleManifest = read(`${kotlinDir}/RiftCoreModuleManifest.kt`);
 const genericModuleStore = read(`${kotlinDir}/RiftCoreModuleStore.kt`);
+const fixedAdminTargetMarker = 'require(operation.length <= 64 && target.length <= 128)';
+const boundedGenericIdMarker = 'private val SAFE_ID = Regex("^[a-z][a-z0-9._-]{0,44}$")';
+if (!probeProvider.includes(fixedAdminTargetMarker) ||
+    !genericModuleManifest.includes(boundedGenericIdMarker) ||
+    !genericModuleStore.includes(boundedGenericIdMarker) ||
+    !probeAdmin.includes('[a-z][a-z0-9._-]{0,44}/[0-9a-f]{64}')) {
+  fail('Generic module activation must fit original 128-character trusted admin target bound');
+}
 for (const marker of ['riftos.module/1', 'dex-service-v1',
   'riftos.bootstrap-entry/1', 'requestedCapabilities', 'dependencies',
   'keys == KEYS', 'Module $key must be a JSON string',

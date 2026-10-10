@@ -24,7 +24,7 @@ internal object RiftCoreModuleStore {
     private const val MAX_MODULE_IDS = 32
     private const val MAX_REVISIONS_PER_ID = 16
     private const val MAX_RECORD_BYTES = 4096
-    private val SAFE_ID = Regex("^[a-z][a-z0-9._-]{0,79}$")
+    private val SAFE_ID = Regex("^[a-z][a-z0-9._-]{0,44}$")
     private val SAFE_DIGEST = Regex("^[0-9a-f]{64}$")
     private val lock = Any()
 

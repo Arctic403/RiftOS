@@ -200,7 +200,7 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
                 require(bearer.length <= 64) { "Core admin bearer exceeds bound" }
                 val operation = request.getString("operation").orEmpty()
                 val target = request.getString("target").orEmpty()
-                require(operation.length <= 64 && target.length <= 192) {
+                require(operation.length <= 64 && target.length <= 128) {
                     "Core admin consent scope exceeds bound"
                 }
                 when (request.getString("action")) {

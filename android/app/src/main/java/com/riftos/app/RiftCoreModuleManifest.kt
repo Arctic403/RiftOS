@@ -33,7 +33,7 @@ internal data class RiftCoreModuleManifest(
         const val MAX_MANIFEST_BYTES = 4096
         const val MAX_MODULE_BYTES = 32L * 1024 * 1024
 
-        private val SAFE_ID = Regex("^[a-z][a-z0-9._-]{0,79}$")
+        private val SAFE_ID = Regex("^[a-z][a-z0-9._-]{0,44}$")
         private val SAFE_NAME = Regex("^[^\u0000-\u001f\u007f]{1,100}$")
         private val SAFE_VERSION = Regex("^[0-9][A-Za-z0-9._+-]{0,63}$")
         private val SAFE_CLASS =
