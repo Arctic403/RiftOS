@@ -1,5 +1,15 @@
 # Independent component build evidence — 2026-10-10
 
+## 2026-10-11 — External Core v0.5 native-buffer host ABI: Kotlin+D8 source-build PASS
+
+**Registered on-device Kotlin compiler**: 12 external-Core source files, `kotlin-android`, `state=success`, `exitCode=OK`, zero diagnostics. The compile-only ABI mirrors now include the new `RiftHostNativeBufferV1` APK interface. All SIX generated APK host interface classes were removed before D8; generated `com/riftos/app` class directory verified empty. The generic on-device D8 converter returned `state=dexed` with 46 compiled application classfiles and one `classes.dex` of **2,748,192 bytes**, SHA-256 **`c7e13955c4cb23587397e7de3704651fbcc3d7d70fd701b7739e2a968665f713`**, separately rehashed using RiftOS MCP.
+
+Experimental candidate retained **outside Git** at `workspace/tmp/rift-external-core-v05-native-host-20261011-build/riftbuild/core-dex/classes.dex`. No protected component installation, activation, existing `/D:/Builds/Components/core` overwrite, or changes to running Core/Shell. The `EXTERNAL_CORE_PROMOTION_PROVEN` flag remains **false**.
+
+The stable APK source `RiftHostComponentAbiV1.kt` now adds a zero-policy, bounded native-buffer execution primitive `RiftHostNativeBufferV1`. It delegates only bytes and output capacity to the **already existing** isolated native-buffer worker; it does not execute RAPP sessions, grant capabilities or call APK Core. The external-Core runtime dispatches based on each installed RAPP adapter executor kind, preserving host QuickJS V1 for JS and adding NativeBuffer V1 for Rift++ adapters. `RiftProtectedDexVerifier.kt` admits ONLY the precise new host interface descriptor; Builder preflight checks this contract.
+
+**Not signed/proven yet:** User's last confirmed signed host **#710** does NOT contain `RiftHostNativeBufferV1`. A future manually signed APK with this source must compile, install and pass native-buffer device tests BEFORE independent Core candidates can be evaluated. New grant consent, build.local/clipboard/network/signing/other platform services and complete external Core/Shell parity still need independent implementation and physical proof. This DEX is **not** a qualified production Core.
+
 ## 2026-10-11 — External Core v0.4 production extraction: Kotlin + D8 REAL PASS (NOT ACTIVATED)
 
 The registered on-device Kotlin compiler compiled **12 external Core source files**, with `state=success`, `exitCode=OK`, no diagnostics, using the current `compile-core.json`. Source includes production-derived transactional `.rapp` package manager, JSON/Rift++ adapter protocols, independent C:/D: volume mapping, user-grant-scoped FS capabilities and an independent typed session/QuickJS execution engine. `runtime.js` (external component builder RAPP source) carries the same 12-source recipe and labels future producer Core candidates `v0.4.0`.

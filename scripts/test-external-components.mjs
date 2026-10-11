@@ -24,6 +24,10 @@ assert.match(engine,/import com\.riftos\.app\.RiftHostQuickJsV1/);
 assert.match(engine,/class IndependentRuntimeRegistry/);
 assert.match(engine,/RiftHostQuickJsV1\.abiVersion\(\)/);
 assert.match(engine,/RiftHostQuickJsV1\.execute\(runtime, input, outputLimit\)/);
+assert.match(engine,/import com\.riftos\.app\.RiftHostNativeBufferV1/);
+assert.match(engine,/RiftHostNativeBufferV1\.abiVersion\(\)/);
+assert.match(engine,/RiftHostNativeBufferV1\.execute\(context, runtime, input, outputLimit\)/);
+assert.match(engine,/s\.vm\.execute\(s\.adapter\.executorKind, s\.runtime, envelope, MAX_OUTPUT\)/);
 assert.doesNotMatch(engine,/DexClassLoader|APPROVED_VM_SHA|IndependentJavascriptVmV1/);
 assert.match(engine,/class IndependentRappSessions/);
 assert.match(engine,/fun offer\(id: String, generation: Long, payload: JSONObject\)/);
@@ -55,6 +59,17 @@ assert.doesNotMatch(embeddedExecutor,/private val quickJs = RiftRappQuickJsExecu
 assert.doesNotMatch(hostQuickJs,/RiftCoreRuntime|RiftCoreAppExecutor|RiftRappCapabilityBroker/);
 const verifier=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftProtectedDexVerifier.kt',root),'utf8');
 assert.match(verifier,/Lcom\/riftos\/app\/RiftHostQuickJsV1;/);
+assert.match(verifier,/Lcom\/riftos\/app\/RiftHostNativeBufferV1;/);
+const nativeHost = host.slice(host.indexOf('object RiftHostNativeBufferV1 {'),
+  host.indexOf('/** E0 shell-side'));
+const nativeStub = stub.slice(stub.indexOf('object RiftHostNativeBufferV1 {'),
+  stub.indexOf('interface RiftShellGraphicalComponentV1'));
+for (const t of [nativeHost, nativeStub]) {
+  assert.match(t,/fun abiVersion\(\): Int = 1/);
+  assert.match(t,/fun execute\(context: Context, runtime: ByteArray, input: ByteArray,/);
+}
+assert.match(nativeHost,/RiftNativeBufferCompilerService\.compile\(/);
+assert.doesNotMatch(nativeHost,/RiftCoreRuntime|RiftCoreAppExecutor|RiftRappCapabilityBroker/);
 const coreLoader=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftCoreCandidateSwitch.kt',root),'utf8');
 assert.match(coreLoader,/val ownCore = name\.startsWith\(PREFIX\)/);
 assert.match(coreLoader,/val kotlinSupport = name\.startsWith\("kotlin\."\)/);
@@ -94,13 +109,13 @@ assert.match(engine,/RiftAppAdapters\.require\(metadata\.getString\("adapter"\)\
 assert.match(engine,/adapter\.decodeOutput\(raw\)/);
 assert.match(engine,/adapter\.encodeEvent\(payload, event, seq\)/);
 assert.match(engine,/RiftAppExecutionKind\.QUICKJS/);
-assert.match(engine,/Native-buffer provider execution needs a qualified external Core host ABI/);
+assert.match(engine,/adapter\.executorKind in RiftAppExecutionKind\.SUPPORTED/);
 assert.match(core,/private const val EXTERNAL_CORE_PROMOTION_PROVEN = false/);
 assert.match(core,/require\(EXTERNAL_CORE_PROMOTION_PROVEN\)/);
 assert.ok(producer.includes("'IndependentRappSessionsV1.kt'"), 'External Core build must contain its session engine');
 assert.match(shell,/services\(\)\.snapshot\(win\.id\)/);
 assert.match(shell,/services\(\)\.reattach\(id, gen\)/);
-for(const name of [...names,'RiftHostQuickJsV1']) assert.ok(producer.includes(name+'.class'),'stub not removed '+name);
+for(const name of [...names,'RiftHostQuickJsV1','RiftHostNativeBufferV1']) assert.ok(producer.includes(name+'.class'),'stub not removed '+name);
 for(const op of ['toolchainStatus','compilerRun','jvmDex']) assert.ok(producer.includes("'"+op+"'"));
 const rapp=JSON.parse(read('riftapp.json'));
 assert.deepEqual(rapp.permissions.sort(),['build.local','fs.read','fs.write','window.title'].sort());
@@ -113,4 +128,4 @@ for(const kind of ['core','shell']) {
 }
 const gradle=fs.readFileSync(new URL('android/app/build.gradle.kts',root),'utf8');
 assert.ok(!gradle.includes('external-components/'));
-console.log('External Core 12-source extracted package/adapter/capability pipeline ABI contract source PASS; native-buffer + consent bridges and real device qualification pending');
+console.log('External Core v0.5 source contract PASS: versioned host QuickJS + native-buffer execution, 12 source modules, ABI stub stripping; signed host/consent/real device qualification pending');

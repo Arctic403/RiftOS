@@ -10,7 +10,7 @@ import org.json.JSONObject
 /**
  * COMPILE-ONLY MIRROR of the installed RiftOS host ABI v1.
  * NEVER include any classes from this source in Core/Shell output DEX.
- * D8 producer removes the four compile-only host interface .class files first.
+ * D8 producer removes all SIX compile-only host interface/service .class files first.
  *
  * Runtime interfaces come from the installed signed RiftOS APK parent loader.
  */
@@ -47,6 +47,18 @@ object RiftHostQuickJsV1 {
     @JvmStatic
     fun execute(runtime: ByteArray, input: ByteArray, outputLimit: Int): ByteArray =
         error("compile-only host QuickJS service")
+}
+
+/**
+ * Compile-only mirror of APK-hosted native-buffer execution V1.
+ * Its generated class MUST be stripped from every external DEX.
+ */
+object RiftHostNativeBufferV1 {
+    fun abiVersion(): Int = 1
+    @JvmStatic
+    fun execute(context: Context, runtime: ByteArray, input: ByteArray,
+                outputLimit: Int): ByteArray =
+        error("compile-only host native-buffer service")
 }
 
 interface RiftShellGraphicalComponentV1 {

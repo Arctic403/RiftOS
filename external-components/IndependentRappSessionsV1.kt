@@ -5,6 +5,7 @@ import android.os.Process
 import android.util.AtomicFile
 import android.util.Base64
 import com.riftos.app.RiftHostQuickJsV1
+import com.riftos.app.RiftHostNativeBufferV1
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -22,23 +23,35 @@ import java.util.concurrent.TimeUnit
  * promotion remains blocked until independent capability/grant behavior and
  * real signed-host execution are physically qualified.
  */
-internal class IndependentRuntimeRegistry {
+internal class IndependentRuntimeRegistry(private val context: Context) {
     private companion object {
-        private const val HOST_QUICKJS_ABI = 1
+        private const val HOST_ABI = 1
     }
 
-    fun execute(runtime: ByteArray, input: ByteArray, outputLimit: Int): ByteArray {
-        check(RiftHostQuickJsV1.abiVersion() == HOST_QUICKJS_ABI) {
-            "Unsupported APK host QuickJS execution ABI"
+    fun execute(kind: String, runtime: ByteArray, input: ByteArray,
+                outputLimit: Int): ByteArray = when (kind) {
+        RiftAppExecutionKind.QUICKJS -> {
+            check(RiftHostQuickJsV1.abiVersion() == HOST_ABI) {
+                "Unsupported APK host QuickJS execution ABI"
+            }
+            RiftHostQuickJsV1.execute(runtime, input, outputLimit)
         }
-        return RiftHostQuickJsV1.execute(runtime, input, outputLimit)
+        RiftAppExecutionKind.NATIVE_BUFFER -> {
+            check(RiftHostNativeBufferV1.abiVersion() == HOST_ABI) {
+                "Unsupported APK host native-buffer ABI"
+            }
+            RiftHostNativeBufferV1.execute(context, runtime, input, outputLimit)
+        }
+        else -> error("Unsupported independent Core runtime kind")
     }
 
     fun state(): JSONObject = JSONObject()
         .put("schema", "riftos.external.runtime-candidates/1")
-        .put("registered", 1)
-        .put("engine", "apk-host-quickjs-v1")
-        .put("abi", HOST_QUICKJS_ABI)
+        .put("registered", 2)
+        .put("engines", JSONArray()
+            .put(RiftAppExecutionKind.QUICKJS)
+            .put(RiftAppExecutionKind.NATIVE_BUFFER))
+        .put("hostAbi", HOST_ABI)
         .put("runtimeExecutionReady", true)
         .put("coreOwnsSessionsAndCapabilities", true)
         .put("apkOwnedCoreExecutorFallbackEnabled", false)
@@ -103,14 +116,12 @@ internal class IndependentRappSessions(
     fun open(id: String): JSONObject {
         require(APP_ID.matches(id)) { "Invalid Core RAPP id" }
         val metadata = checkedPackage(id)
-        val vm = registry // APK QuickJS only; native-buffer requires separate host ABI.
+        val vm = registry
         val adapter = RiftAppAdapters.require(metadata.getString("adapter"))
         require(metadata.getString("abi") == RiftAppAbi.SCHEMA &&
-            adapter.presentation == metadata.getString("presentation")) {
-            "Installed RAPP ABI/adapter/presentation mismatch"
-        }
-        require(adapter.executorKind == RiftAppExecutionKind.QUICKJS) {
-            "Native-buffer provider execution needs a qualified external Core host ABI"
+            adapter.presentation == metadata.getString("presentation") &&
+            adapter.executorKind in RiftAppExecutionKind.SUPPORTED) {
+            "Installed RAPP ABI/adapter/presentation/runtime kind mismatch"
         }
         val permissionsJson = metadata.optJSONArray("permissions") ?: JSONArray()
         val permissions = (0 until permissionsJson.length())
@@ -124,7 +135,12 @@ internal class IndependentRappSessions(
             !Files.isSymbolicLink(folder.toPath())) { "Unsafe RAPP package root" }
         val runtimeFile = File(folder, "runtime.bin")
         val source = runtimeFile.readBytes()
-        require(source.size in 1..MAX_RUNTIME) { "RAPP JS source bounds invalid" }
+        val limit = if (adapter.executorKind == RiftAppExecutionKind.NATIVE_BUFFER) {
+            256 * 1024
+        } else MAX_RUNTIME
+        require(source.size in 1..limit) {
+            "RAPP runtime payload exceeds selected host executor bounds"
+        }
         val rawProgram = File(folder, "state.bin")
             .takeIf { it.isFile && !Files.isSymbolicLink(it.toPath()) }?.readBytes()
             ?: File(folder, "program.bin").readBytes()
@@ -351,7 +367,7 @@ internal class IndependentRappSessions(
         }
         val raw = try {
             val future = runner.submit<ByteArray> {
-                s.vm.execute(s.runtime, envelope, MAX_OUTPUT)
+                s.vm.execute(s.adapter.executorKind, s.runtime, envelope, MAX_OUTPUT)
             }
             try {
                 future.get(EVAL_TIMEOUT_MS, TimeUnit.MILLISECONDS)

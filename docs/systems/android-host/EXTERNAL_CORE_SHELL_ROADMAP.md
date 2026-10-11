@@ -1,5 +1,13 @@
 # RiftOS — External Core, recovery and Shell roadmap
 
+## 2026-10-11 — External Core v0.5: native-buffer generic host service source built
+
+A newly versioned APK-host **`RiftHostNativeBufferV1`** primitive gives independent Core DEXes the same generic, bounded, out-of-process native-buffer backend that embedded Core already uses. Its only inputs are Context for binding the existing Android worker, runtime bytes, input bytes and output capacity; the host returns bounded output or rejects the worker's failure. **All application lifecycle, adapter routing, program state, grants and effects remain in external Core.** The prior `RiftHostQuickJsV1` is unchanged; `RiftProtectedDexVerifier` accepts exactly the new host class without broadening APK-owned Core references.
+
+The independently compiled Core v0.5 uses its existing JSON/Rift++ adapter set to select QuickJS or native-buffer; previous false "Rift++ runtime missing" source gate is now retired. Kotlin 12/12 source compile and D8 PASS; single 2,748,192-byte DEX SHA-256 `c7e13955c4cb23587397e7de3704651fbcc3d7d70fd701b7739e2a968665f713` with six compile-only ABI classfiles stripped, preserved under `workspace/tmp/rift-external-core-v05-native-host-20261011-build`.
+
+**Stop before promotion:** signed installed #710 lacks the new service, and a new **user-initiated signed APK build/device test** is required. Capability grant-consent UI, independent privileged build.local/clipboard/network/signing platforms, full application and desktop parity, backup restoration and physical external Core qualification are still unproven. `EXTERNAL_CORE_PROMOTION_PROVEN=false`. Keep embedded migration fallback and old protection until their successor is physically accepted. Patch C cannot begin.
+
 ## 2026-10-11 — Standalone external Core extraction (not activation)
 
 User authorized parallel source development while the Recovery Patch B signed build runs. Existing `external-components/IndependentCoreV1.kt` now consumes an extracted Core-owned production-derived `.rapp` package manager, complete JSON/Rift++ adapter formats, standalone C:/D: volume resolver and a grant-checked scoped FS/effects dispatcher. Installer/update/uninstall invalidate only external-Core RAPP sessions and revoke prior grants, never import/call `RiftCoreRuntime`. Typed Core execution remains backed by APK-host QuickJS V1 for JSON adapters. **Rift++ native-buffer adapters are protocol-compatible but lack an exported generic host execution service**, so the Core rejects them rather than pretending they execute. Additional consent/Android capability bridges are fail-closed.

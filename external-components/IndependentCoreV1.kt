@@ -61,7 +61,7 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
             }
             // Owning the catalogue in this DEX never starts the embedded
             // RiftCoreRuntime singleton; there is no implicit delegate.
-            javascriptRegistry = IndependentRuntimeRegistry()
+            javascriptRegistry = IndependentRuntimeRegistry(application)
             val broker = IndependentRappEffects(application) { id ->
                 packagesOwner?.handlesInstalled(id) == true
             }

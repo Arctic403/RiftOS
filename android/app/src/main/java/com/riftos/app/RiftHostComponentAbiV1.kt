@@ -67,6 +67,43 @@ object RiftHostQuickJsV1 {
         engine.execute(runtime, input, outputLimit)
 }
 
+/**
+ * APK-owned generic native-buffer execution primitive for independently
+ * installed Core DEXes. Mirrors the existing embedded Core backend without
+ * forwarding RAPP identity, permissions, grants, or lifecycle to the APK.
+ *
+ * The isolated native-buffer worker enforces its own byte and time bounds.
+ * Context is used only to bind that Android worker; no Core singleton is read.
+ */
+object RiftHostNativeBufferV1 {
+    fun abiVersion(): Int = 1
+
+    @JvmStatic
+    fun execute(context: Context, runtime: ByteArray, input: ByteArray,
+                outputLimit: Int): ByteArray {
+        require(runtime.size in 1..256 * 1024) { "Native runtime exceeds host bound" }
+        require(input.size <= 512 * 1024) { "Native input exceeds host bound" }
+        require(outputLimit in 1..512 * 1024) { "Native output exceeds host bound" }
+        val result = RiftNativeBufferCompilerService.compile(
+            context.applicationContext, runtime, input, outputLimit)
+        val status = result.getString("status") ?: "host-reject"
+        require(status == "success") {
+            buildString {
+                append("Native-buffer runtime ").append(status)
+                append(" host=").append(result.getInt("hostStatus", -1))
+                append(" return=").append(result.getLong("returnValue", 0xffffffffL))
+                result.getString("detail")?.takeIf { it.isNotBlank() }?.let {
+                    append(" ").append(it.take(160))
+                }
+            }
+        }
+        val bytes = result.getByteArray("output")
+            ?: error("Native-buffer execution succeeded without output")
+        require(bytes.size <= outputLimit) { "Native-buffer output exceeded capacity" }
+        return bytes
+    }
+}
+
 /** E0 shell-side portable lifecycle envelope, not activated or connected yet. */
 interface RiftShellPresentationV1 {
     fun restore(snapshot: JSONObject): JSONObject

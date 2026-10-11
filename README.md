@@ -1,5 +1,11 @@
 # RiftOS
 
+## 2026-10-11 — External Core v0.5 NativeBuffer host gate (signed device proof pending)
+
+The user-authorized external Core v0.5 now compiles as a standalone Core DEX with production-derived RAPP package manager, typed JSON/Rift++ adapters, Core-owned sessions/capability policy, and generic execution through APK `RiftHostQuickJsV1` or new `RiftHostNativeBufferV1`. The new host primitive delegates to the existing bounded isolated native-buffer worker; the APK does not gain application/permission authority. The independent registered Kotlin/D8 producer removed all SIX host compile-only classfiles and generated one 2,748,192-byte experimental DEX, SHA `c7e13955c4cb23587397e7de3704651fbcc3d7d70fd701b7739e2a968665f713`, retained separately under `workspace/tmp/`.
+
+**Not a qualified release.** Signed installed #710 does not contain the new host ABI, and independent Core promotion is still blocked. Run the next signed APK manually via the normal Builder; then device-test native-buffer host execution, complete fresh-grant consent and privileged platform interfaces, and test real external Core/backup/restore before removing embedded Core or old recovery. See [Core roadmap](docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md).
+
 ## 2026-10-11 — Patch B source: standalone APK Recovery can install, backup and restore
 
 On manually signed #709, the user proved `RiftOS Recovery` opens directly from its separate Android launcher even after RiftOS was force-stopped, and regular Core/RAPP smoke passed. The APK-owned Recovery screen now has separately confirmed **Restore embedded Core/Shell** and **Restore accepted working backup** controls, plus a bounded Android picker for a trusted external `component.json` and matching DEX: stage/verify, then explicitly confirm install for next start. Only a previously device-accepted external component can be stored as the one last-known-good backup; existing `RiftProtectedComponentInstaller` and SHA/type verifier are reused, not duplicated. Signed embedded Core and RiftShell remain the reliable first-install fallback. Legacy release journal sync remains until Patch C. No hot swap or automated process kill.
