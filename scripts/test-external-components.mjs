@@ -26,7 +26,7 @@ assert.match(engine,/class IndependentRappSessions/);
 assert.match(engine,/fun offer\(id: String, generation: Long, payload: JSONObject\)/);
 assert.match(engine,/private fun dispatch\(s: Session, ticket: Ticket\)/);
 assert.match(engine,/private fun validateFrame\(frame: JSONObject\)/);
-assert.match(engine,/RAPP input queue full/);
+assert.match(engine,/require\(s\.queue\.size < MAX_QUEUE\)\s*\{\s*"Core input queue full"\s*\}/);
 assert.match(engine,/External Core capability not independently authorized/);
 assert.match(engine,/Independent Javascript runtime registry not installed/);
 assert.match(engine,/private const val APPROVED_VM_SHA = ""/);

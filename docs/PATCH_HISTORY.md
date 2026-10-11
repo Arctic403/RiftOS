@@ -1,5 +1,9 @@
 # RiftOS Patch History
 
+## 2026-10-10 — Manual signed Builder 38106297017 external-Core source assertion drift (test-only repair)
+
+User manual signed Builder run `38106297017` checked out clean RiftOS `72f3dc70f0b9f7969512d2c47d483b75a77f015e`, passed Builder preflight and entered `npm run check`, then failed at `scripts/test-external-components.mjs:29` before Android/Kotlin/Gradle build. The test expected the obsolete literal `RAPP input queue full`, while `IndependentRappSessionsV1.kt` correctly enforces `require(s.queue.size < MAX_QUEUE) { "Core input queue full" }`. Updated only the regression assertion to pin the actual queue-size check **and** current diagnostic. No external Core, session, RAPP, runtime, Builder source, permission, host or signing behavior changed. User must manually rerun signed Builder to verify full validation and APK. Installed signed #702 remains unchanged; external Core v0.2.1 and Shell are still inactive/unapproved.
+
 ## 2026-10-10 — RAPP executable limit now 8 MiB, ZIP 16 MiB, state still 1 MiB
 
 Removed the conservative **1 MiB RAPP runtime executable/source** rejection by raising the exact native `RiftRappManager` package runtime cap and `RiftRappQuickJsExecutor` loader cap to **8 MiB**; the total compressed and decompressed package cap becomes **16 MiB**. External Core V1 immutable package SHA reader and external session engine use the identical 8 MiB runtime policy. Mutable Core RAPP program/state, FIFO payload, event input/output and per-event timeout remain independently bounded, so large source packages do not automatically create huge effect buffers. Added `scripts/test-rapp-payload-limits.mjs` to canonical check and Builder Bash/Python gates. Existing signed #702 still has old Android limits until user runs next manual signed Builder APK; changing a cap does **not** speed up compiler execution.
