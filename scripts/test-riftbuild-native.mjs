@@ -63,6 +63,17 @@ const shell = read(paths.shell);
 const toolHost = read(paths.toolHost);
 const browser = read(paths.browser);
 const gradle = read(paths.gradle);
+const wiringValidator = read('scripts/validate-rift-wiring.mjs');
+// #38170116296: the old C1.0 source validator simultaneously required and
+// forbade the retired RiftBuild shell initialization, blocking npm before Gradle.
+assert.ok(wiringValidator.includes("if (nativeShell.includes('RiftCoreRuntime.buildPlatform(appContext)') ||"),
+  'C1.0 validator must reject the retired embedded RiftBuild shell coupling');
+assert.ok(!wiringValidator.includes("if (!nativeShell.includes('RiftCoreRuntime.buildPlatform(appContext)') ||"),
+  'C1.0 validator must not demand the retired embedded RiftBuild shell coupling');
+for (const route of ['coreStatus(appContext)', 'startApp(appContext, args[1])', 'stopApp(appContext, args[1])']) {
+  assert.ok(wiringValidator.includes('RiftHostCoreComponents.executionView().' + route),
+    'C1.0 validator must require actual selected-Core route: ' + route);
+}
 
 for (const required of [
   'class RiftLocalBuildCapability',

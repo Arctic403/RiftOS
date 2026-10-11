@@ -727,10 +727,14 @@ if (!manifest.includes('android:name=".RiftCoreApplication"')) fail('Android app
 for (const f of ['RiftCoreApplication.kt', 'RiftCoreRuntime.kt']) {
   if (!gradle.includes(`"src/main/java/com/riftos/app/${f}"`)) fail(`C1.0 exact Gradle source missing: ${f}`);
 }
-if (!nativeShell.includes('RiftCoreRuntime.buildPlatform(appContext)') ||
+// C1.0 current boundary: the shell must NOT initialize legacy embedded RiftBuild.
+// Core status and app execution are routed through the selected Core component.
+if (nativeShell.includes('RiftCoreRuntime.buildPlatform(appContext)') ||
     !nativeShell.includes('"core" -> {') ||
-    !nativeShell.includes('RiftHostCoreComponents.executionView().coreStatus(appContext)')) {
-  fail('RiftShell is still owning or not exposing the Core platform status');
+    !nativeShell.includes('RiftHostCoreComponents.executionView().coreStatus(appContext)') ||
+    !nativeShell.includes('RiftHostCoreComponents.executionView().startApp(appContext, args[1])') ||
+    !nativeShell.includes('RiftHostCoreComponents.executionView().stopApp(appContext, args[1])')) {
+  fail('RiftShell must expose selected Core status and app lifecycle without legacy RiftBuild coupling');
 }
 if (!rappHost.includes('RiftCoreRuntime.packages(activity.applicationContext)') ||
     !platformBuild.includes('RiftCoreRuntime.packages(appContext)')) {

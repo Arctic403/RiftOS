@@ -1,5 +1,10 @@
 # RiftOS Project Status
 
+## 2026-10-11 — manual worker #38170116296 source-check C1.0 regression corrected (unsigned source)
+
+User-manual signed Builder run #38170116296 for source `96e4453975bb10a5d2f964cd1448fd66694ea4dd` passed Builder Python scripts, but `npm run check` stopped at `scripts/validate-rift-wiring.mjs`: `RiftShell is still owning or not exposing the Core platform status`. Its C1.0 assertion mistakenly **required** `RiftCoreRuntime.buildPlatform(appContext)` in `RiftNativeShell.kt`, directly contradicting the later negative legacy-code guard and the independently verified external Core architecture. The corrected source validator forbids this retired shell facade and requires selected Core `coreStatus`, `startApp`, and `stopApp` routes; `scripts/test-riftbuild-native.mjs` now guards against the old inverted predicate returning. Targeted source check and JavaScript syntax checks passed; full Node check, Gradle APK compilation, signing and new APK device proof are **NOT yet run**. No external Core DEX or installed #715 Core was changed. User owns manually dispatched signed builds.
+
+
 ## 2026-10-11 — legacy APK build-proof island fully retired (source only)
 
 Follow-up dependency audit confirmed no production callers for the old `RiftBuildPlatformTools.executeShell` dispatcher, `RiftApkV2Verifier` proof parser, `RiftBuildInstaller` proof flow, or its manifest Activity/receiver. The next APK source now retains only the embedded-Core RAPP `installRapp`/`uninstallRapp` migration fallback in `RiftBuildPlatformTools`; the obsolete verifier/installer sources and manifest components are deleted. MCP `rift_shell_exec` still supports explicit bounded job `submit/status/result/cancel` without a hard-coded legacy RiftBuild auto-classifier. Modern protected external Core Recovery, generic build.local/D8/signing services, and live RAPP QuickJS remain intact. This cleanup is NOT yet a green signed Android build.
