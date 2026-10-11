@@ -25,6 +25,9 @@ class RiftCoreApplication : Application() {
                 }
             }.getOrDefault("")
         }
+        // This separate APK Recovery process must never initialize either
+        // selected Core or graphical Shell. It can open after a bad Core update.
+        if (currentProcess == packageName + ":riftRecovery") return
         if (currentProcess == applicationInfo.processName) {
             // The APK enters the selected Core bootstrap component. The
             // embedded compatibility entry preserves C1.4 recovery ordering.

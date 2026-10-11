@@ -1,5 +1,9 @@
 # RiftOS
 
+## 2026-10-10 — Patch A source: independent Android RiftOS Recovery launcher
+
+RiftOS now has a new `RiftOS Recovery` Android launcher entry in isolated `:riftRecovery` process. Its `Application.onCreate` bypass skips Core/Shell bootstrap, so it can inspect APK-private recovery records even after a bad selected Core. The read-only first screen reports Core/Shell active state, any verified external last-working backup, invalid backup, startup marker and the existing embedded first-install fallback. It uses the established SHA/qualification receipt but cannot yet install/restore or activate anything; **Patch B** adds the protected writer and explicit user-driven restore after Gate A device proof. Patch A needs your manual signed Builder APK and physical Recovery UI test; installed signed #706 remains the pre-Recovery baseline. [Three-patch decision and exact gate](docs/systems/android-host/SIMPLE_BOOTSTRAP_RECOVERY_LOCK.md).
+
 ## 2026-10-10 — New target: simple APK bootstrap and manual recovery (decision locked)
 
 The permanent APK owns **Core/Shell selection, verified update installation, one last-working backup and manual recovery**. If an external Core update breaks startup, a user-launchable APK Recovery screen in its **own process** (no Core/Shell dependency) verifies and restores the previous working Core. Clean initial APK installs must provide a known-good Core seed or retained embedded migration implementation. QuickJS and MCP/relay remain APK services; replaceable Core and Shell must not repair/update themselves.

@@ -1,6 +1,14 @@
 # RiftOS — Simple APK-owned bootstrap, updates and manual recovery
 **Architecture decision: user-approved, 2026-10-10. Implementation status: DESIGN LOCK ONLY.**
 
+## Patch A source checkpoint — 2026-10-10 (awaiting user-manual signed APK / device proof)
+
+Implemented only the new independently launcher-accessible `RiftManualRecoveryActivity` in Android process `:riftRecovery`, with an explicit `RiftCoreApplication.onCreate` bypass before all Core/Shell bootstrap. No Core, Shell, MCP, RAPP, or external DEX loading occurs in the recovery UI. The first Recovery screen provides working Refresh/Close actions, read-only status for both Core and Shell active slots, and the last-working backup-record contract `riftos.host.working-backup/1` using `$component.working-backup.json` under APK-private `bootstrap-components`.
+
+The recovery reader accepts only a strict bounded atomic receipt with the expected component, external namespace/entrypoint, sealed DEX SHA-256 and exact previously approved qualification receipt; absent backup is reported as `absent`, damaged/unqualified backup as `invalid`. The signed APK's still-embedded Core and Shell are explicitly identified as the **first-install migration fallback**, not as a newly installed external backup. There is no writer of new working backups, no switch or restore control, and no Core installation during Patch A. **Patch B** must implement user-confirmed backup writes, trusted candidate selection and manual restore; it must never silently overwrite a known-working revision. Existing full Core and Shell bootstrap remains untouched, including legacy recovery machinery, until device evidence.
+
+The two Recovery Kotlin sources and manifest launcher entry are pinned to the exact Gradle source inventory and RiftOS/Builder regression contracts. **Source-only until the user manually signs/installs RiftOS from pushed main and opens Recovery independently of Core/Shell.** Signed installed #706 predates Patch A, so no physical Recovery proof exists. Do NOT advance to Patch B before verifying Gate A.
+
 ## Source of truth and scope
 
 This document supersedes the *target architecture and future work* in earlier automatic Core/Shell rollback, multi-revision promotion, automatic supervisor and N-1 recovery plans. Those existing sources and historical device receipts remain untouched until replacement gates pass. Do not mistake this plan for an implemented or device-proven recovery feature.

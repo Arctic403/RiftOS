@@ -118,6 +118,20 @@
             android:exported="false"
             android:resizeableActivity="true"
             android:windowSoftInputMode="adjustResize" />
+        <!-- APK-owned recovery is separately launchable even if selected
+             Core/Shell DEX fails. :riftRecovery never initializes the OS. -->
+        <activity
+            android:name=".RiftManualRecoveryActivity"
+            android:process=":riftRecovery"
+            android:exported="true"
+            android:label="RiftOS Recovery"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
         <!-- C1.3-D: actual desktop/window manager/RAPP renderer reside in
              :riftShell, NOT in Core or the read-only :riftShellProbe. -->
         <activity
