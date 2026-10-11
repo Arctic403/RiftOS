@@ -101,6 +101,7 @@ internal class IndependentRappSessions(
         var sequence = 0
         var closed = false
         var running = false
+        var effectPending = false
         var error: String? = null
         val queue = ArrayDeque<Ticket>()
     }
@@ -327,6 +328,12 @@ internal class IndependentRappSessions(
             }
             try {
                 dispatch(s, next)
+                synchronized(monitor) {
+                    if (s.effectPending) {
+                        s.running = false
+                        return
+                    }
+                }
             } catch (failure: Exception) {
                 synchronized(monitor) {
                     s.error = failure.javaClass.simpleName + ": " +
@@ -402,17 +409,36 @@ internal class IndependentRappSessions(
             s.revision++
             s.error = null
         }
-        // Core validates package identity and prior user grants. A shell view
-        // cannot authorize effects, or inject internal effect-result events.
+        // Core owns all effects and UI consent; never let the next queued
+        // Shell event overtake a pending host-effect continuation.
+        require(decoded.effects.size <= 1) {
+            "RAPP emitted multiple unsupported concurrent effects"
+        }
         val effect = decoded.effects.singleOrNull() ?: return
         require(ticket.depth < MAX_DEPTH) { "RAPP effect continuation depth exceeded" }
-        val reply = effects.execute(s.id, s.permissions, effect)
         synchronized(monitor) {
-            if (!s.closed && s.queue.size < MAX_QUEUE) {
-                s.queue.addFirst(Ticket(13, effect.requestId,
-                    intArrayOf(if (reply.ok) 1 else 0, reply.token, 0, 0),
-                    if (reply.ok) reply.text else reply.error,
-                    reply.bytes.copyOf(), ticket.depth + 1))
+            if (s.closed || sessions[s.id] !== s) return
+            s.effectPending = true
+        }
+        effects.executeAsync(s.id, s.name, s.permissions, effect,
+            stillValid = { synchronized(monitor) {
+                !s.closed && sessions[s.id] === s && s.effectPending
+            } }
+        ) { reply ->
+            synchronized(monitor) {
+                if (!s.closed && sessions[s.id] === s) {
+                    s.effectPending = false
+                    if (s.queue.size >= MAX_QUEUE) {
+                        s.error = "RAPP effect continuation queue full"
+                        s.queue.clear()
+                    } else {
+                        s.queue.addFirst(Ticket(13, effect.requestId,
+                            intArrayOf(if (reply.ok) 1 else 0, reply.token, 0, 0),
+                            if (reply.ok) reply.text else reply.error,
+                            reply.bytes.copyOf(), ticket.depth + 1))
+                        schedule(s)
+                    }
+                }
             }
         }
     }

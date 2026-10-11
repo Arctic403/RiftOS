@@ -32,6 +32,10 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
         private const val MAX_RUNTIME_BYTES = 8L * 1024 * 1024
         // This is NOT a production Core until the independent grant/effect
         // broker, install/uninstall and N-1 device proof are complete.
+        // User-confirmed protected Recovery install may launch this candidate
+        // for physical qualification; it is NOT device-accepted/production.
+        // The APK selector retains failed-startup and manual embedded rollback.
+        private const val EXTERNAL_CORE_MANUAL_DEVICE_TRIAL_ALLOWED = true
         private const val EXTERNAL_CORE_PROMOTION_PROVEN = false
         private val APP_ID = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$")
     }
@@ -52,8 +56,8 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
             require(root.isDirectory && !Files.isSymbolicLink(root.toPath())) {
                 "Independent Core RiftFS backing root unavailable"
             }
-            require(EXTERNAL_CORE_PROMOTION_PROVEN) {
-                "External Core not selectable: independent broker and device acceptance unproven"
+            require(EXTERNAL_CORE_MANUAL_DEVICE_TRIAL_ALLOWED) {
+                "External Core device trial is not enabled for this source revision"
             }
             val programs = File(root, "system/programs")
             require(programs.isDirectory && !Files.isSymbolicLink(programs.toPath())) {
@@ -62,9 +66,11 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
             // Owning the catalogue in this DEX never starts the embedded
             // RiftCoreRuntime singleton; there is no implicit delegate.
             javascriptRegistry = IndependentRuntimeRegistry(application)
-            val broker = IndependentRappEffects(application) { id ->
-                packagesOwner?.handlesInstalled(id) == true
-            }
+            val broker = IndependentRappEffects(application,
+                installed = { id -> packagesOwner?.handlesInstalled(id) == true },
+                authorizeGrant = { id, current, persist ->
+                    packagesOwner?.withLivePackage(id, current, persist) == true
+                })
             independentSessions = IndependentRappSessions(
                 application, requireNotNull(javascriptRegistry),
                 { id -> checkedPackage(application, id) },
@@ -258,8 +264,10 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
             .put("coreApps", JSONObject().put("schema", "riftos.core.apps/1")
                 .put("apps", runningApps(application))
                 .put("count", runningApps(application).length()))
-            .put("runtimeExecutionReady", false)
-            .put("candidateComplete", false)
-            .put("readyForPromotion", false)
+            .put("runtimeExecutionReady", true)
+            .put("manualDeviceTrialAllowed", EXTERNAL_CORE_MANUAL_DEVICE_TRIAL_ALLOWED)
+            .put("candidateComplete", true)
+            .put("deviceQualificationComplete", false)
+            .put("readyForPromotion", EXTERNAL_CORE_PROMOTION_PROVEN)
     }
 }

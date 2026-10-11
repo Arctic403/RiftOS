@@ -1,5 +1,13 @@
 # Independent component build evidence — 2026-10-10
 
+## 2026-10-11 — External Core v0.6 device-trial candidate: 13 Kotlin sources + D8 REAL PASS
+
+User-authorized continuation from the paused external-Core checkpoint. The new external Core now uses the existing Core-to-Shell bounded consent ticket transport and registered `RiftLocalBuildCapability` host primitive, but owns declaration/grant checks, persistence, stale session detection and effect ordering itself. Signing identity is implemented by external-Core code using the existing Android Keystore alias. Device trial eligibility is separate from production acceptance: `EXTERNAL_CORE_MANUAL_DEVICE_TRIAL_ALLOWED=true`, `EXTERNAL_CORE_PROMOTION_PROVEN=false`, `deviceQualificationComplete=false`.
+
+Real registered `kotlin-android` compile: **13 source files**, `state=success`, `exitCode=OK`, zero diagnostics. All eight compile-only APK host classes removed before D8; class directory checked empty. D8 `state=dexed` with **47 class files** and one **2,773,132-byte** `classes.dex`, SHA-256 `1f3c3850b0c0dc945944719cced77eec3091dc868a16d004413567d28ea1f3df`, independently rehashed using RiftOS MCP. Experimental bytes retained only in `workspace/tmp/rift-external-core-v06-manual-trial-20261011-build/riftbuild/core-dex/classes.dex`. Not staged, activated, or installed.
+
+The next signed APK must include `RiftHostCapabilityUiV1` and `RiftHostBuildLocalV1` classes and pass the user-manual Builder/Gradle/device gate; installed signed #710 does not. Full functional qualification and actual protected Core backup/restore are **NOT** implied by these compiler results. See `docs/systems/android-host/EXTERNAL_CORE_DEVICE_ACCEPTANCE.md`.
+
 ## 2026-10-11 — External Core v0.5 native-buffer host ABI: Kotlin+D8 source-build PASS
 
 **Registered on-device Kotlin compiler**: 12 external-Core source files, `kotlin-android`, `state=success`, `exitCode=OK`, zero diagnostics. The compile-only ABI mirrors now include the new `RiftHostNativeBufferV1` APK interface. All SIX generated APK host interface classes were removed before D8; generated `com/riftos/app` class directory verified empty. The generic on-device D8 converter returned `state=dexed` with 46 compiled application classfiles and one `classes.dex` of **2,748,192 bytes**, SHA-256 **`c7e13955c4cb23587397e7de3704651fbcc3d7d70fd701b7739e2a968665f713`**, separately rehashed using RiftOS MCP.

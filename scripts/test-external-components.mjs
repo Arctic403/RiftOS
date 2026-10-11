@@ -34,8 +34,11 @@ assert.match(engine,/fun offer\(id: String, generation: Long, payload: JSONObjec
 assert.match(engine,/private fun dispatch\(s: Session, ticket: Ticket\)/);
 assert.match(engine,/private fun validateFrame\(frame: JSONObject\)/);
 assert.match(engine,/require\(s\.queue\.size < MAX_QUEUE\)\s*\{\s*"Core input queue full"\s*\}/);
-assert.match(engine,/effects\.execute\(s\.id, s\.permissions, effect\)/);
-assert.match(engine,/apk-host-quickjs-v1/);
+assert.match(engine,/effects\.executeAsync\(s\.id, s\.name, s\.permissions, effect,/);
+assert.match(engine,/s\.effectPending = true/);
+assert.match(engine,/s\.effectPending = false/);
+assert.match(engine,/RiftAppExecutionKind\.NATIVE_BUFFER/);
+assert.match(engine,/RiftHostNativeBufferV1\.execute\(context, runtime, input, outputLimit\)/);
 assert.match(engine,/private const val MAX_PROGRAM = 1024 \* 1024/);
 assert.match(engine,/rawProgram\.size <= MAX_PROGRAM/);
 assert.match(engine,/nextState == null \|\| nextState\.size <= MAX_PROGRAM/);
@@ -61,6 +64,18 @@ assert.doesNotMatch(hostQuickJs,/RiftCoreRuntime|RiftCoreAppExecutor|RiftRappCap
 const verifier=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftProtectedDexVerifier.kt',root),'utf8');
 assert.match(verifier,/Lcom\/riftos\/app\/RiftHostQuickJsV1;/);
 assert.match(verifier,/Lcom\/riftos\/app\/RiftHostNativeBufferV1;/);
+assert.match(verifier,/Lcom\/riftos\/app\/RiftHostCapabilityUiV1;/);
+assert.match(verifier,/Lcom\/riftos\/app\/RiftHostBuildLocalV1;/);
+assert.match(host,/object RiftHostCapabilityUiV1/);
+assert.match(host,/RiftCoreShellCapabilityRequests\.requestConsent\(/);
+assert.match(host,/RiftCoreShellCapabilityRequests\.requestUiEffect\(/);
+assert.match(host,/object RiftHostBuildLocalV1/);
+assert.match(host,/RiftLocalBuildCapability\(context\.applicationContext\)/);
+assert.match(stub,/object RiftHostCapabilityUiV1/);
+assert.match(stub,/object RiftHostBuildLocalV1/);
+assert.match(core,/authorizeGrant = \{ id, current, persist ->/);
+assert.match(producer,/'RiftHostCapabilityUiV1\.class'/);
+assert.match(producer,/'RiftHostBuildLocalV1\.class'/);
 const nativeHost = host.slice(host.indexOf('object RiftHostNativeBufferV1 {'),
   host.indexOf('/** E0 shell-side'));
 const nativeStub = stub.slice(stub.indexOf('object RiftHostNativeBufferV1 {'),
@@ -81,7 +96,7 @@ const externalFiles=[
  'ExternalRiftRappRiftppGenericAdapter.kt',
  'ExternalRiftRappRiftppWs15Adapter.kt','ExternalRiftCorePackageEvents.kt',
  'ExternalRiftCorePackageGrants.kt','ExternalRiftVolumePaths.kt',
- 'IndependentRappPackagesV1.kt','IndependentRappEffectsV1.kt'
+ 'IndependentRappPackagesV1.kt','IndependentRappEffectsV1.kt','IndependentRappSigningV1.kt'
 ];
 const ownership=fs.readFileSync(new URL('docs/SOURCE_OWNERSHIP.md',root),'utf8');
 for(const file of externalFiles){
@@ -106,17 +121,31 @@ assert.match(effects,/setting:permissions:\$id/);
 assert.match(effects,/effect\.capability !in declared/);
 assert.match(effects,/Independent platform capability bridge not qualified/);
 assert.doesNotMatch(effects,/RiftCoreRuntime\.|RiftRappCapabilityBroker/);
+assert.match(effects,/fun executeAsync\(id: String, name: String/);
+assert.match(effects,/RiftHostCapabilityUiV1\.consent\(/);
+assert.match(effects,/RiftHostCapabilityUiV1\.uiEffect\(/);
+assert.match(effects,/RiftHostBuildLocalV1\.execute\(/);
+assert.match(effects,/authorizeGrant\(id, stillValid\)/);
+assert.match(effects,/TimeUnit\.SECONDS/);
+assert.match(manager,/fun withLivePackage\(id: String, stillValid:/);
+const signing=read('IndependentRappSigningV1.kt');
+assert.match(signing,/AndroidKeyStore/);
+assert.match(signing,/riftbuild-apk-v2-rsa-v1/);
+assert.match(signing,/signSha256RsaPkcs1/);
+assert.match(signing,/verifySha256RsaPkcs1/);
 assert.match(engine,/RiftAppAdapters\.require\(metadata\.getString\("adapter"\)\)/);
 assert.match(engine,/adapter\.decodeOutput\(raw\)/);
 assert.match(engine,/adapter\.encodeEvent\(payload, event, seq\)/);
 assert.match(engine,/RiftAppExecutionKind\.QUICKJS/);
 assert.match(engine,/adapter\.executorKind in RiftAppExecutionKind\.SUPPORTED/);
 assert.match(core,/private const val EXTERNAL_CORE_PROMOTION_PROVEN = false/);
-assert.match(core,/require\(EXTERNAL_CORE_PROMOTION_PROVEN\)/);
+assert.match(core,/EXTERNAL_CORE_MANUAL_DEVICE_TRIAL_ALLOWED = true/);
+assert.match(core,/require\(EXTERNAL_CORE_MANUAL_DEVICE_TRIAL_ALLOWED\)/);
+assert.match(core,/deviceQualificationComplete", false/);
 assert.ok(producer.includes("'IndependentRappSessionsV1.kt'"), 'External Core build must contain its session engine');
 assert.match(shell,/services\(\)\.snapshot\(win\.id\)/);
 assert.match(shell,/services\(\)\.reattach\(id, gen\)/);
-for(const name of [...names,'RiftHostQuickJsV1','RiftHostNativeBufferV1']) assert.ok(producer.includes(name+'.class'),'stub not removed '+name);
+for(const name of [...names,'RiftHostQuickJsV1','RiftHostNativeBufferV1','RiftHostCapabilityUiV1','RiftHostBuildLocalV1']) assert.ok(producer.includes(name+'.class'),'stub not removed '+name);
 for(const op of ['toolchainStatus','compilerRun','jvmDex']) assert.ok(producer.includes("'"+op+"'"));
 const rapp=JSON.parse(read('riftapp.json'));
 assert.deepEqual(rapp.permissions.sort(),['build.local','fs.read','fs.write','window.title'].sort());
@@ -129,4 +158,4 @@ for(const kind of ['core','shell']) {
 }
 const gradle=fs.readFileSync(new URL('android/app/build.gradle.kts',root),'utf8');
 assert.ok(!gradle.includes('external-components/'));
-console.log('External Core v0.5 source contract PASS: versioned host QuickJS + native-buffer execution, 12 source modules, ABI stub stripping; signed host/consent/real device qualification pending');
+console.log('External Core manual-trial source contract PASS: dual runtime, async Core-owned grants and signed host capability bridges. Physical trial, native-buffer behavior and recovery not accepted.');

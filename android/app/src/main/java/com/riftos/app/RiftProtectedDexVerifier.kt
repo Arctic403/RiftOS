@@ -99,6 +99,8 @@ internal object RiftProtectedDexVerifier {
             "Lcom/riftos/app/RiftCoreExecutionViewV1;",
             "Lcom/riftos/app/RiftHostQuickJsV1;",
             "Lcom/riftos/app/RiftHostNativeBufferV1;",
+            "Lcom/riftos/app/RiftHostCapabilityUiV1;",
+            "Lcom/riftos/app/RiftHostBuildLocalV1;",
             "Lcom/riftos/app/RiftShellGraphicalComponentV1;",
             "Lcom/riftos/app/RiftShellPlatformServicesV1;",
             "Lcom/riftos/app/RiftAppAbi;"

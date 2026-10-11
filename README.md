@@ -1,5 +1,11 @@
 # RiftOS
 
+## 2026-10-11 — External Core v0.6 manual-trial source checkpoint
+
+The existing independently built Core (not a duplicate embedded Core) now includes transactional RAPP installs/uninstalls, QuickJS and Rift++ native-buffer execution, Core-owned frame/session state, scoped filesystem, fresh and prior permission grants through the existing Shell consent ticket channel, registered `build.local` compiler/D8 and Android Keystore signing identity. The Android APK supplies **generic** host execution/consent/build transport only; no application-specific Core ownership returns to the APK. `EXTERNAL_CORE_MANUAL_DEVICE_TRIAL_ALLOWED=true` permits an explicitly confirmed protected Recovery device trial, but `EXTERNAL_CORE_PROMOTION_PROVEN=false` remains intact.
+
+The standalone Core's **13 Kotlin sources compiled successfully**, and D8 produced a 2,773,132-byte DEX SHA `1f3c3850b0c0dc945944719cced77eec3091dc868a16d004413567d28ea1f3df`. Its eight compile-only APK service classes were stripped. This is NOT yet production qualification, signed Android build proof, or a live external Core. User must manually install the new signed host and run the [complete external-Core device acceptance checklist](docs/systems/android-host/EXTERNAL_CORE_DEVICE_ACCEPTANCE.md), including tested embedded fallback and a real accepted-backup rollback. Signed installed #710 predates these bridges. Do not activate on #710 or begin Patch C.
+
 ## 2026-10-11 — External Core v0.5 NativeBuffer host gate (signed device proof pending)
 
 The user-authorized external Core v0.5 now compiles as a standalone Core DEX with production-derived RAPP package manager, typed JSON/Rift++ adapters, Core-owned sessions/capability policy, and generic execution through APK `RiftHostQuickJsV1` or new `RiftHostNativeBufferV1`. The new host primitive delegates to the existing bounded isolated native-buffer worker; the APK does not gain application/permission authority. The independent registered Kotlin/D8 producer removed all SIX host compile-only classfiles and generated one 2,748,192-byte experimental DEX, SHA `c7e13955c4cb23587397e7de3704651fbcc3d7d70fd701b7739e2a968665f713`, retained separately under `workspace/tmp/`.

@@ -61,6 +61,29 @@ object RiftHostNativeBufferV1 {
         error("compile-only host native-buffer service")
 }
 
+/** Compile-only mirror: external Core owns grants; APK transports UI only. */
+object RiftHostCapabilityUiV1 {
+    fun abiVersion(): Int = 1
+    @JvmStatic
+    fun consent(appId: String, appName: String, capability: String,
+                reply: (Boolean) -> Unit): Unit =
+        error("compile-only Shell consent bridge")
+    @JvmStatic
+    fun uiEffect(appId: String, appName: String, capability: String,
+                 operation: String, requestId: Int, token: Int, text: String,
+                 bytes: ByteArray,
+                 reply: (Boolean, Int, String, ByteArray, String) -> Unit): Unit =
+        error("compile-only Shell UI effect bridge")
+}
+
+/** Compile-only registered build/D8 host primitive; NEVER ship this class. */
+object RiftHostBuildLocalV1 {
+    fun abiVersion(): Int = 1
+    @JvmStatic
+    fun execute(context: Context, operation: String, requestText: String): String =
+        error("compile-only host build.local transport")
+}
+
 interface RiftShellGraphicalComponentV1 {
     fun attach(activity: Activity, container: FrameLayout,
                services: RiftShellPlatformServicesV1, restore: JSONObject?)

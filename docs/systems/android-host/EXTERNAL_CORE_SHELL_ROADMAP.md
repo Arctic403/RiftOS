@@ -1,5 +1,13 @@
 # RiftOS — External Core, recovery and Shell roadmap
 
+## 2026-10-11 — External Core v0.6 manual device trial source complete, physical proof required
+
+The user authorized finishing the external Core so they can test it comprehensively after a new manually signed RiftOS build. Added **transport-only** versioned APK-host `RiftHostCapabilityUiV1` for already implemented ticketed Core-to-Shell consent, clipboard/share/window UI, and `RiftHostBuildLocalV1` for the existing managed compiler/D8. External Core keeps all RAPP package identity, grants, session validation and user effect-result sequencing; it handles signing.identity via the existing Android Keystore alias. A grant is only persisted while the requesting session and package remain live, serialized with install/uninstall; effect continuation waits for the asynchronous reply. Unsupported network remains rejected. Both native-buffer and QuickJS use the existing generic host services.
+
+Independent Kotlin 13-source compile succeeded without diagnostics; 8 compile-only host classes stripped; D8 emitted **47 application classes, 2,773,132-byte DEX** SHA `1f3c3850b0c0dc945944719cced77eec3091dc868a16d004413567d28ea1f3df` kept outside Git. The existing Core has an *explicit manual device-trial* gate, **NOT** a production approval: `EXTERNAL_CORE_MANUAL_DEVICE_TRIAL_ALLOWED=true` and `EXTERNAL_CORE_PROMOTION_PROVEN=false`. New source still awaits a green manual signed APK, real independent Core startup/installed RAPP/permission parity, accepted last-working backup and user-controlled Restore test. Retain embedded fallback, do not run Patch C.
+
+See [full physical acceptance plan](EXTERNAL_CORE_DEVICE_ACCEPTANCE.md) before manually selecting an experimental Core in Recovery.
+
 ## 2026-10-11 — External Core v0.5: native-buffer generic host service source built
 
 A newly versioned APK-host **`RiftHostNativeBufferV1`** primitive gives independent Core DEXes the same generic, bounded, out-of-process native-buffer backend that embedded Core already uses. Its only inputs are Context for binding the existing Android worker, runtime bytes, input bytes and output capacity; the host returns bounded output or rejects the worker's failure. **All application lifecycle, adapter routing, program state, grants and effects remain in external Core.** The prior `RiftHostQuickJsV1` is unchanged; `RiftProtectedDexVerifier` accepts exactly the new host class without broadening APK-owned Core references.

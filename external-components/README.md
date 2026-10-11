@@ -1,5 +1,22 @@
 # RiftOS independent Core and Shell components
 
+## 2026-10-11 — v0.6 independent Core manual trial candidate (compiled, NOT device accepted)
+
+User explicitly requested finishing the external replacement before personally installing and 100%-testing it. This checkpoint closes the remaining implementation seams in source, **but does not assert release qualification before real device proof**. The existing `IndependentCoreV1` still owns RAPP catalogue/install/update/uninstall, state, sessions, input/frames, execution routing and authorization. Nothing calls the embedded `RiftCoreRuntime` or moves package/grant policy back into the APK.
+
+**New APK generic primitives (same signed host package, source change awaiting manual build):**
+- `RiftHostCapabilityUiV1`: bounded consent and clipboard/share/window UI transport through the existing Core→Shell single-use-ticket IPC. Core controls installed identity, declarations, grant persistence and effect continuation; Shell only presents and returns a ticket result.
+- `RiftHostBuildLocalV1`: bounded transport to the existing registered managed compiler, D8 and toolchain status; Core verifies the requested `build.local` capability and its existing or newly confirmed grant before calling.
+- `RiftHostQuickJsV1` and `RiftHostNativeBufferV1` remain the only execution primitives; native-buffer delegates to the existing isolated worker.
+
+**External Core source functionality:** asynchronous single-effect continuation with pending-event ordering, one-time/expiring consent replies, stale session/package rejection, grant commits serialized with transactional package install/uninstall, scoped filesystem read/write/list/move, Shell UI effects, registered local-build operations, and signing.identity describe/sign/verify with the existing AndroidKeyStore alias (no private-key export). Already denied `network` behavior stays fail-closed. No generic Core-runtime/permission delegation.
+
+**Trial versus release:** `EXTERNAL_CORE_MANUAL_DEVICE_TRIAL_ALLOWED = true` means that a **user-confirmed, verifier-approved APK Recovery install** can boot this source for physical testing. `EXTERNAL_CORE_PROMOTION_PROVEN = false` and `deviceQualificationComplete = false` remain true until the user validates actual behavior. Incomplete/failed trial must return via independent APK Recovery to the still-embedded known-good Core. Do not install the experimental DEX on signed #710: that APK lacks the new host services. The first signed host incorporating the updated bridge must be verified before any external trial. Production acceptance additionally needs real installed RAPP parity, grant/error tests, startup/restart, package transactions and manual rollback.
+
+**Registered build evidence:** 13 Kotlin sources compiled successfully with zero diagnostics; six old and two new compile-only host classes stripped; D8 produced **47 application classes**, single **2,773,132-byte** DEX SHA-256 `1f3c3850b0c0dc945944719cced77eec3091dc868a16d004413567d28ea1f3df`. Preserved without activation under `workspace/tmp/rift-external-core-v06-manual-trial-20261011-build/riftbuild/core-dex/classes.dex`. `runtime.js` source producer version `0.6.0`, and `compile-core.json` both list the same 13 sources. The host APK, Runner and Builder have not been signed or device tested for this revision.
+
+See `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` and the signed-device acceptance plan in `docs/systems/android-host/EXTERNAL_CORE_DEVICE_ACCEPTANCE.md`.
+
 ## 2026-10-11 — External Core v0.5 native-buffer integration (NOT PROMOTED)
 
 The existing `IndependentCoreV1` is the only external-Core candidate. It owns RAPP packages, sessions, adapter selection, frames, state, capability policy and effect-result continuations. No duplicate of APK-owned `RiftCoreRuntime` is allowed. `EXTERNAL_CORE_PROMOTION_PROVEN = false` remains locked until real device proof and a qualified prior-working recovery revision.

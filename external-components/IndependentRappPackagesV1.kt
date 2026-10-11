@@ -571,6 +571,18 @@ class IndependentRappPackages(
         return out
     }
 
+    /**
+     * Grant persistence and package replacement/uninstall share this same
+     * monitor. A stale UI reply can never reinstate a removed RAPP's grant.
+     */
+    @Synchronized
+    fun withLivePackage(id: String, stillValid: () -> Boolean,
+                        persist: () -> Unit): Boolean {
+        if (!stillValid() || !handlesInstalled(id)) return false
+        persist()
+        return true
+    }
+
     fun handlesInstalled(id: String): Boolean =
         runCatching {
             readInstalledMetadata(id) != null

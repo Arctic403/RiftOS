@@ -104,6 +104,91 @@ object RiftHostNativeBufferV1 {
     }
 }
 
+/**
+ * Transport ONLY: present Core-owned permission consent and UI effects through
+ * the already registered, ticketed and expiring Android Shell IPC channel.
+ * The external Core remains responsible for declaration, installed identity,
+ * freshness checks, grant persistence and every effect authorization.
+ */
+object RiftHostCapabilityUiV1 {
+    fun abiVersion(): Int = 1
+
+    @JvmStatic
+    fun consent(appId: String, appName: String, capability: String,
+                reply: (Boolean) -> Unit) {
+        require(appId.matches(Regex("^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$")) &&
+            appName.length in 1..128 && capability.length in 1..64) {
+            "Capability UI request identity invalid"
+        }
+        RiftCoreShellRemoteUiBroker.ensureRegistered()
+        RiftCoreShellCapabilityRequests.requestConsent(
+            appId, appName, capability, reply)
+    }
+
+    @JvmStatic
+    fun uiEffect(appId: String, appName: String, capability: String,
+                 operation: String, requestId: Int, token: Int, text: String, bytes: ByteArray,
+                 reply: (Boolean, Int, String, ByteArray, String) -> Unit) {
+        require(appId.matches(Regex("^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$")) &&
+            appName.length in 1..128 && operation.length in 1..32 &&
+            text.toByteArray(Charsets.UTF_8).size <= 32 * 1024 &&
+            bytes.isEmpty()) { "Shell capability UI payload invalid" }
+        require(capability in setOf("clipboard.read", "clipboard.write",
+            "share", "window.title")) { "Unsupported Shell UI transport" }
+        RiftCoreShellRemoteUiBroker.ensureRegistered()
+        RiftCoreShellCapabilityRequests.requestUiEffect(
+            appId, appName, RiftAppAbi.HostEffect(
+                capability = capability, operation = operation,
+                token = token, requestId = requestId, text = text, bytes = bytes)
+        ) { result ->
+            reply(result.ok, result.token, result.text, result.bytes,
+                result.error.orEmpty())
+        }
+    }
+}
+
+/**
+ * Raw, bounded registered local-build primitive. External Core alone checks
+ * manifest declarations, installed identity, consent and grant revocation.
+ * Host owns only Android-managed compiler/JVM/D8 plumbing; never RAPP policy.
+ */
+object RiftHostBuildLocalV1 {
+    fun abiVersion(): Int = 1
+
+    @JvmStatic
+    fun execute(context: Context, operation: String, requestText: String): String {
+        require(requestText.toByteArray(Charsets.UTF_8).size <= 128 * 1024) {
+            "Build request exceeds generic host bound"
+        }
+        val request = if (requestText.isBlank()) JSONObject() else JSONObject(requestText)
+        val tool = RiftLocalBuildCapability(context.applicationContext)
+        val value = when (operation) {
+            "toolchainStatus" -> tool.jvmToolchainStatus()
+            "compilerRun" -> {
+                val project = request.getString("project").trim()
+                val compiler = request.getString("compilerId").trim()
+                require(project.isNotBlank() &&
+                    compiler.matches(Regex("^[A-Za-z0-9._+-]{1,80}$"))) {
+                    "Registered build request invalid"
+                }
+                tool.compilerRunInline(project, compiler, request.getJSONObject("request"))
+            }
+            "jvmDex" -> {
+                val project = request.getString("project").trim()
+                require(project.isNotBlank()) { "Build project missing" }
+                tool.dexJvmClasses(project, request.getString("classesDir"),
+                    request.getString("outputDir"), request.optInt("minSdk", 26))
+            }
+            else -> error("Unsupported generic host build operation")
+        }
+        return value.toString().also {
+            require(it.toByteArray(Charsets.UTF_8).size <= 256 * 1024) {
+                "Generic build response exceeds bound"
+            }
+        }
+    }
+}
+
 /** E0 shell-side portable lifecycle envelope, not activated or connected yet. */
 interface RiftShellPresentationV1 {
     fun restore(snapshot: JSONObject): JSONObject
