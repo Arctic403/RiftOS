@@ -64,6 +64,19 @@ const toolHost = read(paths.toolHost);
 const browser = read(paths.browser);
 const gradle = read(paths.gradle);
 const wiringValidator = read('scripts/validate-rift-wiring.mjs');
+const mainActivity = read('android/app/src/main/java/com/riftos/app/MainActivity.kt');
+// Manual worker #38171285784 reached Gradle and exposed two dangling calls to
+// deleted legacy APK installer in onResume / onWindowFocusChanged.
+assert.ok(!mainActivity.includes('RiftBuildInstaller'),
+  'MainActivity must not invoke the removed APK build-proof installer');
+assert.ok(!mainActivity.includes('RiftApkV2Verifier'),
+  'MainActivity must not depend on retired APK verifier');
+assert.ok(mainActivity.includes('RiftMcpRuntime.registerActivity(this)'),
+  'MCP foreground registration must survive retirement of proof callbacks');
+for (const retired of ['RiftBuildInstaller', 'RiftApkV2Verifier']) {
+  assert.ok(wiringValidator.includes("'"+retired+"'"),
+    'Kotlin source-closure validator must forbid retired proof symbol: '+retired);
+}
 // #38170116296: the old C1.0 source validator simultaneously required and
 // forbade the retired RiftBuild shell initialization, blocking npm before Gradle.
 assert.ok(wiringValidator.includes("if (nativeShell.includes('RiftCoreRuntime.buildPlatform(appContext)') ||"),

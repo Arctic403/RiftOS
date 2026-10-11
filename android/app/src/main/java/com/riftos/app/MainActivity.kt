@@ -356,7 +356,6 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         RiftMcpRuntime.registerActivity(this)
-        RiftBuildInstaller.resumePendingConfirmation(this)
         if (::browserAppHost.isInitialized) browserAppHost.onResume()
         if (::browserWindow.isInitialized) browserWindow.onResume()
     }
@@ -390,7 +389,6 @@ class MainActivity : Activity() {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
             RiftMcpRuntime.registerActivity(this)
-            RiftBuildInstaller.resumePendingConfirmation(this)
             restoreCoreWindowFocus()
         } else if (::nativeDesktop.isInitialized) {
             RiftCoreRuntime.sessions(applicationContext).requestFocusFromShell(null)

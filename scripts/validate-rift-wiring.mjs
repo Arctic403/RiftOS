@@ -73,6 +73,15 @@ if (manifestApplications.length !== 1) {
   fail('AndroidManifest must name exactly one Core Application bootstrap');
 }
 const kotlinTexts = new Map(kotlinFiles.map(file => [file, read(file)]));
+// The retired RiftBuild APK proof installer/verifier must not be resurrected
+// or referenced by an Activity after their source and manifest were removed.
+for (const [file, source] of kotlinTexts) {
+  for (const retiredSymbol of ['RiftBuildInstaller', 'RiftApkV2Verifier']) {
+    if (source.includes(retiredSymbol)) {
+      fail(`Retired build proof symbol ${retiredSymbol} is still referenced by Kotlin source: ${file}`);
+    }
+  }
+}
 for (const component of manifestApplications) {
   const applicationPattern = new RegExp(`\\bclass\\s+${component.name}\\s*:\\s*Application\\s*\\(`);
   if (!kotlinFiles.some(file => applicationPattern.test(kotlinTexts.get(file) || ''))) {
