@@ -1,5 +1,11 @@
 # RiftOS — Simple APK-owned bootstrap, updates and manual recovery
-**Architecture decision: user-approved, 2026-10-10. Implementation status: Patch A device-proven; Patch B source awaiting signed build/device acceptance; Patch C pending.**
+**Architecture decision: user-approved, 2026-10-10. Implementation status: Patch A device-proven; Patch B signed #710 initial UI, Android picker and independent cold-start proven, external backup/restore device gate pending; Patch C pending.**
+
+## 2026-10-11 — Signed #710 Patch B initial device UI acceptance (external rollback STILL PENDING)
+
+User supplied two Android screenshots from physical Samsung device: tapping **Choose component.json** successfully opened Android's native documents picker in `Download/RiftOS` (empty folder), and leaving that picker returned to **RiftOS Recovery** without a component being chosen. The user stated **Test 1 passed**, supplied the Recovery screenshot for **Test 2** showing embedded Core/Shell and unchanged backup/marker status, and explicitly confirmed **Test 3 passed**: force-stop RiftOS in Android settings, then launch the distinct Recovery Android icon again without first running the OS. Refresh/Close buttons remain visible; separate button-tap outcomes were not individually described, so do not overclaim their independent test evidence.
+
+Installed signed APK **#710**, normal manual Builder run `38113194367`, source `e64d513c4cb4cce806679f135f49d946b807012f`. MCP device check confirmed Core PID `11149`, Shell PID `11117`, four installed RAPPs, selected Core and Shell both `embedded`, no pending or accepted external revisions; four Restore buttons disabled with no backup, file picker enabled, DEX and Install disabled. `rift-module-builder` launched to running attached generation 1 with real 15-node frame revision 1, queue empty, and was stopped cleanly. **The safe UI, picker/cancel, independent Recovery cold launch, and normal Core/RAPP regression are now device-proven.** This is NOT proof of stage/verify/install of a real Core, preservation of an accepted backup or successful manual rollback. Never select an incomplete external Core as a shortcut; Patch C remains blocked until external qualified component and manual restore physical proof.
 
 ## 2026-10-11 — Patch B source checkpoint: APK-owned installer and manual restore (NOT device-proven)
 
