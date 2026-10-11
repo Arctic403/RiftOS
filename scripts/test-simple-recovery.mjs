@@ -46,6 +46,9 @@ for (const required of [
   'RiftManualRecoveryStore.restore(this, component, selection)',
   'Intent.ACTION_OPEN_DOCUMENT', 'Intent.CATEGORY_OPENABLE',
   'Choose component.json', 'Choose matching component DEX', 'Install verified staged update',
+  'Stage verified LOCAL component pair',
+  'RiftManualRecoveryInstaller.stageLocal(',
+  '/D:/Builds/Components/core/trial',
   'RiftManualRecoveryInstaller.stage(this, manifest, it)',
   'RiftManualRecoveryInstaller.install(this@RiftManualRecoveryActivity, component, sha)',
   'ByteArrayOutputStream()', 'data.size() + count <= 32 * 1024'
@@ -73,7 +76,14 @@ for (const required of [
 for (const required of [
   'Application.getProcessName() == context.packageName + ":riftRecovery"',
   'RiftProtectedComponentInstaller.stage(context, manifestBytes, dex)',
-  'RiftProtectedComponentInstaller.activate(context, component, sha256)'
+  'RiftProtectedComponentInstaller.activate(context, component, sha256)',
+  'fun stageLocal(context: Context, virtualDirectory: String)',
+  'RiftVolumePaths.normalizeDisplay(virtualDirectory)',
+  'val prefix = "/D:/Builds/Components/"',
+  'RiftProtectedComponentManifest.parse(manifestBytes)',
+  'RiftVolumePaths.resolveRelative(display)',
+  'java.nio.file.Files.isSymbolicLink(candidate.toPath())',
+  'dex.inputStream().use { stage(context, manifestBytes, it) }'
 ]) assert.ok(installer.includes(required), 'Independent APK installer bridge missing: ' + required);
 assert.match(protectedInstaller, /RiftManualRecoveryStore\.preserveAcceptedBeforeUpdate\(context, component\)[\s\S]*?RiftComponentReleaseLedger\.recordPrepared/);
 for (const required of [

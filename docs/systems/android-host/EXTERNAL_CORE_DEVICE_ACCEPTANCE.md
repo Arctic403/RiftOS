@@ -1,5 +1,17 @@
 # External Core v0.6 — physical qualification checklist
 
+## 2026-10-11 — #714 safe host proof and APK Recovery local Builds importer checkpoint
+
+User manually installed signed **RiftOS #714** from source `ea296355458c687e990163f0a94708e54e38eebf`. All four original QuickJS RAPPs passed real run/frame/stop tests (15/12/21/26 nodes). Separate Recovery opened after Android force-stop with Core/Shell embedded and all four Restore controls disabled. A disposable native-buffer `riftpp-rws2-rui3-v1` Stage 3 RAPP also **installed, ran to a real 16-node frame with no error/queued input, stopped and was uninstalled**. The source native-buffer backend is therefore physically proven on embedded Core. **No external Core was selected.**
+
+A matching external Core **v0.6.0** `component.json` and **2,773,132-byte `core.dex`** SHA-256 `1f3c3850b0c0dc945944719cced77eec3091dc868a16d004413567d28ea1f3df` have been copied (without modifying the old root `core/component.json`) to the isolated RiftOS virtual folder:
+
+`/D:/Builds/Components/core/trial/`
+
+Android's public Downloads document picker cannot see these app-private files. A small new `:riftRecovery` UI/source option therefore stages an explicit local folder under `/D:/Builds/Components/`, verifying the exact `component.json` and sibling `core.dex` through the **same existing APK protected installer**, SHA/ABI/type rules and no-symlink confinement; it **never** activates on staging. The user then separately presses **Install verified staged update** and confirms the protected next-boot Core switch. This new local-staging code requires another **normal user-manually signed Android APK build** and actual Recovery UI device test before it can be used. The original Android SAF file-picker workflow remains unchanged. Do NOT try to select this folder from Android Downloads or use the stale root `/D:/Builds/Components/core/component.json`.
+
+After the signed Recovery update is green and installed, open the separate Recovery icon, leave Core/Shell embedded initially, enter or retain `/D:/Builds/Components/core/trial` in the local-folder input, click **Stage verified LOCAL component pair**, then check the SHA and version shown before even considering **Install**. **Stop and ask for explicit user approval before switching Core.** First runtime trial may fail and must remain recoverable to embedded; do not call a green stage/first boot full Core qualification.
+
 **Status: source compiled, production promotion NOT accepted.** Signed installed #710 predates the required host services. This document is a device-test protocol, not permission to skip existing protection or to assume that a green compile means a working external Core. Only the user initiates normal signed APK Builder builds, Android installs and protected component trials.
 
 ## Gate H — new host before external trial

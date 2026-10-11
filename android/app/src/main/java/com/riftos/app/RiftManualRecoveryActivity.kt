@@ -11,6 +11,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.EditText
 import org.json.JSONObject
 
 /**
@@ -82,6 +83,47 @@ class RiftManualRecoveryActivity : Activity() {
                 "Installing changes the next-start selection, NOT the running OS."
             textSize = 14f
         })
+        screen.addView(TextView(this).apply {
+            text = "RiftOS private Builds files are not visible in Android's file picker. " +
+                "For a locally compiled pair, enter its RiftOS folder instead. " +
+                "Staging checks the same protected manifest, DEX and ABI rules; " +
+                "it does NOT install or start the component."
+            textSize = 14f
+            setPadding(0, dp(12), 0, dp(6))
+        })
+        val localComponentPath = EditText(this).apply {
+            setSingleLine(true)
+            setText("/D:/Builds/Components/core/trial")
+            hint = "/D:/Builds/Components/core/trial"
+            textSize = 14f
+        }
+        screen.addView(localComponentPath)
+        screen.addView(Button(this).apply {
+            text = "Stage verified LOCAL component pair"
+            setOnClickListener {
+                selectedManifest = null
+                stagedComponent = null
+                stagedSha = null
+                dexPicker.isEnabled = false
+                installUpdate.isEnabled = false
+                lastResult = runCatching {
+                    val staged = RiftManualRecoveryInstaller.stageLocal(
+                        this@RiftManualRecoveryActivity,
+                        localComponentPath.text.toString()
+                    )
+                    stagedComponent = staged.getString("component")
+                    stagedSha = staged.getString("sha256")
+                    installUpdate.isEnabled = true
+                    "Verified local " + stagedComponent + " SHA " + stagedSha +
+                        " is staged only. Confirm Install separately to change " +
+                        "the NEXT startup selection."
+                }.getOrElse {
+                    "Local stage refused: " + it.javaClass.simpleName +
+                        ". " + (it.message ?: "No component was selected").take(160)
+                }
+                showStatus()
+            }
+        })
         screen.addView(Button(this).apply {
             text = "1. Choose component.json"
             setOnClickListener { chooseDocument(MANIFEST_PICKER) }
@@ -102,8 +144,10 @@ class RiftManualRecoveryActivity : Activity() {
                     .setTitle("Install $component update?")
                     .setMessage("Select verified component $sha for its NEXT startup? " +
                         "Existing sessions are not hot-swapped. " +
-                        "Only proceed with a device-qualified compatible component. " +
-                        "The APK preserves the last accepted working revision.")
+                        "A first external Core is an UNACCEPTED manual device trial, " +
+                        "not a production-qualified update. " +
+                        "The APK preserves the last accepted working revision " +
+                        "and the embedded fallback.")
                     .setNegativeButton("Cancel", null)
                     .setPositiveButton("Install") { _, _ ->
                         val outcome = runCatching {
