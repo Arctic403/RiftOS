@@ -26,7 +26,6 @@ class RiftCoreAppExecutor(context: Context) {
     private val sessions = RiftCoreRuntime.sessions(app)
     private val packages = RiftCoreRuntime.packages(app)
     private val providers = RiftCoreRuntime.runtimes(app)
-    private val quickJs = RiftRappQuickJsExecutor()
     private val capabilityBroker = RiftRappCapabilityBroker(app)
     private val maxEffectDepth = 1024
 
@@ -200,7 +199,7 @@ class RiftCoreAppExecutor(context: Context) {
 
         RiftAppExecutionKind.QUICKJS ->
             providers.execute(kind, runtime, envelope, OUTPUT_BYTES) {
-                quickJs.execute(runtime, envelope, OUTPUT_BYTES)
+                RiftHostQuickJsV1.execute(runtime, envelope, OUTPUT_BYTES)
             }
 
         else -> error("Unsupported RAPP execution kind")

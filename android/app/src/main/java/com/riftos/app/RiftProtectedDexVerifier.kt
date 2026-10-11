@@ -97,6 +97,7 @@ internal object RiftProtectedDexVerifier {
         val stable = setOf(
             "Lcom/riftos/app/RiftCoreComponentV1;",
             "Lcom/riftos/app/RiftCoreExecutionViewV1;",
+            "Lcom/riftos/app/RiftHostQuickJsV1;",
             "Lcom/riftos/app/RiftShellGraphicalComponentV1;",
             "Lcom/riftos/app/RiftShellPlatformServicesV1;",
             "Lcom/riftos/app/RiftAppAbi;"

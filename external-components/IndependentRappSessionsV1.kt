@@ -4,113 +4,45 @@ import android.content.Context
 import android.os.Process
 import android.util.AtomicFile
 import android.util.Base64
-import dalvik.system.DexClassLoader
+import com.riftos.app.RiftHostQuickJsV1
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.nio.file.Files
-import java.security.MessageDigest
 import java.util.ArrayDeque
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
- * Owns Core RAPP state, serialized event dispatch, immutable graphical frames,
- * focus and state durability IN THE EXTERNAL DEX.
+ * Independently updateable Core owns sessions, input, state and frames.
+ * The stable APK Host owns only a zero-authority, bounded QuickJS primitive.
+ * No APK-owned Core adapter, lifecycle, session or capability class is called.
  *
- * Javascript execution is a separate content-addressed, independently loaded
- * VM implementing IndependentJavascriptVmV1. No APK Core executor, session,
- * adapter, capability broker or execution class is imported or called.
- *
- * A missing or unverified VM fails closed before creating a session. No
- * executable Core candidate may be promoted until an actual VM + capability
- * provider has passed full RAPP and installed-device behavior tests.
+ * This is a trusted same-UID host service, not a sandbox. External Core
+ * promotion remains blocked until independent capability/grant behavior and
+ * real signed-host execution are physically qualified.
  */
-interface IndependentJavascriptVmV1 {
-    fun execute(runtime: ByteArray, input: ByteArray, outputLimit: Int): ByteArray
-}
-
-/** SHA-sealed, explicitly opted-in external Javascript runtime definition. */
-internal class IndependentRuntimeRegistry(private val app: Context) {
-    companion object {
-        private const val MAX_DEX_BYTES = 24L * 1024L * 1024L
-        private val SHA = Regex("^[a-f0-9]{64}$")
-        private const val SCHEMA = "riftos.external.javascript-runtime/1"
-        // An untrusted manifest cannot qualify itself. A tested runtime SHA
-        // must be pinned in the separately updatable Core DEX before linking.
-        // No VM is approved in Core v0.2; deliberate fail-closed default.
-        private const val APPROVED_VM_SHA = ""
+internal class IndependentRuntimeRegistry {
+    private companion object {
+        private const val HOST_QUICKJS_ABI = 1
     }
 
-    @Volatile private var engine: IndependentJavascriptVmV1? = null
-    @Volatile private var receipt = "not-registered"
-
-    fun current(): IndependentJavascriptVmV1 {
-        engine?.let { return it }
-        synchronized(this) {
-            engine?.let { return it }
-            // Separate opt-in runtime, NOT generic providers returned by the
-            // APK-owned RiftCoreRuntime.runtimes() singleton.
-            val base = File(app.filesDir, "riftfs/system/external-runtimes")
-            require(base.isDirectory && !Files.isSymbolicLink(base.toPath())) {
-                "Independent Javascript runtime registry not installed"
-            }
-            val meta = File(base, "javascript.json")
-            require(meta.isFile && !Files.isSymbolicLink(meta.toPath()) &&
-                meta.length() in 1L..4096L) {
-                "Independent Javascript runtime receipt missing"
-            }
-            val manifest = JSONObject(meta.readText(Charsets.UTF_8))
-            val names = mutableSetOf<String>()
-            val keys = manifest.keys()
-            while (keys.hasNext()) names.add(keys.next())
-            require(names == setOf("schema", "sha256", "entrypoint", "abi", "payload",
-                "independentExecutionProven")) {
-                "Independent Javascript registry has unexpected fields"
-            }
-            require(manifest.getString("schema") == SCHEMA &&
-                manifest.getInt("abi") == 1 &&
-                manifest.getBoolean("independentExecutionProven")) {
-                "Independent Javascript VM not qualified"
-            }
-            val sha = manifest.getString("sha256")
-            val entry = manifest.getString("entrypoint")
-            require(sha.matches(SHA) && APPROVED_VM_SHA.matches(SHA) &&
-                sha == APPROVED_VM_SHA &&
-                entry.matches(Regex("^com\\.riftos\\.external\\.core\\.vm\\.[A-Za-z][A-Za-z0-9_]*$")) &&
-                manifest.getString("payload") == "javascript.dex") {
-                "Independent Javascript VM provenance invalid"
-            }
-            val dex = File(base, "javascript.dex")
-            require(dex.isFile && !Files.isSymbolicLink(dex.toPath()) &&
-                !dex.canWrite() && dex.length() in 112L..MAX_DEX_BYTES) {
-                "Javascript VM DEX not sealed"
-            }
-            val actual = MessageDigest.getInstance("SHA-256")
-                .digest(dex.readBytes()).joinToString("") {
-                    "%02x".format(it.toInt() and 255)
-                }
-            require(actual == sha) { "Javascript VM changed after qualification" }
-            val loader = DexClassLoader(dex.absolutePath,
-                app.codeCacheDir.absolutePath, null, javaClass.classLoader)
-            val type = loader.loadClass(entry)
-            require(type.classLoader === loader &&
-                IndependentJavascriptVmV1::class.java.isAssignableFrom(type)) {
-                "Javascript VM resolves outside independent Core ABI"
-            }
-            val ready = type.getDeclaredConstructor().newInstance() as IndependentJavascriptVmV1
-            engine = ready
-            receipt = sha
-            return ready
+    fun execute(runtime: ByteArray, input: ByteArray, outputLimit: Int): ByteArray {
+        check(RiftHostQuickJsV1.abiVersion() == HOST_QUICKJS_ABI) {
+            "Unsupported APK host QuickJS execution ABI"
         }
+        return RiftHostQuickJsV1.execute(runtime, input, outputLimit)
     }
 
     fun state(): JSONObject = JSONObject()
         .put("schema", "riftos.external.runtime-candidates/1")
-        .put("registered", if (engine == null) 0 else 1)
-        .put("runtimeSha256", if (engine == null) JSONObject.NULL else receipt)
-        .put("runtimeExecutionReady", engine != null)
-        .put("apkOwnedExecutorFallbackEnabled", false)
+        .put("registered", 1)
+        .put("engine", "apk-host-quickjs-v1")
+        .put("abi", HOST_QUICKJS_ABI)
+        .put("runtimeExecutionReady", true)
+        .put("coreOwnsSessionsAndCapabilities", true)
+        .put("apkOwnedCoreExecutorFallbackEnabled", false)
+        .put("deviceQualificationComplete", false)
 }
 
 internal class IndependentRappSessions(
@@ -123,6 +55,7 @@ internal class IndependentRappSessions(
         private const val MAX_APPS = 32
         private const val MAX_QUEUE = 64
         private const val MAX_RUNTIME = 8 * 1024 * 1024
+        private const val MAX_PROGRAM = 1024 * 1024
         private const val MAX_FRAME_NODES = 256
         private const val MAX_FRAME_TEXT = 16 * 1024
         private const val MAX_OUTPUT = 512 * 1024
@@ -142,7 +75,7 @@ internal class IndependentRappSessions(
         val id: String,
         val name: String,
         val generation: Long,
-        val vm: IndependentJavascriptVmV1,
+        val vm: IndependentRuntimeRegistry,
         val runtime: ByteArray,
         initialState: ByteArray
     ) {
@@ -167,7 +100,7 @@ internal class IndependentRappSessions(
     fun open(id: String): JSONObject {
         require(APP_ID.matches(id)) { "Invalid Core RAPP id" }
         val metadata = checkedPackage(id)
-        val vm = registry.current() // fail closed BEFORE attaching an app
+        val vm = registry // Only the versioned host QuickJS engine can execute JS.
         val folder = File(programRoot, id)
         require(folder.canonicalFile.parentFile == programRoot.canonicalFile &&
             !Files.isSymbolicLink(folder.toPath())) { "Unsafe RAPP package root" }
@@ -177,7 +110,7 @@ internal class IndependentRappSessions(
         val rawProgram = File(folder, "state.bin")
             .takeIf { it.isFile && !Files.isSymbolicLink(it.toPath()) }?.readBytes()
             ?: File(folder, "program.bin").readBytes()
-        require(rawProgram.size <= MAX_RUNTIME) { "RAPP state oversized" }
+        require(rawProgram.size <= MAX_PROGRAM) { "RAPP state oversized" }
         val s: Session
         synchronized(monitor) {
             val old = sessions[id]
@@ -229,7 +162,7 @@ internal class IndependentRappSessions(
     fun offer(id: String, generation: Long, payload: JSONObject): JSONObject {
         val kind = payload.getInt("kind")
         val target = payload.getInt("targetId")
-        require(kind in 0..13 && target >= 0) { "RAPP input event invalid" }
+        require(kind in 1..12 && target >= 0) { "RAPP external input event invalid or reserved for Core" }
         val args = intArrayOf(payload.getInt("arg0"), payload.getInt("arg1"),
             payload.getInt("arg2"), payload.getInt("arg3"))
         val text = payload.getString("text")
@@ -242,10 +175,10 @@ internal class IndependentRappSessions(
             require(s.queue.size < MAX_QUEUE) { "Core input queue full" }
             // Input events cannot be delivered to another application's
             // surface, nor to a hidden/nonfocused editable widget.
-            require(kind == 0 || kind == 13 || focused == id) {
+            require(focused == id) {
                 "Input requires focused RAPP window"
             }
-            if (kind != 0 && kind != 13) {
+            if (kind in 1..12) {
                 val nodes = s.frame?.optJSONArray("nodes") ?: error("RAPP has no frame")
                 var exists = false
                 for (i in 0 until nodes.length()) {
@@ -405,7 +338,7 @@ internal class IndependentRappSessions(
         val nextState = output.optString("stateBase64").takeIf { it.isNotBlank() }
             ?.let { Base64.decode(it, Base64.DEFAULT) }
         if (nextState != null) {
-            require(nextState.size <= MAX_RUNTIME) { "Next RAPP state exceeds bound" }
+            require(nextState.size <= MAX_PROGRAM) { "Next RAPP state exceeds bound" }
         }
         synchronized(monitor) {
             if (s.closed) return
@@ -462,7 +395,7 @@ internal class IndependentRappSessions(
     }
 
     private fun persist(id: String, bytes: ByteArray) {
-        require(APP_ID.matches(id) && bytes.size <= MAX_RUNTIME)
+        require(APP_ID.matches(id) && bytes.size <= MAX_PROGRAM)
         val folder = File(programRoot, id)
         require(folder.canonicalFile.parentFile == programRoot.canonicalFile &&
             !Files.isSymbolicLink(folder.toPath())) {

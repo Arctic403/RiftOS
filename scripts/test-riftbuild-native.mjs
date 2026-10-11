@@ -218,7 +218,7 @@ for (const required of [
   'core-running'
 ]) assert.ok(manager.includes(required), 'C1.3-C shell-less launch regression: ' + required);
 for (const required of [
-  'RiftRappQuickJsExecutor()', 'RiftNativeBufferCompilerService.compile(',
+  'RiftHostQuickJsV1.execute(', 'RiftNativeBufferCompilerService.compile(',
   'RiftBoundedAsync.submit(', 'sessions.commitFromExecution(',
   'adapter.encodeEvent(', 'adapter.decodeOutput(',
   'maxEffectDepth = 1024', 'HOST_EFFECT_RESULT', 'capabilityBroker.execute(',

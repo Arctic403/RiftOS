@@ -14,15 +14,13 @@ import java.security.MessageDigest
 /**
  * Genuine separately compiled Core state/catalog implementation.
  *
- * Deliberately NOT ready for promotion: the current RiftOS RAPP programs
- * execute JavaScript through a Core-owned QuickJS adapter. No independent
- * QuickJS adapter/capability broker has been extracted to this DEX yet.
+ * QuickJS is intentionally retained in the stable APK as a zero-authority,
+ * versioned host execution service. This Core owns the RAPP session/event/
+ * frame lifecycle and calls only RiftHostQuickJsV1, never embedded Core.
  *
- * Never claim success for BOOT, frame rendering or input before a real runtime
- * executes the exact installed application. These routes fail closed until
- * the runtime is independently available. The read-only Core catalogue,
- * process ownership and typed V1 ABI are implemented without importing any
- * APK-owned execution class.
+ * Deliberately NOT selectable until an independent permissions/effects
+ * broker, install/uninstall parity and on-device Core replacement/recovery
+ * proof are complete. Runtime compilation is not promotion evidence.
  */
 class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
     companion object {
@@ -32,9 +30,9 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
         private const val MAX_META_BYTES = 65536L
         private const val MAX_PROGRAM_BYTES = 1024 * 1024L
         private const val MAX_RUNTIME_BYTES = 8L * 1024 * 1024
-        // This is NOT a production Core until both external JS execution
-        // and independent user-grant/effect authority pass device evidence.
-        private const val RAPP_ENGINE_AND_BROKER_PROVEN = false
+        // This is NOT a production Core until the independent grant/effect
+        // broker, install/uninstall and N-1 device proof are complete.
+        private const val EXTERNAL_CORE_PROMOTION_PROVEN = false
         private val APP_ID = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$")
     }
 
@@ -53,8 +51,8 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
             require(root.isDirectory && !Files.isSymbolicLink(root.toPath())) {
                 "Independent Core RiftFS backing root unavailable"
             }
-            require(RAPP_ENGINE_AND_BROKER_PROVEN) {
-                "External Core v0.2 not selectable: standalone JS VM and capability broker unproven"
+            require(EXTERNAL_CORE_PROMOTION_PROVEN) {
+                "External Core not selectable: independent broker and device acceptance unproven"
             }
             val programs = File(root, "system/programs")
             require(programs.isDirectory && !Files.isSymbolicLink(programs.toPath())) {
@@ -62,7 +60,7 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
             }
             // Owning the catalogue in this DEX never starts the embedded
             // RiftCoreRuntime singleton; there is no implicit delegate.
-            javascriptRegistry = IndependentRuntimeRegistry(application)
+            javascriptRegistry = IndependentRuntimeRegistry()
             independentSessions = IndependentRappSessions(
                 application, requireNotNull(javascriptRegistry),
                 { id -> checkedPackage(application, id) }, programRoot = programs
@@ -161,7 +159,7 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
 
     private fun unavailable(operation: String): Nothing {
         // No fake "success"/frame or host-runtime proxy is permitted here.
-        error("Independent Core $operation blocked: external RAPP runtime/executor and capability broker not yet extracted")
+        error("Independent Core $operation blocked: install/grant capability authority not yet independently proven")
     }
 
     override fun open(context: Context, id: String): JSONObject {

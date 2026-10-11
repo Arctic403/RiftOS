@@ -46,6 +46,27 @@ interface RiftCoreExecutionViewV1 {
     fun stopApp(context: Context, id: String): JSONObject
 }
 
+/**
+ * Stable APK-owned JavaScript execution primitive for independent Core DEXes.
+ *
+ * QUICKJS IS THE ONE EMBEDDED EXECUTION ENGINE EXCEPTION: this service owns
+ * neither RAPP lifecycle, state, consent, capabilities nor the Core. Only
+ * bounded JavaScript input/output crosses this ABI. There is no embedded-Core
+ * fallback, and external Core must validate/persist/publish its own results.
+ *
+ * The implementation can change behind this V1 contract in a future signed
+ * host release without requiring an external Core source rewrite.
+ */
+object RiftHostQuickJsV1 {
+    private val engine = RiftRappQuickJsExecutor()
+
+    fun abiVersion(): Int = 1
+
+    @JvmStatic
+    fun execute(runtime: ByteArray, input: ByteArray, outputLimit: Int): ByteArray =
+        engine.execute(runtime, input, outputLimit)
+}
+
 /** E0 shell-side portable lifecycle envelope, not activated or connected yet. */
 interface RiftShellPresentationV1 {
     fun restore(snapshot: JSONObject): JSONObject

@@ -114,11 +114,21 @@ internal object RiftCoreCandidateSwitch {
                 val name = entries.nextElement()
                 count++
                 require(count <= MAX_CLASSES) { "Core candidate class bound exceeded" }
-                require(name.startsWith(PREFIX)) {
+                // Registered D8 bundles the pinned Kotlin standard library.
+                // The protected DEX verifier already permits only the exact
+                // independent Core namespace plus kotlin.* support classes.
+                // Parent-loader Kotlin support is shared, never Core ownership.
+                val ownCore = name.startsWith(PREFIX)
+                val kotlinSupport = name.startsWith("kotlin.")
+                require(ownCore || kotlinSupport) {
                     "Core candidate contains an unexpected package"
                 }
-                require(runCatching { application.classLoader.loadClass(name) }.isFailure) {
-                    "Core candidate duplicates an APK-owned class"
+                if (ownCore) {
+                    require(runCatching {
+                        application.classLoader.loadClass(name)
+                    }.isFailure) {
+                        "Core candidate duplicates an APK-owned class"
+                    }
                 }
                 if (name == entrypoint) foundEntry = true
             }

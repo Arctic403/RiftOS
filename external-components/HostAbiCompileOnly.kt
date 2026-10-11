@@ -38,6 +38,17 @@ interface RiftCoreExecutionViewV1 {
     fun stopApp(context: Context, id: String): JSONObject
 }
 
+/**
+ * Compile-only mirror of APK-hosted, zero-authority QuickJS V1.
+ * Its generated class MUST be stripped before producing external DEX.
+ */
+object RiftHostQuickJsV1 {
+    fun abiVersion(): Int = 1
+    @JvmStatic
+    fun execute(runtime: ByteArray, input: ByteArray, outputLimit: Int): ByteArray =
+        error("compile-only host QuickJS service")
+}
+
 interface RiftShellGraphicalComponentV1 {
     fun attach(activity: Activity, container: FrameLayout,
                services: RiftShellPlatformServicesV1, restore: JSONObject?)
