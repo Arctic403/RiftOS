@@ -1,5 +1,12 @@
 # Independent component build evidence — 2026-10-10
 
+## 2026-10-11 — independent external Core v0.6.1 fs.write capability PASS (consent decision not yet proven)
+
+Signed RiftOS #722 still ran `owner=independent-external-dex`, `candidateRevision=0.6.1`, PID **6869**, `deviceQualificationComplete=false` and `readyForPromotion=false`. User manually installed an isolated disposable JSON RAPP `rift-v061-consent-test` (the seventh installed RAPP), with a fresh app ID and `fs.read`/`fs.write`/`window.title` declarations. The RAPP's `TEST FS.WRITE CONSENT` button sent one `fs.write` / `writeText` request, token **44**, scoped only to `/D:/Workspace/tmp/v061-capability-consent-probe-20261011/probe-v2-write.txt`. The user screenshot shows `CORE EFFECT RESULT fs.write SUCCESS token=44` with returned path metadata. Subsequent independent MCP `rift_read_text` confirmed the actual file bytes **`OK v2 device`**, not just a UI claim. The seeded `probe-data.txt` separately exists for upcoming fs.read test. `core sessions` reported two running apps (diagnostic builder and consent RAPP), no queued effect events. No original RAPP or Core artifact overwritten.
+
+**Precisely proven:** selected external Core RAPP effect dispatch, permitted scoped filesystem writing, physical file content, result continuation and token correlation. **Not yet proven:** whether this fresh request showed a user Allow/Deny/Cancel dialog, denial/timeout, fs.read effect result, grant persistence/revocation or Shell-absent consent. The screenshot shows no permission dialog, and `fs.write` success must not be represented as full consent qualification. Next user tests `TEST FS.READ CONSENT` and sends resulting UI; leave external Core selected and unpromoted. No user restart, new APK, or Recovery operation required.
+
+
 ## 2026-10-11 — external Core v0.6.1 native-buffer real-device PASS (not full qualification)
 
 With signed RiftOS #722, independently compiled Core `owner=independent-external-dex`, `candidateRevision=0.6.1`, PID **6869**, and no initial sessions, the user explicitly installed the pre-existing device-tested native-buffer fixture RAPP `rift-nativebuffer-host-gate-714` from `/D:/Builds/rift-nativebuffer-host-gate-714-0180f04e3ff6dcff.rapp`. Its verified three-entry package has no requested permissions, `adapter=engine=riftpp-rws2-rui3-v1`, `presentation=rui3`, source runtime hash `e85caa5a2fe4c6aa35aba83c07590f4fd57043bfc4f3f99598b0bd3801aac46f`. A live `apps` query recognized it as installed; `core status` reported six installed RAPPs.
