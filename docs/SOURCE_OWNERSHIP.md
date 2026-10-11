@@ -94,6 +94,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftCoreApplication.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftManualRecoveryActivity.kt` | `docs/systems/android-host/SIMPLE_BOOTSTRAP_RECOVERY_LOCK.md` + `docs/systems/android-host/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftManualRecoveryStore.kt` | `docs/systems/android-host/SIMPLE_BOOTSTRAP_RECOVERY_LOCK.md` + `docs/systems/android-host/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftManualRecoveryInstaller.kt` | `docs/systems/android-host/SIMPLE_BOOTSTRAP_RECOVERY_LOCK.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBootstrapHost.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftHostComponentAbiV1.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCoreCandidateSwitch.kt` | `docs/systems/android-host/README.md` + `docs/systems/android-host/E1_CORE_CANDIDATE.md` + `docs/systems/build-validation/README.md` |

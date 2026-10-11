@@ -1,5 +1,11 @@
 # Android Host
 
+## 2026-10-11 — User-approved three-patch simple recovery; B source integration pending signed proof
+
+**Current target supersedes the older deep automatic N-1 design below.** A dedicated `:riftRecovery` Android APK process was user-device-proven after force-stopping RiftOS on signed #709. Patch B source now adds the APK-local user-picked Core/Shell manifest+DEX installer, separate user confirmation to select for next startup, one atomic backed-up external revision only if previously device-accepted, and confirmed manual restore to that backup or the signed embedded Core/Shell. It reuses `RiftProtectedComponentInstaller`, `RiftBootstrapComponentStore`, `RiftProtectedRevisionRecovery` SHA/qualification and temporarily reconciles `RiftComponentReleaseLedger`. QuickJS/MCP remain host services. No running Core/Shell is hot-swapped.
+
+**Source only:** signed build, actual restore and complete external Core/Shell parity are pending. Do not activate incomplete candidates, or remove old embedded/automatic fallback before physical Patch B acceptance and later Patch C cleanup. See [locked implementation roadmap](SIMPLE_BOOTSTRAP_RECOVERY_LOCK.md).
+
 ## 2026-10-10 — Guarded Core/Shell versioned installer implementation
 
 See [protected critical artifact format](PROTECTED_COMPONENT_FORMAT.md) and [main roadmap](EXTERNAL_CORE_SHELL_ROADMAP.md). APK-owned Core now has distinct manifest parsing, static DEX reference closure, exact immutable per-SHA qualification receipt, signer/PID/foreground one-use stage+activation+physical acceptance, protected Core/Shell pointer/N-1 journal, Core crash SHA/PID recovery before restart and confirmed real Shell process-loss recovery. Android cannot guarantee a continuously running watchdog or full native dump. Real independent external execution **not yet device accepted**; embedded stays as reserve until all gate proofs pass.

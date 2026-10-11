@@ -9,8 +9,9 @@ import java.security.MessageDigest
 
 /**
  * APK-only recovery slot reader. Does not depend on Core, Shell, RAPP or MCP.
- * Patch A is observation only: no activation, grant, update or restore writer.
- * Patch B may add a trusted user-confirmed writer once device-tested.
+ * Recovery may restore only a previously device-accepted external revision or
+ * the retained embedded fallback. It never executes selected Core or Shell.
+ * Host installer alone records backups before switching to a new candidate.
  */
 internal object RiftManualRecoveryStore {
     const val SCHEMA = "riftos.host.manual-recovery/1"
@@ -47,6 +48,118 @@ internal object RiftManualRecoveryStore {
             "Recovery backup record schema invalid"
         }
         return record.getJSONObject("candidate")
+    }
+
+    private fun backupFile(context: Context, component: String): File {
+        require(component == "core" || component == "shell") { "Invalid recovery component" }
+        val root = RiftBootstrapComponentStore.root(context)
+        require(root.isDirectory && !Files.isSymbolicLink(root.toPath())) {
+            "Recovery store is unavailable"
+        }
+        val file = File(root, "$component.working-backup.json")
+        for (suffix in listOf("", ".new", ".bak")) {
+            require(!Files.isSymbolicLink(File(file.path + suffix).toPath())) {
+                "Symlinked recovery backup record"
+            }
+        }
+        return file
+    }
+
+    private fun writeBackup(context: Context, component: String, candidate: JSONObject) {
+        val output = JSONObject().put("schema", BACKUP_SCHEMA)
+            .put("component", component)
+            .put("candidate", JSONObject(candidate.toString()))
+            .toString().toByteArray(Charsets.UTF_8)
+        require(output.size in 1..MAX_RECORD) { "Recovery backup receipt too large" }
+        val file = backupFile(context, component)
+        val atomic = AtomicFile(file)
+        val stream = atomic.startWrite()
+        try {
+            stream.write(output)
+            atomic.finishWrite(stream)
+        } catch (failure: Throwable) {
+            atomic.failWrite(stream)
+            throw failure
+        }
+    }
+
+    /**
+     * Called only by the APK's trusted installer BEFORE selecting an update.
+     * An unaccepted or unknown external Core can never replace the known-good
+     * backup. Embedded migration fallback is always present without a DEX file.
+     */
+    @Synchronized
+    fun preserveAcceptedBeforeUpdate(context: Context, component: String): String {
+        val active = RiftBootstrapComponentStore.active(context, component)
+            ?: return "embedded"
+        val sha = verifyExternal(context, component, active)
+        require(RiftComponentReleaseLedger.isAccepted(context, component, sha)) {
+            "Current external revision was never accepted on device"
+        }
+        writeBackup(context, component, active)
+        return sha
+    }
+
+    /**
+     * Recovery UI calls this only after explicit on-screen user confirmation.
+     * Pointer changes are for NEXT process start. Never hot-swap or start Core.
+     */
+    @Synchronized
+    fun restore(context: Context, component: String, selection: String): JSONObject {
+        require(component == "core" || component == "shell") {
+            "Unknown protected recovery component"
+        }
+        require(selection == "embedded" || selection == "working-backup") {
+            "Unknown recovery selection"
+        }
+        // The embedded fallback must survive a completely broken or malformed
+        // external activation pointer, not only a valid failed candidate.
+        val active = runCatching {
+            RiftBootstrapComponentStore.active(context, component)
+        }.getOrNull()
+        val sha = if (selection == "working-backup") {
+            val backup = readBackup(context, component)
+                ?: error("No accepted backup has been saved")
+            val targetSha = verifyExternal(context, component, backup)
+            require(targetSha != active?.optString("sha256")) {
+                "Backup is already selected"
+            }
+            // Prevent an invented receipt from promoting an unaccepted DEX.
+            RiftComponentReleaseLedger.checkManualRestoreTarget(context, component, targetSha)
+            try {
+                RiftBootstrapComponentStore.writeProtectedPointer(context, component, backup)
+                RiftBootstrapComponentStore.clearProtectedStartupMarker(context, component)
+                RiftComponentReleaseLedger.manualRestored(context, component, backup)
+            } catch (failure: Throwable) {
+                // Avoid leaving a partially restored external selector after
+                // a journal error. The signed embedded fallback is always safe.
+                runCatching {
+                    if (component == "core") {
+                        RiftBootstrapComponentStore.resetCoreToEmbedded(context)
+                    } else {
+                        RiftBootstrapComponentStore.resetShellToEmbedded(context)
+                    }
+                    RiftComponentReleaseLedger.manualRestored(context, component, null)
+                }.onFailure { failure.addSuppressed(it) }
+                throw failure
+            }
+            targetSha
+        } else {
+            // This signed APK still contains the device-proven migration Core.
+            if (component == "core") {
+                RiftBootstrapComponentStore.resetCoreToEmbedded(context)
+            } else {
+                RiftBootstrapComponentStore.resetShellToEmbedded(context)
+            }
+            RiftComponentReleaseLedger.manualRestored(context, component, null)
+            null
+        }
+        return JSONObject().put("schema", SCHEMA)
+            .put("component", component)
+            .put("selected", if (sha == null) "embedded" else "verified-backup")
+            .put("sha256", sha ?: JSONObject.NULL)
+            .put("restartRequired", true)
+            .put("hotSwapped", false)
     }
 
     /** Re-check sealed bytes AND exact trusted qualification without loading the candidate. */
@@ -108,7 +221,9 @@ internal object RiftManualRecoveryStore {
 
         val backup = runCatching {
             readBackup(context, component)?.let {
-                verifyExternal(context, component, it)
+                val sha = verifyExternal(context, component, it)
+                RiftComponentReleaseLedger.checkManualRestoreTarget(context, component, sha)
+                sha
             }
         }
         backup.fold(onSuccess = { sha ->
@@ -121,16 +236,23 @@ internal object RiftManualRecoveryStore {
         })
         val root = RiftBootstrapComponentStore.root(context)
         val marker = File(root, "$component.booting")
-        slot.put("startupMarkerPresent", if (Files.isSymbolicLink(marker.toPath())) {
-            true // Unsafe marker is reported but never followed.
-        } else marker.exists())
+        val startupMarkerPresent = Files.isSymbolicLink(marker.toPath()) || marker.exists()
+        val restoreEmbeddedEnabled =
+            slot.optString("active") != "embedded" || startupMarkerPresent
+        val restoreWorkingBackupEnabled =
+            slot.optString("backup") == "verified-external" &&
+                slot.optString("activeSha256") != slot.optString("backupSha256")
+        slot.put("startupMarkerPresent", startupMarkerPresent)
+            .put("restoreEmbeddedEnabled", restoreEmbeddedEnabled)
+            .put("restoreWorkingBackupEnabled", restoreWorkingBackupEnabled)
+            .put("restoreEnabled", restoreEmbeddedEnabled || restoreWorkingBackupEnabled)
         return slot
     }
 
-    /** Read-only, process-independent snapshot; never initializes Core or Shell. */
+    /** Read-only status; Recovery actions are separately user-confirmed. */
     fun status(context: Context): JSONObject = JSONObject()
         .put("schema", SCHEMA)
-        .put("readOnlyGate", "A")
+        .put("gate", "B")
         .put("recoveryProcess", ":riftRecovery")
         .put("core", inspect(context, "core"))
         .put("shell", inspect(context, "shell"))

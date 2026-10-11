@@ -153,6 +153,9 @@ internal object RiftProtectedComponentInstaller {
                 ?.optString("sha256") != sha) {
             "Protected component already active or startup still unaccepted"
         }
+        // Preserve the previously device-accepted revision BEFORE changing
+        // the next-boot selector. An unaccepted candidate cannot replace it.
+        RiftManualRecoveryStore.preserveAcceptedBeforeUpdate(context, component)
         RiftComponentReleaseLedger.recordPrepared(context, component, pointer)
         try {
             RiftBootstrapComponentStore.writeProtectedPointer(context, component, pointer)

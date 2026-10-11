@@ -237,6 +237,67 @@ internal object RiftComponentReleaseLedger {
         return summary(state)
     }
 
+    /**
+     * A manual Recovery target must come from this APK's earlier device-accepted
+     * revisions. The Recovery DEX and receipt are checked separately.
+     */
+    @Synchronized
+    fun checkManualRestoreTarget(context: Context, id: String, sha: String) {
+        require(sha.matches(DIGEST)) { "Invalid manual recovery target" }
+        val state = read(context, id, verifyFiles = false)
+            ?: error("No accepted external revisions")
+        val accepted = sequenceOf(
+            state.optJSONObject("lastKnownGood"),
+            state.optJSONObject("previousKnownGood")
+        ).filterNotNull().any { it.optString("sha256") == sha }
+        require(accepted) {
+            "Recovery target was not previously accepted on device"
+        }
+    }
+
+    /**
+     * Legacy journal reconciliation while the simpler APK bootstrap is being
+     * device-proven. NO Core code or Shell code is started here.
+     * Deleting the selected pointer returns to the known-good embedded seed.
+     */
+    @Synchronized
+    fun manualRestored(context: Context, id: String, target: JSONObject?) {
+        checkId(id)
+        if (target != null) {
+            checkManualRestoreTarget(context, id, target.getString("sha256"))
+            validate(context, id, target)
+        }
+        // Embedded migration seed must remain recoverable even when a failed
+        // external update also damaged the old revision metadata.
+        val current = if (target == null) {
+            runCatching { read(context, id, verifyFiles = false) }.getOrNull() ?: empty(id)
+        } else {
+            read(context, id, verifyFiles = false) ?: empty(id)
+        }
+        val active = RiftBootstrapComponentStore.active(context, id)
+        require(if (target == null) active == null else
+            active?.optString("sha256") == target.optString("sha256")) {
+            "Recovery pointer differs from selected target"
+        }
+        // Returning to embedded must NOT erase the previously accepted
+        // external backup's trusted identity. Keep it only as a manual
+        // recovery option, not as an automatically selected revision.
+        val retainedBackup = if (target == null) {
+            current.optJSONObject("previousKnownGood")
+                ?: current.optJSONObject("lastKnownGood")
+        } else null
+        val restored = empty(id)
+            .put("sequence", current.optLong("sequence") + 1L)
+            .put("status", if (target == null) "embedded" else "external-known-good")
+            .put("lastKnownGood",
+                target?.let { JSONObject(it.toString()) } ?: JSONObject.NULL)
+            .put("previousKnownGood",
+                retainedBackup?.let { JSONObject(it.toString()) } ?: JSONObject.NULL)
+            .put("pending", JSONObject.NULL)
+            .put("manualRestoredAt", System.currentTimeMillis())
+        write(context, id, restored)
+    }
+
     private fun summary(state: JSONObject): JSONObject {
         val pending = state.optJSONObject("pending")
         val accepted = state.optJSONObject("lastKnownGood")

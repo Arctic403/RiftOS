@@ -1,5 +1,11 @@
 # RiftOS
 
+## 2026-10-11 — Patch B source: standalone APK Recovery can install, backup and restore
+
+On manually signed #709, the user proved `RiftOS Recovery` opens directly from its separate Android launcher even after RiftOS was force-stopped, and regular Core/RAPP smoke passed. The APK-owned Recovery screen now has separately confirmed **Restore embedded Core/Shell** and **Restore accepted working backup** controls, plus a bounded Android picker for a trusted external `component.json` and matching DEX: stage/verify, then explicitly confirm install for next start. Only a previously device-accepted external component can be stored as the one last-known-good backup; existing `RiftProtectedComponentInstaller` and SHA/type verifier are reused, not duplicated. Signed embedded Core and RiftShell remain the reliable first-install fallback. Legacy release journal sync remains until Patch C. No hot swap or automated process kill.
+
+This is **Patch B SOURCE ONLY**. The external Core and external graphical Shell are not yet feature-complete, so a green signed build and safe UI proof must precede any genuine qualified external-component update/restore test. Existing signed #709 has only Patch A. Manual signed builds and device acceptance remain under user control. [Authoritative roadmap](docs/systems/android-host/SIMPLE_BOOTSTRAP_RECOVERY_LOCK.md).
+
 ## 2026-10-10 — Patch A source: independent Android RiftOS Recovery launcher
 
 RiftOS now has a new `RiftOS Recovery` Android launcher entry in isolated `:riftRecovery` process. Its `Application.onCreate` bypass skips Core/Shell bootstrap, so it can inspect APK-private recovery records even after a bad selected Core. The read-only first screen reports Core/Shell active state, any verified external last-working backup, invalid backup, startup marker and the existing embedded first-install fallback. It uses the established SHA/qualification receipt but cannot yet install/restore or activate anything; **Patch B** adds the protected writer and explicit user-driven restore after Gate A device proof. Patch A needs your manual signed Builder APK and physical Recovery UI test; installed signed #706 remains the pre-Recovery baseline. [Three-patch decision and exact gate](docs/systems/android-host/SIMPLE_BOOTSTRAP_RECOVERY_LOCK.md).
