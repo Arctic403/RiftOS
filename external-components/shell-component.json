@@ -1,0 +1,12 @@
+{
+  "schema": "riftos.protected-component/1",
+  "component": "shell",
+  "version": "0.1.0",
+  "entrypoint": "com.riftos.external.shell.IndependentGraphicalShellV1",
+  "sha256": "f29747a5828b66717d900519101cc08fc538fa47851fe8e657c69ac6ba1b4276",
+  "buildSha256": "f29747a5828b66717d900519101cc08fc538fa47851fe8e657c69ac6ba1b4276",
+  "payload": "shell.dex",
+  "abi": 1,
+  "minSdk": 28,
+  "maxSdk": 1000
+}

@@ -20,6 +20,17 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/res/xml/vortex_agent_accessibility.xml` | `docs/systems/android-host/README.md` + `docs/systems/vortex-agent/README.md` |
 | `android/riftos-debug.keystore.b64` | `docs/systems/build-validation/README.md` (legacy signing input; policy-controlled) |
 
+## Independently compiled external Core/Shell (NOT signed APK Gradle inputs)
+
+| Source | Owner |
+| --- | --- |
+| `external-components/HostAbiCompileOnly.kt` | `docs/systems/android-host/PROTECTED_COMPONENT_FORMAT.md` |
+| `external-components/IndependentCoreV1.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` |
+| `external-components/IndependentGraphicalShellV1.kt` | `docs/systems/core-shell/README.md` |
+| `external-components/runtime.js` | `docs/systems/build-validation/README.md` |
+| `external-components/riftapp.json` | `docs/systems/android-host/PROTECTED_COMPONENT_FORMAT.md` |
+| `external-components/riftbuild-hot.json` | `docs/systems/build-validation/README.md` |
+
 ## JavaScript source (`src/`; ownership is separate from APK packaging)
 
 | Source | Owner |
@@ -204,6 +215,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `scripts/test-rift-ai-adapters.mjs` | `docs/systems/build-validation/README.md` + AI adapters |
 | `scripts/test-rift-app-import.mjs` | `docs/systems/build-validation/README.md` + apps |
 | `scripts/test-e1-core-closure.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |
+| `scripts/test-external-components.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/android-host/PROTECTED_COMPONENT_FORMAT.md` |
 | `scripts/test-rift-dev-lab.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/dev-lab/README.md` |
 | `scripts/test-rift-raw-protocol.mjs` | `docs/systems/build-validation/README.md` + browser MCP compatibility |
 | `scripts/test-rift-workspace-records.mjs` | `docs/systems/build-validation/README.md` + workspace records |

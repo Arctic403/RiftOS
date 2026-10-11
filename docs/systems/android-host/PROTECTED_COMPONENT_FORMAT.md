@@ -1,5 +1,11 @@
 # Independent protected Core / graphical Shell artifacts — format and trust contract
 
+## 2026-10-10 — Actual registered Kotlin+D8 producer and support-class verifier compatibility
+
+The first independent component producer now resides in `external-components/` (outside Android APK Gradle sources), with a separate generic RAPP (`rift-critical-component-builder`) and exact registered `kotlin-android` → D8 workflow. Core and Shell source compiled separately with compile-only ABI stubs stripped BEFORE D8. Both actual DEX files and strict manifests exist on device at the canonical `/D:/Builds/Components/{core|shell}` locations; [precise evidence and SHA](../../../external-components/BUILD_EVIDENCE.md). Core is incomplete for JS RAPP execution and MUST NOT be activated. Shell UI implements generic RAPP windows but does not yet replace all system GUI behavior; also not activated.
+
+**Compatibility caveat:** the generic `RiftJvmDexService` automatically adds `kotlin-stdlib.jar` as D8 program classes. Consequently, the *installed* #701 verifier will reject real Kotlin component DEX files regardless of exact ABI. A follow-on host **source fix** permits only `Lkotlin/` support definitions, with host APK class and duplicate class rejection preserved and bundled-class count reported. This change will only be installed by the user's **next manually signed RiftOS APK build**, not by simply rebuilding Core/Shell. Do not claim that any protected stage or external N-1 proof passed yet.
+
 **Checkpoint:** 2026-10-10 SOURCE implementation in progress. The following is a format and host staging contract, not a claim that a real external RiftOS Core or feature-complete graphical Shell artifact has been compiled, installed, or accepted.
 
 ## Exact input directory and independent build ownership

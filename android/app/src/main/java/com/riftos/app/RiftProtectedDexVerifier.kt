@@ -120,13 +120,25 @@ internal object RiftProtectedDexVerifier {
         }
         val entryDescriptor = "L" + manifest.entrypoint.replace('.', '/') + ";"
         var found = false
+        var kotlinSupportCount = 0
+        val definitions = HashSet<String>()
         for (index in 0 until classCount) {
             val id = integer(bytes, classOff + index * 32)
             require(id in 0 until typeCount) { "Protected class index invalid" }
             val name = types[id]
-            require(name.startsWith(prefix) && name.endsWith(";")) {
-                "Critical DEX defines class outside its independent namespace"
+            require(name.endsWith(";") && definitions.add(name)) {
+                "Critical DEX contains invalid or duplicate class definition"
             }
+            // Registered D8 intentionally bundles the pinned kotlin-stdlib.jar
+            // as program classes. Allow ONLY that independent library namespace;
+            // never admit APK-owned com.riftos.app implementations, compile-only
+            // host ABI stubs, or another external component's classes.
+            val ownComponent = name.startsWith(prefix)
+            val kotlinSupport = name.startsWith("Lkotlin/")
+            require(ownComponent || kotlinSupport) {
+                "Critical DEX defines class outside component or Kotlin runtime namespace"
+            }
+            if (kotlinSupport) kotlinSupportCount++
             if (name == entryDescriptor) found = true
         }
         require(found) { "Critical DEX entrypoint missing from class definitions" }
@@ -151,6 +163,7 @@ internal object RiftProtectedDexVerifier {
             .put("entrypoint", manifest.entrypoint)
             .put("sha256", manifest.sha256)
             .put("classCount", classCount)
+            .put("bundledKotlinRuntimeClassCount", kotlinSupportCount)
             .put("referencedTypeCount", typeCount)
             .put("hostExecutionClassReferences", 0)
             .put("inactiveLinkProven", true)

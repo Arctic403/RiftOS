@@ -1,0 +1,21 @@
+{
+  "schema": "riftbuild-compiler-json/1",
+  "language": "kotlin",
+  "sources": [
+    "HostAbiCompileOnly.kt",
+    "IndependentCoreV1.kt"
+  ],
+  "outputDir": "build/riftbuild/core-classes",
+  "classpath": [
+    "/data/data/com.riftos.app/files/riftfs/system/toolchains/rift-kotlin-v1/android.jar",
+    "/data/data/com.riftos.app/files/riftfs/system/toolchains/rift-kotlin-v1/kotlin-stdlib.jar"
+  ],
+  "options": {
+    "moduleName": "rift-external-core",
+    "jvmTarget": "1.8",
+    "minSdk": 28,
+    "noJdk": true,
+    "noStdlib": true,
+    "noReflect": true
+  }
+}

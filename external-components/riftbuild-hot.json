@@ -1,0 +1,14 @@
+{
+  "schema": "riftbuild-managed-payloads/1",
+  "payloads": {},
+  "compilers": {
+    "kotlin-android": {
+      "engine": "dex-json-v1",
+      "bundledAsset": "riftbuild/compiler-seeds/kotlin-android-2.4.0.apk",
+      "abi": "any",
+      "entryClass": "com.riftbuild.tools.kotlinc.KotlinCompilerTool",
+      "entryMethod": "run",
+      "protocol": "riftbuild-compiler-json/1"
+    }
+  }
+}

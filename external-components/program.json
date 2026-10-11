@@ -1,0 +1,12 @@
+{
+  "schema": "rift-critical-component-builder-state/1",
+  "phase": "idle",
+  "status": "Independent Core/Shell producer ready",
+  "mode": "core",
+  "req": 1,
+  "pending": null,
+  "sha": "",
+  "logs": [
+    "Exact host V1 ABI only. No activation is available to this RAPP."
+  ]
+}

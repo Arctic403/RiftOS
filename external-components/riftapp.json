@@ -1,0 +1,17 @@
+{
+  "schema": "riftos.rapp-project/1",
+  "id": "rift-critical-component-builder",
+  "name": "External Core & Shell Builder",
+  "launcherIcon": "CS",
+  "abi": "riftos-app-abi/1",
+  "adapter": "json-generic-v1",
+  "presentation": "json-frame-v1",
+  "permissions": [
+    "fs.read",
+    "fs.write",
+    "build.local",
+    "window.title"
+  ],
+  "entry": "program.json",
+  "runtime": "runtime.js"
+}
