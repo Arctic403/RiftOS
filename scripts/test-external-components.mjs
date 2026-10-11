@@ -5,7 +5,7 @@ const root = new URL('../', dir);
 const read = name => fs.readFileSync(new URL(name, dir), 'utf8');
 const host = fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftHostComponentAbiV1.kt', root),'utf8')
  + fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftShellComponentAbiV1.kt', root),'utf8');
-const stub=read('HostAbiCompileOnly.kt'), core=read('IndependentCoreV1.kt'), shell=read('IndependentGraphicalShellV1.kt'), producer=read('runtime.js');
+const stub=read('HostAbiCompileOnly.kt'), core=read('IndependentCoreV1.kt'), shell=read('IndependentGraphicalShellV1.kt'), engine=read('IndependentRappSessionsV1.kt'), producer=read('runtime.js');
 const names=['RiftCoreComponentV1','RiftCoreExecutionViewV1','RiftShellGraphicalComponentV1','RiftShellPlatformServicesV1'];
 function iface(text,name) {
  const start=text.indexOf('interface '+name+' {'); assert.ok(start>=0,'missing interface '+name);
@@ -19,7 +19,22 @@ for(const name of names) assert.deepEqual(iface(stub,name),iface(host,name),'ABI
 assert.match(core,/RiftCoreComponentV1,\s*RiftCoreExecutionViewV1/);
 assert.match(shell,/:\s*RiftShellGraphicalComponentV1/);
 assert.match(core,/SHA-256/);
-assert.match(core,/unavailable\("BOOT"\)/);
+assert.match(core,/return sessions\(context\)\.open\(id\)/);
+assert.match(engine,/interface IndependentJavascriptVmV1/);
+assert.match(engine,/class IndependentRuntimeRegistry/);
+assert.match(engine,/class IndependentRappSessions/);
+assert.match(engine,/fun offer\(id: String, generation: Long, payload: JSONObject\)/);
+assert.match(engine,/private fun dispatch\(s: Session, ticket: Ticket\)/);
+assert.match(engine,/private fun validateFrame\(frame: JSONObject\)/);
+assert.match(engine,/RAPP input queue full/);
+assert.match(engine,/External Core capability not independently authorized/);
+assert.match(engine,/Independent Javascript runtime registry not installed/);
+assert.match(engine,/private const val APPROVED_VM_SHA = ""/);
+assert.match(engine,/sha == APPROVED_VM_SHA/);
+assert.match(engine,/apkOwnedExecutorFallbackEnabled", false/);
+assert.match(core,/private const val RAPP_ENGINE_AND_BROKER_PROVEN = false/);
+assert.match(core,/require\(RAPP_ENGINE_AND_BROKER_PROVEN\)/);
+assert.ok(producer.includes("'IndependentRappSessionsV1.kt'"), 'External Core build must contain its session engine');
 assert.match(shell,/services\(\)\.snapshot\(win\.id\)/);
 assert.match(shell,/services\(\)\.reattach\(id, gen\)/);
 for(const name of names) assert.ok(producer.includes(name+'.class'),'stub not removed '+name);
@@ -35,4 +50,4 @@ for(const kind of ['core','shell']) {
 }
 const gradle=fs.readFileSync(new URL('android/app/build.gradle.kts',root),'utf8');
 assert.ok(!gradle.includes('external-components/'));
-console.log('4 host ABI mirrors, 2 external sources, 4 stripped stubs and protected manifests: source contract OK (NOT device acceptance)');
+console.log('4 host ABI mirrors, external Core-owned sessions/VM registry, 4 stripped stubs and protected manifests: source contract OK (NOT VM execution/device acceptance)');

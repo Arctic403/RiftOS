@@ -1,5 +1,11 @@
 # RiftOS Project Status
 
+## 2026-10-10 — External Core v0.2 actual event/session pipeline compiled (NO JS VM / NO ACTIVATION)
+
+Signed **#702** RiftOS remains live with embedded Core/Shell and separate observer; generic external-component builder RAPP obtained user-approved ordinary `build.local` and reported real registered `kotlin-android + D8` READY. The external **Core v0.2** now has a separately compiled Core-owned RAPP session/event/JSON frame adapter with real state persistence, queue/focus/generation logic, guarded effect-result continuations, plus a strict SHA-bound independent JS VM interface. The VM-approved SHA pin is deliberately empty, preventing unqualified/self-declared JS execution; *no independent VM is installed or functional*. Compiled on-device with registered Kotlin and D8: latest raw `core.dex` **2,603,876 bytes** `c1b44f56481ee4ffc90b7e74812e07b64f5cc73e9c07e3e6b113f79a13399113`, copied to `/D:/Builds/Components/core` with `component.json` v0.2.0. Retained v0.1 in `core/previous`. Shell v0.1 still independent compiled but has not passed system-app parity.
+
+This is **neither real independent JS execution nor acceptable production Core**, so protected release staged/activation and N-1 device proofs remain UNTESTED and MUST NOT be initiated. No installed host APK change. Source is in `external-components/` outside Gradle's Kotlin inventory. See `external-components/BUILD_EVIDENCE.md`. Next: actual independent QuickJS VM class/Dex and capability/grant broker, then compile+nonproduction execution proof.
+
 ## 2026-10-10 — #701 DEVICE PASS (embedded host), independent Core/Shell DEX compiled; activation blocked
 
 User-manual signed APK **#701**, run **38095165314**, source **6a31b999d352** installed and MCP/Local Agent verified: embedded Core PID23690, graphical Shell PID23974, separate Core supervisor PID23738, zero external activation/revision pointers, three pre-existing RAPPs and existing graphical 15-node Module Builder RAPP launch PASS, native Admin Approvals critical-component controls visible. This is host COMPATIBILITY DEVICE PASS only, **not external Core/Shell execution**.

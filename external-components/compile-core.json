@@ -3,6 +3,7 @@
   "language": "kotlin",
   "sources": [
     "HostAbiCompileOnly.kt",
+    "IndependentRappSessionsV1.kt",
     "IndependentCoreV1.kt"
   ],
   "outputDir": "build/riftbuild/core-classes",

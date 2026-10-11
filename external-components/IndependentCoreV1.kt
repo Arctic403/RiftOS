@@ -30,6 +30,9 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
         private const val APP_SCHEMA = "riftos.rapp/1"
         private const val MAX_APPS = 128
         private const val MAX_META_BYTES = 65536L
+        // This is NOT a production Core until both external JS execution
+        // and independent user-grant/effect authority pass device evidence.
+        private const val RAPP_ENGINE_AND_BROKER_PROVEN = false
         private val APP_ID = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$")
     }
 
@@ -37,6 +40,8 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
     private var startedElapsedMs: Long = 0L
     private var focusId: String? = null
     private val lock = Any()
+    private var independentSessions: IndependentRappSessions? = null
+    private var javascriptRegistry: IndependentRuntimeRegistry? = null
 
     override fun initialize(context: Context) {
         synchronized(lock) {
@@ -46,12 +51,20 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
             require(root.isDirectory && !Files.isSymbolicLink(root.toPath())) {
                 "Independent Core RiftFS backing root unavailable"
             }
+            require(RAPP_ENGINE_AND_BROKER_PROVEN) {
+                "External Core v0.2 not selectable: standalone JS VM and capability broker unproven"
+            }
             val programs = File(root, "system/programs")
             require(programs.isDirectory && !Files.isSymbolicLink(programs.toPath())) {
                 "Independent Core cannot discover actual installed RAPP packages"
             }
             // Owning the catalogue in this DEX never starts the embedded
             // RiftCoreRuntime singleton; there is no implicit delegate.
+            javascriptRegistry = IndependentRuntimeRegistry(application)
+            independentSessions = IndependentRappSessions(
+                application, requireNotNull(javascriptRegistry),
+                { id -> checkedPackage(application, id) }, programRoot = programs
+            )
             app = application
             startedElapsedMs = SystemClock.elapsedRealtime()
         }
@@ -134,54 +147,51 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
         return out
     }
 
+    private fun sessions(context: Context): IndependentRappSessions {
+        context(context)
+        return requireNotNull(independentSessions)
+    }
+
+    private fun independentRegistry(context: Context): IndependentRuntimeRegistry {
+        context(context)
+        return requireNotNull(javascriptRegistry)
+    }
+
     private fun unavailable(operation: String): Nothing {
         // No fake "success"/frame or host-runtime proxy is permitted here.
         error("Independent Core $operation blocked: external RAPP runtime/executor and capability broker not yet extracted")
     }
 
     override fun open(context: Context, id: String): JSONObject {
-        checkedPackage(context, id)
-        unavailable("BOOT")
+        return sessions(context).open(id)
     }
 
     override fun startApp(context: Context, id: String): JSONObject = open(context, id)
 
     override fun reattach(context: Context, id: String, generation: Long): JSONObject {
-        require(generation > 0L && APP_ID.matches(id))
-        unavailable("reattach")
+        return sessions(context).reattach(id, generation)
     }
 
     override fun stop(context: Context, id: String, generation: Long): JSONObject {
-        require(generation > 0L && APP_ID.matches(id))
-        unavailable("stop session")
+        return sessions(context).close(id, generation)
     }
 
     override fun stopApp(context: Context, id: String): JSONObject {
-        require(APP_ID.matches(id))
-        unavailable("stop app")
+        return sessions(context).close(id, null)
     }
 
     override fun snapshot(context: Context, id: String): JSONObject {
         require(APP_ID.matches(id))
-        return JSONObject().put("schema", "riftos.core.surface-ipc/1")
-            .put("owner", "riftos-external-core")
-            .put("corePid", Process.myPid())
-            .put("appId", id).put("present", false)
+        return sessions(context).snapshot(id)
     }
 
     override fun focus(context: Context, id: String?): JSONObject {
-        if (id != null) unavailable("focus without active session")
-        synchronized(lock) { focusId = null }
-        return JSONObject().put("schema", "riftos.core.input-focus/1")
-            .put("owner", "riftos-external-core")
-            .put("focusedAppId", JSONObject.NULL).put("attachmentGeneration", JSONObject.NULL)
+        return sessions(context).focus(id)
     }
 
     override fun event(context: Context, id: String, generation: Long,
                        payload: JSONObject): JSONObject {
-        require(generation > 0 && APP_ID.matches(id) &&
-            payload.getInt("kind") in 0..13) { "Invalid independent Core RAPP input" }
-        unavailable("event dispatch")
+        return sessions(context).offer(id, generation, payload)
     }
 
     override fun install(context: Context, artifact: String): JSONObject =
@@ -190,29 +200,20 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
     override fun uninstall(context: Context, id: String): JSONObject =
         unavailable("uninstall without independent grant revocation")
 
-    override fun runningApps(context: Context): JSONArray = JSONArray()
+    override fun runningApps(context: Context): JSONArray =
+        sessions(context).runningApps()
 
     override fun sessionsView(context: Context): JSONObject =
-        JSONObject().put("schema", "riftos.core.sessions/1")
-            .put("owner", "riftos-external-core").put("count", 0)
-            .put("attached", 0).put("detached", 0)
-            .put("headlessExecution", true)
-            .put("runtimeExecutionReady", false)
+        sessions(context).sessionsView()
 
     override fun surfacesView(context: Context): JSONObject =
-        JSONObject().put("schema", "riftos.core.app-surfaces/1")
-            .put("owner", "riftos-external-core").put("count", 0)
-            .put("surfaces", JSONArray())
+        sessions(context).surfacesView()
 
     override fun focusView(context: Context): JSONObject =
-        JSONObject().put("schema", "riftos.core.input-focus/1")
-            .put("owner", "riftos-external-core")
-            .put("focusedAppId", focusId ?: JSONObject.NULL)
+        sessions(context).focusView()
 
     override fun discoverRuntimeCandidates(context: Context): JSONObject =
-        JSONObject().put("schema", "riftos.external.runtime-candidates/1")
-            .put("registered", 0).put("candidates", JSONArray())
-            .put("runtimeExecutionReady", false)
+        independentRegistry(context).state()
 
     override fun coreStatus(context: Context): JSONObject {
         val application = context(context)
@@ -224,7 +225,8 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
             .put("appSessions", sessionsView(application))
             .put("appSurfaces", surfacesView(application))
             .put("coreApps", JSONObject().put("schema", "riftos.core.apps/1")
-                .put("apps", JSONArray()).put("count", 0))
+                .put("apps", runningApps(application))
+                .put("count", runningApps(application).length()))
             .put("runtimeExecutionReady", false)
             .put("candidateComplete", false)
             .put("readyForPromotion", false)

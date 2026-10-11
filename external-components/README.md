@@ -4,6 +4,8 @@ This source/build producer is versioned in RiftOS main under external-components
 
 ## Implemented
 
+**Current v0.2 Core checkpoint (#702 host):** `IndependentRappSessionsV1.kt` now provides external-only RAPP session identity, generation, event queue, focus, state persistence, bounded frame validation and effect-denial continuation. The separately loadable `IndependentJavascriptVmV1` module interface is SHA-gated with an **empty approved VM pin**, so an unqualified JS runtime cannot start an app. Actual Javascript execution and grant authorization remain incomplete, deliberately blocking protected Core activation. Latest Core v0.2 DEX is **2,603,876 bytes, SHA c1b44f56481ee4ffc90b7e74812e07b64f5cc73e9c07e3e6b113f79a13399113**, compiled and saved to `/D:/Builds/Components/core` alongside exact v0.2.0 manifest. Previous Core v0.1 artifact is in `core/previous/`. Full evidence: [BUILD_EVIDENCE.md](BUILD_EVIDENCE.md).
+
 - `IndependentCoreV1.kt`: implements both installed Core V1 interfaces. Reads genuine installed RAPP metadata, checks program/runtime SHA-256 and reports independent process state. Does NOT call APK-owned Core. RAPP JavaScript execution, input, installation and capability grants deliberately fail closed because that independent runtime has not yet been built.
 - `IndependentGraphicalShellV1.kt`: implements the graphical V1 contract with its own launcher, Core IPC RAPP windows, surfaces, input, focus, dragging, minimize, close and Shell recovery hooks. System-app parity and device behavior still need testing.
 - `HostAbiCompileOnly.kt`: ABI stub for Kotlin compilation only. The RAPP build recipe removes its four generated interface classes before D8. Parent APK loader provides real ABI at runtime.
