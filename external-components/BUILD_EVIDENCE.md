@@ -1,5 +1,15 @@
 # Independent component build evidence — 2026-10-10
 
+## 2026-10-11 — External Core v0.4 production extraction: Kotlin + D8 REAL PASS (NOT ACTIVATED)
+
+The registered on-device Kotlin compiler compiled **12 external Core source files**, with `state=success`, `exitCode=OK`, no diagnostics, using the current `compile-core.json`. Source includes production-derived transactional `.rapp` package manager, JSON/Rift++ adapter protocols, independent C:/D: volume mapping, user-grant-scoped FS capabilities and an independent typed session/QuickJS execution engine. `runtime.js` (external component builder RAPP source) carries the same 12-source recipe and labels future producer Core candidates `v0.4.0`.
+
+The compile-only APK classes **`RiftCoreComponentV1.class`**, **`RiftCoreExecutionViewV1.class`**, **`RiftHostQuickJsV1.class`**, **`RiftShellGraphicalComponentV1.class`**, and **`RiftShellPlatformServicesV1.class`** were stripped from the generated class directory; subsequent read-only class enumeration confirmed **zero** remaining `com/riftos/app/*.class` host stubs. Generic `riftbuild jvm-dex` returned `state=dexed`, **46 compiled class files**, single `classes.dex` **2,747,600 bytes**, SHA-256 **`9cce9fdf4dd90b04f976d4033927aa9d05df30229e76d024e193fed48482e861`**. Separate MCP file hash matched exactly.
+
+Preserved experimental classes and DEX **outside the tracked Git repo** at `workspace/tmp/rift-external-core-v04-20261011-build/riftbuild/core-dex/classes.dex`. This DEX is **not** an activated Core, does not overwrite the last old `/D:/Builds/Components/core` artifact, has no user-approved activation manifest, and is not evidence of Core process/device behavior. The signed RiftOS APK and signed Builder repository were **not edited**, and the user-controlled Patch B signed build/install workflow was not invoked.
+
+**Still blocked for qualified Core:** production native-buffer backend requires a published, narrowly versioned host execution service (APK V1 only exposes QuickJS); newly requested user-consent and remaining Android/build/network/clipboard/signing bridges have no independent release-approved API; real device install/uninstall and RAPP input/effect/state/backup-restore parity are not yet physically tested. `EXTERNAL_CORE_PROMOTION_PROVEN = false` remains intact. Do not activate the candidate to force a green proof.
+
 ## Host QuickJS service decision / source-compiled independent Core v0.3 checkpoint
 
 Installed signed **RiftOS #705** run `38106729002`, source `0353dabce740`, device-proved a normal **1,250,390-byte** (>1 MiB) RAPP JavaScript source by pack → install → run (3-node real Core surface) → clean uninstall, without touching its 4 existing applications. This is **embedded Core execution**, not independent external Core execution.

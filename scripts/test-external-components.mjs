@@ -30,13 +30,16 @@ assert.match(engine,/fun offer\(id: String, generation: Long, payload: JSONObjec
 assert.match(engine,/private fun dispatch\(s: Session, ticket: Ticket\)/);
 assert.match(engine,/private fun validateFrame\(frame: JSONObject\)/);
 assert.match(engine,/require\(s\.queue\.size < MAX_QUEUE\)\s*\{\s*"Core input queue full"\s*\}/);
-assert.match(engine,/External Core capability not independently authorized/);
+assert.match(engine,/effects\.execute\(s\.id, s\.permissions, effect\)/);
 assert.match(engine,/apk-host-quickjs-v1/);
 assert.match(engine,/private const val MAX_PROGRAM = 1024 \* 1024/);
 assert.match(engine,/rawProgram\.size <= MAX_PROGRAM/);
-assert.match(engine,/nextState\.size <= MAX_PROGRAM/);
+assert.match(engine,/nextState == null \|\| nextState\.size <= MAX_PROGRAM/);
 assert.match(engine,/bytes\.size <= MAX_PROGRAM/);
-assert.match(engine,/require\(kind in 1\.\.12 && target >= 0\)/);
+assert.match(engine,/require\(kind in 1\.\.10 && target >= 0\)/);
+assert.match(engine,/if \(kind in 1\.\.7\)/);
+assert.match(engine,/Interactive input requires focused RAPP and positive target/);
+assert.match(engine,/Host lifecycle event cannot target an app widget/);
 assert.match(engine,/apkOwnedCoreExecutorFallbackEnabled", false/);
 const hostQuickJs=host.slice(host.indexOf('object RiftHostQuickJsV1 {'), host.indexOf('/** E0 shell-side'));
 const stubQuickJs=stub.slice(stub.indexOf('object RiftHostQuickJsV1 {'),stub.indexOf('interface RiftShellGraphicalComponentV1'));
@@ -56,6 +59,42 @@ const coreLoader=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/a
 assert.match(coreLoader,/val ownCore = name\.startsWith\(PREFIX\)/);
 assert.match(coreLoader,/val kotlinSupport = name\.startsWith\("kotlin\."\)/);
 assert.match(coreLoader,/if \(ownCore\) \{[\s\S]*?application\.classLoader\.loadClass\(name\)/);
+const recipe=JSON.parse(read('compile-core.json'));
+const externalFiles=[
+ 'ExternalRiftAppAbi.kt','ExternalRiftRappJsonAdapter.kt',
+ 'ExternalRiftRappRiftppGenericAdapter.kt',
+ 'ExternalRiftRappRiftppWs15Adapter.kt','ExternalRiftCorePackageEvents.kt',
+ 'ExternalRiftCorePackageGrants.kt','ExternalRiftVolumePaths.kt',
+ 'IndependentRappPackagesV1.kt','IndependentRappEffectsV1.kt'
+];
+const ownership=fs.readFileSync(new URL('docs/SOURCE_OWNERSHIP.md',root),'utf8');
+for(const file of externalFiles){
+ assert.ok(recipe.sources.includes(file),'not compiled into external Core: '+file);
+ assert.ok(producer.includes("'"+file+"'"),'producer must build external Core module: '+file);
+ assert.equal(ownership.split('| `external-components/'+file+'` |').length-1,1,
+  'maintained source must have exactly one owner: '+file);
+ assert.match(read(file),/^package com\.riftos\.external\.core/m,
+  'external Core source must not define any APK class');
+}
+const manager=read('IndependentRappPackagesV1.kt');
+assert.match(manager,/class IndependentRappPackages/);
+assert.match(manager,/fun install\(artifact: File\): JSONObject/);
+assert.match(manager,/fun uninstall\(id: String\): JSONObject/);
+assert.match(manager,/RiftCorePackageGrants\.revokeAll\(appContext, id\)/);
+assert.doesNotMatch(manager,/RiftCoreRuntime\.|com\.riftos\.app\./);
+assert.match(core,/packageManager\(context\)\.install\(file\)/);
+assert.match(core,/packageManager\(context\)\.uninstall\(id\)/);
+const effects=read('IndependentRappEffectsV1.kt');
+assert.match(effects,/class IndependentRappEffects/);
+assert.match(effects,/setting:permissions:\$id/);
+assert.match(effects,/effect\.capability !in declared/);
+assert.match(effects,/Independent platform capability bridge not qualified/);
+assert.doesNotMatch(effects,/RiftCoreRuntime\.|RiftRappCapabilityBroker/);
+assert.match(engine,/RiftAppAdapters\.require\(metadata\.getString\("adapter"\)\)/);
+assert.match(engine,/adapter\.decodeOutput\(raw\)/);
+assert.match(engine,/adapter\.encodeEvent\(payload, event, seq\)/);
+assert.match(engine,/RiftAppExecutionKind\.QUICKJS/);
+assert.match(engine,/Native-buffer provider execution needs a qualified external Core host ABI/);
 assert.match(core,/private const val EXTERNAL_CORE_PROMOTION_PROVEN = false/);
 assert.match(core,/require\(EXTERNAL_CORE_PROMOTION_PROVEN\)/);
 assert.ok(producer.includes("'IndependentRappSessionsV1.kt'"), 'External Core build must contain its session engine');
@@ -74,4 +113,4 @@ for(const kind of ['core','shell']) {
 }
 const gradle=fs.readFileSync(new URL('android/app/build.gradle.kts',root),'utf8');
 assert.ok(!gradle.includes('external-components/'));
-console.log('4 host interface mirrors, host QuickJS V1 primitive, Core-owned sessions/state, 5 stripped stubs and protected manifests: source contract OK (NOT independent Core device acceptance)');
+console.log('External Core 12-source extracted package/adapter/capability pipeline ABI contract source PASS; native-buffer + consent bridges and real device qualification pending');

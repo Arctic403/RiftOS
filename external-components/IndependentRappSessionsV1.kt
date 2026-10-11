@@ -49,7 +49,8 @@ internal class IndependentRappSessions(
     private val context: Context,
     private val registry: IndependentRuntimeRegistry,
     private val checkedPackage: (String) -> JSONObject,
-    private val programRoot: File
+    private val programRoot: File,
+    private val effects: IndependentRappEffects
 ) {
     companion object {
         private const val MAX_APPS = 32
@@ -77,6 +78,8 @@ internal class IndependentRappSessions(
         val generation: Long,
         val vm: IndependentRuntimeRegistry,
         val runtime: ByteArray,
+        val adapter: RiftAppRuntimeAdapter,
+        val permissions: Set<String>,
         initialState: ByteArray
     ) {
         var state: ByteArray = initialState.copyOf()
@@ -100,7 +103,22 @@ internal class IndependentRappSessions(
     fun open(id: String): JSONObject {
         require(APP_ID.matches(id)) { "Invalid Core RAPP id" }
         val metadata = checkedPackage(id)
-        val vm = registry // Only the versioned host QuickJS engine can execute JS.
+        val vm = registry // APK QuickJS only; native-buffer requires separate host ABI.
+        val adapter = RiftAppAdapters.require(metadata.getString("adapter"))
+        require(metadata.getString("abi") == RiftAppAbi.SCHEMA &&
+            adapter.presentation == metadata.getString("presentation")) {
+            "Installed RAPP ABI/adapter/presentation mismatch"
+        }
+        require(adapter.executorKind == RiftAppExecutionKind.QUICKJS) {
+            "Native-buffer provider execution needs a qualified external Core host ABI"
+        }
+        val permissionsJson = metadata.optJSONArray("permissions") ?: JSONArray()
+        val permissions = (0 until permissionsJson.length())
+            .map { permissionsJson.getString(it) }.toSet()
+        require(permissions.size == permissionsJson.length() &&
+            permissions.all { it in RiftAppAbi.Capability.DECLARABLE }) {
+            "Installed RAPP declares invalid or duplicate capabilities"
+        }
         val folder = File(programRoot, id)
         require(folder.canonicalFile.parentFile == programRoot.canonicalFile &&
             !Files.isSymbolicLink(folder.toPath())) { "Unsafe RAPP package root" }
@@ -119,12 +137,21 @@ internal class IndependentRappSessions(
                 "Independent Core session limit reached"
             }
             s = Session(id, metadata.getString("name"), nextGeneration++,
-                vm, source, rawProgram)
+                vm, source, adapter, permissions, rawProgram)
             sessions[id] = s
             s.queue.addLast(Ticket(0, 0, intArrayOf(0, 0, 0, 0), "", ByteArray(0)))
             schedule(s)
         }
         return attached(s)
+    }
+
+    /** Core package replacement/uninstall invalidates the old attached generation. */
+    fun invalidateInstalled(id: String): Boolean = synchronized(monitor) {
+        val s = sessions.remove(id) ?: return@synchronized false
+        s.closed = true
+        s.queue.clear()
+        if (focused == id) focused = null
+        true
     }
 
     fun reattach(id: String, expected: Long): JSONObject = synchronized(monitor) {
@@ -162,7 +189,9 @@ internal class IndependentRappSessions(
     fun offer(id: String, generation: Long, payload: JSONObject): JSONObject {
         val kind = payload.getInt("kind")
         val target = payload.getInt("targetId")
-        require(kind in 1..12 && target >= 0) { "RAPP external input event invalid or reserved for Core" }
+        require(kind in 1..10 && target >= 0) {
+            "RAPP Shell input event invalid or reserved for Core"
+        }
         val args = intArrayOf(payload.getInt("arg0"), payload.getInt("arg1"),
             payload.getInt("arg2"), payload.getInt("arg3"))
         val text = payload.getString("text")
@@ -173,12 +202,12 @@ internal class IndependentRappSessions(
         synchronized(monitor) {
             s = active(id, generation)
             require(s.queue.size < MAX_QUEUE) { "Core input queue full" }
-            // Input events cannot be delivered to another application's
-            // surface, nor to a hidden/nonfocused editable widget.
-            require(focused == id) {
-                "Input requires focused RAPP window"
-            }
-            if (kind in 1..12) {
+            // Only interaction events target visible, focused nodes.
+            // Resize/resume/pause are host-level events with targetId=0.
+            if (kind in 1..7) {
+                require(focused == id && target > 0) {
+                    "Interactive input requires focused RAPP and positive target"
+                }
                 val nodes = s.frame?.optJSONArray("nodes") ?: error("RAPP has no frame")
                 var exists = false
                 for (i in 0 until nodes.length()) {
@@ -188,6 +217,8 @@ internal class IndependentRappSessions(
                     }
                 }
                 require(exists) { "Input target absent from current Core frame" }
+            } else {
+                require(target == 0) { "Host lifecycle event cannot target an app widget" }
             }
             s.queue.addLast(Ticket(kind, target, args, text, ByteArray(0)))
             schedule(s)
@@ -301,20 +332,20 @@ internal class IndependentRappSessions(
             seq = ++s.sequence
             state = s.state.copyOf()
         }
-        val envelope = JSONObject()
-            .put("schema", EVENT_SCHEMA)
-            .put("sequence", seq)
-            .put("stateBase64", Base64.encodeToString(state, Base64.NO_WRAP))
-            .put("event", JSONObject().put("kind", ticket.kind)
-                .put("targetId", ticket.targetId)
-                .put("arg0", ticket.args[0]).put("arg1", ticket.args[1])
-                .put("arg2", ticket.args[2]).put("arg3", ticket.args[3])
-                .put("text", ticket.text)
-                .put("bytesBase64", Base64.encodeToString(ticket.bytes, Base64.NO_WRAP)))
-            .toString().toByteArray(Charsets.UTF_8)
+        val payload = RiftAppAbi.RuntimePayload(
+            id = s.id, name = s.name, abi = RiftAppAbi.SCHEMA,
+            adapter = s.adapter.id, presentation = s.adapter.presentation,
+            permissions = s.permissions, program = state, runtime = s.runtime)
+        val event = RiftAppAbi.Event(
+            kind = ticket.kind, targetId = ticket.targetId,
+            arg0 = ticket.args[0], arg1 = ticket.args[1],
+            arg2 = ticket.args[2], arg3 = ticket.args[3],
+            text = ticket.text, bytes = ticket.bytes)
+        require(s.adapter.supportsEventKind(event.kind)) {
+            "RAPP adapter rejects unsupported input event"
+        }
+        val envelope = s.adapter.encodeEvent(payload, event, seq)
         require(envelope.size <= MAX_INPUT) { "RAPP event envelope oversized" }
-        // VM must itself enforce an execution deadline; the caller also
-        // enforces a bounded Java future timeout. This is not a VM sandbox.
         val runner = Executors.newSingleThreadExecutor { task ->
             Thread(task, "rift-external-js-event").apply { isDaemon = true }
         }
@@ -330,15 +361,19 @@ internal class IndependentRappSessions(
             }
         } finally { runner.shutdownNow() }
         require(raw.size in 1..MAX_OUTPUT) { "RAPP output oversized" }
-        val output = JSONObject(String(raw, Charsets.UTF_8))
-        require(output.getString("schema") == OUTPUT_SCHEMA) {
-            "Javascript output schema mismatch"
+        val decoded = s.adapter.decodeOutput(raw)
+        val nodes = JSONArray()
+        for (node in decoded.frame.nodes) {
+            nodes.put(JSONObject().put("kind", node.kind).put("id", node.id)
+                .put("parentId", node.parentId).put("x", node.x).put("y", node.y)
+                .put("width", node.width).put("height", node.height)
+                .put("z", node.z).put("flags", node.flags).put("text", node.text))
         }
-        val frame = validateFrame(output.getJSONObject("frame"))
-        val nextState = output.optString("stateBase64").takeIf { it.isNotBlank() }
-            ?.let { Base64.decode(it, Base64.DEFAULT) }
-        if (nextState != null) {
-            require(nextState.size <= MAX_PROGRAM) { "Next RAPP state exceeds bound" }
+        val frame = validateFrame(JSONObject()
+            .put("layout", decoded.frame.layout).put("nodes", nodes))
+        val nextState = decoded.nextProgram
+        require(nextState == null || nextState.size <= MAX_PROGRAM) {
+            "Next RAPP state exceeds bound"
         }
         synchronized(monitor) {
             if (s.closed) return
@@ -351,21 +386,17 @@ internal class IndependentRappSessions(
             s.revision++
             s.error = null
         }
-        // A Core-owned broker, not a view or APK singleton, must authorize
-        // host effects. Until independently approved policies exist, deny
-        // each effect explicitly via the normal HOST_EFFECT_RESULT envelope.
-        val effect = output.optJSONObject("effect") ?: return
+        // Core validates package identity and prior user grants. A shell view
+        // cannot authorize effects, or inject internal effect-result events.
+        val effect = decoded.effects.singleOrNull() ?: return
         require(ticket.depth < MAX_DEPTH) { "RAPP effect continuation depth exceeded" }
-        val id = effect.getInt("requestId")
-        require(id > 0 && effect.getString("capability").length in 1..64) {
-            "RAPP effect identity invalid"
-        }
+        val reply = effects.execute(s.id, s.permissions, effect)
         synchronized(monitor) {
             if (!s.closed && s.queue.size < MAX_QUEUE) {
-                s.queue.addFirst(Ticket(13, id,
-                    intArrayOf(0, 0, 0, 0),
-                    "External Core capability not independently authorized",
-                    ByteArray(0), ticket.depth + 1))
+                s.queue.addFirst(Ticket(13, effect.requestId,
+                    intArrayOf(if (reply.ok) 1 else 0, reply.token, 0, 0),
+                    if (reply.ok) reply.text else reply.error,
+                    reply.bytes.copyOf(), ticket.depth + 1))
             }
         }
     }

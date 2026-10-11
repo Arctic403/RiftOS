@@ -42,6 +42,7 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
     private val lock = Any()
     private var independentSessions: IndependentRappSessions? = null
     private var javascriptRegistry: IndependentRuntimeRegistry? = null
+    private var packagesOwner: IndependentRappPackages? = null
 
     override fun initialize(context: Context) {
         synchronized(lock) {
@@ -61,10 +62,17 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
             // Owning the catalogue in this DEX never starts the embedded
             // RiftCoreRuntime singleton; there is no implicit delegate.
             javascriptRegistry = IndependentRuntimeRegistry()
+            val broker = IndependentRappEffects(application) { id ->
+                packagesOwner?.handlesInstalled(id) == true
+            }
             independentSessions = IndependentRappSessions(
                 application, requireNotNull(javascriptRegistry),
-                { id -> checkedPackage(application, id) }, programRoot = programs
+                { id -> checkedPackage(application, id) },
+                programRoot = programs, effects = broker
             )
+            packagesOwner = IndependentRappPackages(application,
+                stopRunningApp = { id -> requireNotNull(independentSessions).invalidateInstalled(id) },
+                startRunningApp = { id -> requireNotNull(independentSessions).open(id) })
             app = application
             startedElapsedMs = SystemClock.elapsedRealtime()
         }
@@ -157,6 +165,11 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
         return requireNotNull(javascriptRegistry)
     }
 
+    private fun packageManager(context: Context): IndependentRappPackages {
+        context(context)
+        return requireNotNull(packagesOwner)
+    }
+
     private fun unavailable(operation: String): Nothing {
         // No fake "success"/frame or host-runtime proxy is permitted here.
         error("Independent Core $operation blocked: install/grant capability authority not yet independently proven")
@@ -194,11 +207,29 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
         return sessions(context).offer(id, generation, payload)
     }
 
-    override fun install(context: Context, artifact: String): JSONObject =
-        unavailable("install without independent grant/rollback authority")
+    override fun install(context: Context, artifact: String): JSONObject {
+        val display = artifact.trim().replace('\\', '/')
+        val full = when {
+            display.startsWith("/D:/Builds/") -> display
+            display.startsWith("D:/Builds/") -> "/$display"
+            else -> "/D:/Builds/" + display.trimStart('/')
+        }
+        val relative = RiftVolumePaths.normalizeDisplay(full)
+            .removePrefix("/D:/Builds/")
+        require(relative.isNotBlank() && !relative.startsWith("/")) {
+            "RAPP install artifact must be on D:/Builds"
+        }
+        val root = File(context(context).filesDir, "riftfs/documents/builds").canonicalFile
+        val file = File(root, relative).canonicalFile
+        require(file.parentFile != null &&
+            file.path.startsWith(root.path + File.separator)) {
+            "RAPP artifact escapes D:/Builds"
+        }
+        return packageManager(context).install(file)
+    }
 
     override fun uninstall(context: Context, id: String): JSONObject =
-        unavailable("uninstall without independent grant revocation")
+        packageManager(context).uninstall(id)
 
     override fun runningApps(context: Context): JSONArray =
         sessions(context).runningApps()

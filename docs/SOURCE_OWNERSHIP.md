@@ -27,6 +27,15 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `external-components/HostAbiCompileOnly.kt` | `docs/systems/android-host/PROTECTED_COMPONENT_FORMAT.md` |
 | `external-components/IndependentCoreV1.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` |
 | `external-components/IndependentRappSessionsV1.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/core-shell/README.md` |
+| `external-components/ExternalRiftAppAbi.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
+| `external-components/ExternalRiftRappJsonAdapter.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
+| `external-components/ExternalRiftRappRiftppGenericAdapter.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
+| `external-components/ExternalRiftRappRiftppWs15Adapter.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
+| `external-components/ExternalRiftCorePackageEvents.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
+| `external-components/ExternalRiftCorePackageGrants.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
+| `external-components/ExternalRiftVolumePaths.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
+| `external-components/IndependentRappPackagesV1.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
+| `external-components/IndependentRappEffectsV1.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
 | `external-components/IndependentGraphicalShellV1.kt` | `docs/systems/core-shell/README.md` |
 | `external-components/runtime.js` | `docs/systems/build-validation/README.md` |
 | `external-components/riftapp.json` | `docs/systems/android-host/PROTECTED_COMPONENT_FORMAT.md` |

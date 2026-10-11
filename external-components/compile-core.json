@@ -3,6 +3,15 @@
   "language": "kotlin",
   "sources": [
     "HostAbiCompileOnly.kt",
+    "ExternalRiftAppAbi.kt",
+    "ExternalRiftRappJsonAdapter.kt",
+    "ExternalRiftRappRiftppGenericAdapter.kt",
+    "ExternalRiftRappRiftppWs15Adapter.kt",
+    "ExternalRiftCorePackageEvents.kt",
+    "ExternalRiftCorePackageGrants.kt",
+    "ExternalRiftVolumePaths.kt",
+    "IndependentRappEffectsV1.kt",
+    "IndependentRappPackagesV1.kt",
     "IndependentRappSessionsV1.kt",
     "IndependentCoreV1.kt"
   ],
