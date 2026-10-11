@@ -1,5 +1,12 @@
 # Independent component build evidence — 2026-10-10
 
+## 2026-10-11 — external Core v0.6.1 repeat fs.write Cancel-path rejection, no file side effect
+
+After the first denied write, the user was directed to press `TEST FS.WRITE CONSENT` again on fresh-ID `rift-v061-consent-denial`, choose **Cancel**, and send the result. Their screenshot at 6:11 shows `CORE EFFECT RESULT fs.write DENIED/FAILED token=44 RAPP permission denied or expired` again. Independent MCP directory inspection after this repeat still found **only** `/D:/Workspace/tmp/v061-consent-denial-test/probe-data.txt`; no `probe-v2-write.txt` exists and no denied write reached storage. Live Core remained `independent-external-dex` candidate v0.6.1 PID 6869, unqualified and unpromoted; two app sessions attached, zero pending effects.
+
+**Evidence interpretation:** the repeat request rejected cleanly, and the negative effect result plus no-write outcome match the instructed Cancel test. The screenshot is *after* the prompt, not of the actual dialog/button press. Record the exact Cancel choice and repeat-dialog visibility as user-confirmed only if the user explicitly confirms them. Read-denial and permission expiry/revocation remain pending. No production Core acceptance, restart, or Recovery mutations.
+
+
 ## 2026-10-11 — independent external Core v0.6.1 fs.write DENY device proof PASS
 
 Under signed #722, the new-ID disposable `rift-v061-consent-denial` RAPP was installed and launched on the external Core. After the user-directed **Deny** branch for `TEST FS.WRITE CONSENT`, the user supplied a live screenshot showing `CORE EFFECT RESULT fs.write DENIED/FAILED token=44 RAPP permission denied or expired`. The screenshot reflects the fail-closed result on the real graphical RAPP, not a simulated response. Independent MCP `rift_stat` found no output file at `/D:/Workspace/tmp/v061-consent-denial-test/probe-v2-write.txt` (null), and the directory listing contained **only** the preexisting `probe-data.txt`. This verifies no write side effect occurred. Live `core status` still reports `owner=independent-external-dex`, v0.6.1 PID **6869**, `deviceQualificationComplete=false`, `readyForPromotion=false`; two RAPP sessions attached and no pending events.
