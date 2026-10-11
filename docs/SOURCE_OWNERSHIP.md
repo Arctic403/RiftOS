@@ -92,6 +92,8 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftRappQuickJsExecutor.kt` | `docs/systems/riftbuild/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftExternalRuntimeProviders.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCoreApplication.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftManualRecoveryActivity.kt` | `docs/systems/android-host/SIMPLE_BOOTSTRAP_RECOVERY_LOCK.md` + `docs/systems/android-host/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftManualRecoveryStore.kt` | `docs/systems/android-host/SIMPLE_BOOTSTRAP_RECOVERY_LOCK.md` + `docs/systems/android-host/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBootstrapHost.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftHostComponentAbiV1.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCoreCandidateSwitch.kt` | `docs/systems/android-host/README.md` + `docs/systems/android-host/E1_CORE_CANDIDATE.md` + `docs/systems/build-validation/README.md` |
@@ -217,6 +219,7 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `scripts/test-rift-app-import.mjs` | `docs/systems/build-validation/README.md` + apps |
 | `scripts/test-e1-core-closure.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |
 | `scripts/test-external-components.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/android-host/PROTECTED_COMPONENT_FORMAT.md` |
+| `scripts/test-simple-recovery.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/android-host/SIMPLE_BOOTSTRAP_RECOVERY_LOCK.md` |
 | `scripts/test-rift-dev-lab.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/dev-lab/README.md` |
 | `scripts/test-rift-raw-protocol.mjs` | `docs/systems/build-validation/README.md` + browser MCP compatibility |
 | `scripts/test-rift-workspace-records.mjs` | `docs/systems/build-validation/README.md` + workspace records |
