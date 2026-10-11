@@ -148,7 +148,7 @@ class RiftToolHost(
     fun tools(): JSONArray = JSONArray()
         .put(tool(
             "rift_shell_exec",
-            "Execute or manage native RiftShell commands through the process-owned host. auto and exec execute synchronously; submit starts an explicit bounded persistent shell job, managed by status, result and cancel. No legacy compiler/build command auto-routing. RiftShell batch and batch --dry-run remain DISABLED.",
+            "Execute or manage native RiftShell commands through the process-owned host. auto and exec execute synchronously; submit starts an explicit bounded persistent shell job, managed by status, result and cancel. No legacy compiler/build command auto-routing. RiftShell batch and batch --dry-run remain DISABLED; never call batch or batch --dry-run.",
             objectSchema(
                 JSONObject()
                     .put(
