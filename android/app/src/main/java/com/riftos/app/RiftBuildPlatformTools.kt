@@ -6,114 +6,19 @@ import java.io.File
 import java.security.MessageDigest
 
 /**
- * Thin platform command surface for external build providers and diagnostics.
+ * Embedded-Core-only RAPP install/uninstall migration fallback.
  *
- * No build recipe, prepared-tree, APK packing, or APK signing semantics live here.
+ * This retains the original signed APK's safe package operations while the
+ * separately installed external Core is under device qualification.
+ * No project-specific RiftBuild shell, compiler, APK pack/sign/verify or
+ * proof command dispatch belongs to this fallback.
  */
 class RiftBuildPlatformTools(context: Context) {
-    data class CommandResult(val output: String, val value: JSONObject)
-    private data class ProjectRef(val display: String, val file: File)
-
     private val appContext = context.applicationContext
     private val riftRoot = File(appContext.filesDir, "riftfs").apply { mkdirs() }.canonicalFile
-    private val workspaceRoot = File(riftRoot, "workspace").apply { mkdirs() }.canonicalFile
     private val artifactRoot = File(riftRoot, "documents/builds").apply { mkdirs() }.canonicalFile
-    private val buildLocal = RiftLocalBuildCapability(appContext)
     private val rappManager by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         RiftCoreRuntime.packages(appContext)
-    }
-    private val verifier = RiftApkV2Verifier()
-    private val installer = RiftBuildInstaller(appContext)
-    private val runtimeProviders = RiftCoreRuntime.runtimes(appContext)
-
-    fun executeShell(args: MutableList<String>, cwd: String): CommandResult {
-        val sub = args.removeFirstOrNull()?.lowercase() ?: "help"
-        val value = when (sub) {
-            "help" -> JSONObject()
-                .put("schema", "riftbuild-platform-help-v1")
-                .put(
-                    "usage",
-                    "riftbuild compiler-status <project> | compiler-run <project> <compiler-id> <request.json> | " +
-                        "jvm-status | jvm-dex <project> <classes-dir> <output-dir> [minSdk] | runtime-status | " +
-                        "pack-rapp <project> | install-rapp <artifact.rapp> | uninstall-rapp <id> | launch-rapp <id> | rapp-list | " +
-                        "verify <signed-apk> | install-proof <signed-apk> | install-status | launch-proof"
-                )
-
-            "compiler-status" -> buildLocal.compilerStatus(
-                args.firstOrNull() ?: error("usage: riftbuild compiler-status <project>"),
-                cwd
-            )
-
-            "compiler-run" -> buildLocal.compilerRun(
-                args.firstOrNull()
-                    ?: error("usage: riftbuild compiler-run <project> <compiler-id> <request.json>"),
-                args.getOrNull(1)
-                    ?: error("usage: riftbuild compiler-run <project> <compiler-id> <request.json>"),
-                args.getOrNull(2)
-                    ?: error("usage: riftbuild compiler-run <project> <compiler-id> <request.json>"),
-                cwd
-            )
-
-            "jvm-status" -> buildLocal.jvmToolchainStatus()
-            "runtime-status" -> runtimeProviders.status()
-
-            "jvm-dex" -> buildLocal.dexJvmClasses(
-                args.firstOrNull()
-                    ?: error("usage: riftbuild jvm-dex <project> <classes-dir> <output-dir> [minSdk]"),
-                args.getOrNull(1)
-                    ?: error("usage: riftbuild jvm-dex <project> <classes-dir> <output-dir> [minSdk]"),
-                args.getOrNull(2)
-                    ?: error("usage: riftbuild jvm-dex <project> <classes-dir> <output-dir> [minSdk]"),
-                args.getOrNull(3)?.toIntOrNull() ?: 26,
-                cwd
-            )
-
-            "pack-rapp" -> packRapp(
-                args.firstOrNull() ?: error("usage: riftbuild pack-rapp <project>"),
-                cwd
-            )
-
-            "install-rapp" -> installRapp(
-                args.firstOrNull() ?: error("usage: riftbuild install-rapp <artifact.rapp>")
-            )
-
-            "uninstall-rapp" -> {
-                require(args.size == 1) { "usage: riftbuild uninstall-rapp <id>" }
-                uninstallRapp(args.single())
-            }
-
-            "launch-rapp" -> launchRapp(
-                args.firstOrNull() ?: error("usage: riftbuild launch-rapp <id>")
-            )
-
-            "rapp-list" -> JSONObject()
-                .put("schema", "riftbuild-rapp-list-v1")
-                .put("apps", rappManager.listInstalled())
-
-            "verify" -> verifyArtifact(
-                args.firstOrNull() ?: error("usage: riftbuild verify <signed-apk>")
-            )
-
-            "install-proof" -> installProof(
-                args.firstOrNull() ?: error("usage: riftbuild install-proof <signed-apk>")
-            )
-
-            "install-status" -> installer.status()
-            "launch-proof" -> installer.launchProof()
-            else -> error("unknown riftbuild platform command: $sub")
-        }
-        return CommandResult(value.toString(2), value)
-    }
-
-    @Synchronized
-    fun packRapp(project: String, cwd: String = "/D:/Workspace"): JSONObject {
-        val ref = resolveProject(project, cwd)
-        val packed = rappManager.pack(ref.file)
-        return JSONObject(packed.receipt.toString())
-            .put("runId", runId())
-            .put("project", ref.display)
-            .put("artifact", artifactDisplay(packed.artifact))
-            .put("createdAt", System.currentTimeMillis())
     }
 
     @Synchronized
@@ -131,85 +36,6 @@ class RiftBuildPlatformTools(context: Context) {
         rappManager.uninstall(id)
             .put("runId", runId())
             .put("createdAt", System.currentTimeMillis())
-
-    fun launchRapp(id: String): JSONObject =
-        rappManager.launch(id)
-            .put("runId", runId())
-            .put("createdAt", System.currentTimeMillis())
-
-    fun verifyArtifact(rawArtifact: String): JSONObject {
-        val signedApk = resolveArtifact(rawArtifact)
-        require(signedApk.name.endsWith("-signed.apk")) {
-            "RiftBuild verify accepts only *-signed.apk artifacts"
-        }
-        val verified = verifier.verify(signedApk)
-        return JSONObject()
-            .put("format", "riftbuild-apk-v2-verification-receipt-v1")
-            .put("state", "verified-v2")
-            .put("runId", runId())
-            .put("artifact", artifactDisplay(signedApk))
-            .put("artifactSha256", verified.apkSha256)
-            .put("artifactBytes", signedApk.length())
-            .put("scheme", 2)
-            .put("signatureAlgorithmId", "0x0103")
-            .put("certificateSha256", verified.certificateSha256)
-            .put("publicKeySha256", verified.publicKeySha256)
-            .put("contentDigestSha256", verified.contentDigestSha256)
-            .put("signingBlockBytes", verified.signingBlockBytes)
-            .put("signatureVerified", true)
-            .put("verifiedAt", System.currentTimeMillis())
-    }
-
-    @Synchronized
-    fun installProof(rawArtifact: String): JSONObject {
-        val signedApk = resolveArtifact(rawArtifact)
-        require(signedApk.name.endsWith("-signed.apk")) {
-            "RiftBuild install-proof accepts only *-signed.apk artifacts"
-        }
-        val verified = verifier.verify(signedApk)
-        return installer.installProof(signedApk, verified)
-            .put("format", "riftbuild-install-proof-v1")
-            .put("runId", runId())
-            .put("artifact", artifactDisplay(signedApk))
-            .put("artifactSha256", verified.apkSha256)
-            .put("certificateSha256", verified.certificateSha256)
-            .put("signatureVerified", true)
-    }
-
-    private fun resolveProject(raw: String, cwd: String): ProjectRef {
-        require(raw.isNotBlank()) { "RAPP project path is required" }
-        val rawDisplay = workspaceAlias(raw)
-        val cwdDisplay = workspaceAlias(cwd)
-        val joined = if (rawDisplay.startsWith("/")) {
-            rawDisplay
-        } else {
-            val base = if (
-                cwdDisplay == "/D:/Workspace" ||
-                cwdDisplay.startsWith("/D:/Workspace/")
-            ) cwdDisplay else "/D:/Workspace"
-            base.trimEnd('/') + "/" + rawDisplay
-        }
-        val display = RiftVolumePaths.normalizeDisplay(joined)
-        require(display == "/D:/Workspace" || display.startsWith("/D:/Workspace/")) {
-            "RAPP projects must live under D:/Workspace"
-        }
-        val file = File(riftRoot, RiftVolumePaths.resolveRelative(display)).canonicalFile
-        require(confinedTo(workspaceRoot, file)) { "RAPP project escaped workspace" }
-        require(file.isDirectory) { "RAPP project is not a directory: $display" }
-        return ProjectRef(display, file)
-    }
-
-    private fun workspaceAlias(raw: String): String {
-        val value = raw.trim().replace('\\', '/')
-        return when {
-            value == "/workspace" || value == "workspace" -> "/D:/Workspace"
-            value.startsWith("/workspace/") ->
-                "/D:/Workspace/" + value.removePrefix("/workspace/")
-            value.startsWith("workspace/") ->
-                "/D:/Workspace/" + value.removePrefix("workspace/")
-            else -> value
-        }
-    }
 
     private fun resolveArtifact(raw: String): File {
         require(raw.isNotBlank()) { "RiftBuild artifact path is required" }

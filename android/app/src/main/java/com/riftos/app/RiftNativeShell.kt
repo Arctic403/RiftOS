@@ -56,16 +56,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         ArrayBlockingQueue<Runnable>(8)
     )
     private val watchdog = Executors.newSingleThreadScheduledExecutor()
-    private val headlessJs = RiftHeadlessJsRuntime(appContext)
     private val services = RiftNativeShellServices(appContext)
-    // Retired proof/build debug paths must not eagerly create embedded Core
-    // while an independently selected external Core owns all live RAPP state.
-    private val riftBuild by lazy {
-        require(!RiftHostCoreComponents.status().optBoolean("externalCoreEnabled", false)) {
-            "Legacy RiftBuild Core coupling unavailable under independent external Core"
-        }
-        RiftCoreRuntime.buildPlatform(appContext)
-    }
     private val alternateShellClientLazy = lazy {
         require(!RiftHostCoreComponents.status().optBoolean("externalCoreEnabled", false)) {
             "Legacy alternate surface proof unavailable under independent external Core"
@@ -421,15 +412,8 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
                     "workspace [cd|info|ls|status|push]\n" +
                     "core status|sessions|surfaces|focus|apps|app-start|app-stop|alt-list|alt-attach|alt-render|alt-detach|alt-graphic-open|ipc-view   [CORE / ALT SHELL]\n" +
-                    "riftbuild compiler-status|compiler-run|jvm-status|jvm-dex|runtime-status|pack-rapp|install-rapp|uninstall-rapp|launch-rapp|rapp-list|verify|install-proof|install-status|launch-proof   [GENERIC / BOUNDED]\n" +
                     "riftcrash help|status|start|capture|latest|reset [package]   [LOCALHOST DIAGNOSTIC BRIDGE]\n" +
-                    "qjs help|version|eval|run   [BOUNDED HEADLESS QUICKJS / READ-ONLY RIFTFS]\n" +
-                    "semx help|version|self-test|check|dump-graph|dump-plan|dump-ir|emit-arm32-proof|emit-arm32-runtime   [SEMNEXIS V0 / HEADLESS QUICKJS]\n" +
-                    "riftpp help|version|self-test|check|compile|inspect|run|exec|run-stateful|exec-stateful|run-software|exec-software   [CORE V1 / HEADLESS QUICKJS]\n" +
-                    "rift-tool gate0-verify   [ARCHIVAL EXACT-REFERENCE CHECK]\n" +
-                    "rift-tool semantic-compat   [ONGOING SEMANTIC COMPATIBILITY CHECK]\n" +
-                    "rift-tool text-model-benchmark   [FIXED UTF-16 / UTF-8 DEVICE BENCHMARK]\n" +
-                    "Legacy shell-only services fail explicitly; no renderer compatibility fallback exists.",
+                    "Project-specific language/tool CLIs are not APK built-ins; use installed RAPPs/providers.",
                 cwd,
                 nativeResult(command)
             )
@@ -475,7 +459,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     .put("nativeCommands", JSONArray(listOf(
                         "help", "pwd", "cd", "home", "drives", "df", "sysinfo", "native", "uptime", "version", "ps", "kill", "apps", "permissions",
                         "ls", "tree", "stat", "cat", "head", "tail", "write", "touch", "mkdir", "cp", "mv", "rm", "zip", "unzip", "open", "browser", "workspace cd", "workspace info",
-                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "riftbuild", "riftcrash", "qjs", "semx", "riftpp", "rift-tool"
+                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "riftcrash"
                     )))
                 ShellOutcome(info.toString(2), cwd, info)
             }
@@ -592,27 +576,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 }
                 ShellOutcome(state.toString(2), cwd, state)
             }
-            "riftbuild" -> {
-                val value = riftBuild.executeShell(args, cwd)
-                ShellOutcome(value.output, cwd, value.value)
-            }
             "riftcrash" -> executeRiftCrashCommand(cwd, args)
-            "qjs" -> {
-                val value = headlessJs.executeQuickJs(args, cwd)
-                ShellOutcome(value.output, cwd, value.result)
-            }
-            "semx" -> {
-                val value = headlessJs.executeSemnexis(args, cwd)
-                ShellOutcome(value.output, cwd, value.result)
-            }
-            "riftpp" -> {
-                val value = headlessJs.executeRiftpp(args, cwd)
-                ShellOutcome(value.output, cwd, value.result)
-            }
-            "rift-tool" -> {
-                val value = headlessJs.executeDeveloperTool(args)
-                ShellOutcome(value.output, cwd, value.result)
-            }
             "mount", "umount" -> throw IllegalStateException("Legacy shell mount entry point is retired during native Files migration; no renderer fallback exists.")
             "rift" -> throw IllegalStateException("Legacy RiftLocalPlatform shell wrapper is retired; use native Git, Workspace Records, Dev Lab and fixed native build/training services.")
             else -> throw IllegalArgumentException("unsupported native RiftShell command: $command")

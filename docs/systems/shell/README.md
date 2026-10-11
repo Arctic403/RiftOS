@@ -1,5 +1,10 @@
 # RiftShell
 
+## 2026-10-11 — current shell ownership after legacy language CLI retirement
+
+The native shell now provides generic OS commands and MCP/native shell access, not a bundled `riftbuild`, `qjs`, `riftpp`, `semx`, or `rift-tool` language/build CLI. `RiftHeadlessJsRuntime.kt` was removed from the next APK source. Generic host execution, independent external Core, installable RAPPs, platform `build.local`, D8, signing and Recovery remain separate and available. The old language projects remain reference/compiler source outside the signed APK. This is an **unsigned source checkpoint**, not a device-proof claim for a new APK; the prior documentation below describes earlier implementations.
+
+
 ## Verification status
 
 **VERIFIED AGAINST CURRENT SOURCE — 2026-09-19.**

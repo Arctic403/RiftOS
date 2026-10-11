@@ -42,9 +42,7 @@ for (const file of [...new Set(syntaxFiles)].sort()) {
 const manifest = read('android/app/src/main/AndroidManifest.xml');
 for (const required of [
   'android.permission.REQUEST_INSTALL_PACKAGES',
-  'android:name=".RiftBuildInstallReceiver"',
   'android:exported="false"',
-  'android.intent.action.PACKAGE_FIRST_LAUNCH',
 ]) if (!manifest.includes(required)) fail(`Android RiftBuild install contract is missing ${required}`);
 // C0.2: RiftOS no longer predeclares either project editor as a package dependency.
 for (const editorPackage of ["com.riftpp.editor", "com.codynex.editor"]) {
@@ -142,9 +140,6 @@ if (JSON.stringify(declaredKotlin) !== JSON.stringify(actualKotlin)) {
 }
 if (!rootGradle.includes('org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.10')) fail('Android Kotlin compiler toolchain is not pinned to 2.4.10');
 for (const required of [
-  'include("src/riftpp-core.js")',
-  'include("src/riftvm.js")',
-  'include("src/semnexis-bootstrap.js")',
   'validateRiftBrowserWebViewOwnership',
   'RiftOS Android source snapshot is not exact',
   'Actual WebKit dependencies/WebView XML are allowed only in',
@@ -157,19 +152,17 @@ for (const required of [
   'io.github.dokar3:quickjs-kt:1.0.14',
   'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0',
 ]) if (!gradle.includes(required)) fail(`Android native/headless Gradle contract is missing ${required}`);
-for (const retired of ['include("index.html")', 'include("styles.css")', 'include("src/**")', 'include("workspace-live/**")']) {
+for (const retired of ['include("index.html")', 'include("styles.css")', 'include("src/**")', 'include("workspace-live/**")', 'include("src/riftpp-core.js")', 'include("src/riftvm.js")', 'include("src/semnexis-bootstrap.js")', 'RiftHeadlessJsRuntime.kt']) {
   if (gradle.includes(retired)) fail(`retired trusted-shell asset packaging returned: ${retired}`);
 }
-for (const dependency of ['verifyRiftOsAndroidSources', 'validateRiftBrowserWebViewOwnership', 'syncRiftOsWebAssets']) {
+for (const dependency of ['verifyRiftOsAndroidSources', 'validateRiftBrowserWebViewOwnership', 'pruneRetiredWebAssets', 'syncRiftBuildKotlinToolchain', 'syncRiftBuildCompilerSeeds']) {
   if (!preBuildBlock.includes(`dependsOn(${dependency})`)) fail(`Gradle preBuild is missing dependency ${dependency}`);
 }
 
 const main = read(`${kotlinDir}/MainActivity.kt`);
 const nativeShell = read(`${kotlinDir}/RiftNativeShell.kt`);
 const localAgentBatch = read(`${kotlinDir}/RiftLocalAgentBatch.kt`);
-const buildInstaller = read(`${kotlinDir}/RiftBuildInstaller.kt`);
-if (!buildInstaller.includes('class RiftBuildInstallReceiver : BroadcastReceiver()')) fail('RiftBuild manifest receiver source is missing');
-const headless = read(`${kotlinDir}/RiftHeadlessJsRuntime.kt`);
+if (manifest.includes('RiftBuildInstallReceiver') || manifest.includes('RiftBuildInstallActivity')) fail('retired RiftBuild APK installer component returned to manifest');
 const runtime = read(`${kotlinDir}/RiftMcpRuntime.kt`);
 const cliEvents = read(`${kotlinDir}/RiftMcpEventBus.kt`);
 const relayClient = read(`${kotlinDir}/RiftMcpRelayClient.kt`);
@@ -1771,9 +1764,10 @@ for (const file of ['RiftCorePackageEvents.kt', 'RiftCorePackageGrants.kt']) {
     fail(`C1.1-P mandatory Core package source missing: ${file}`);
   }
 }
-if (!platformBuild.includes('"uninstall-rapp" ->') ||
-    !platformBuild.includes('rappManager.uninstall(id)')) {
-  fail('C1.1-P shell uninstall must route to Core package manager');
+if (!platformBuild.includes('fun uninstallRapp(id: String)') ||
+    !platformBuild.includes('rappManager.uninstall(id)') ||
+    platformBuild.includes('fun executeShell(')) {
+  fail('C1.1-P embedded package fallback must delegate uninstall to Core without legacy CLI');
 }
 
 // C0.2.5 generic external runtime-provider boundary. No project-specific
@@ -1799,8 +1793,8 @@ if (!manifest.includes('<action android:name="com.riftos.runtime.EXECUTE_V1" />'
 if (!gradle.includes('"src/main/java/com/riftos/app/RiftExternalRuntimeProviders.kt"')) {
   fail('external runtime provider is not Gradle-mandatory');
 }
-for (const required of ['"runtime-status" -> runtimeProviders.status()', 'RiftCoreRuntime.runtimes(appContext)']) {
-  if (!platformBuild.includes(required)) fail(`generic runtime status command missing: ${required}`);
+if (platformBuild.includes('"runtime-status" ->') || platformBuild.includes('RiftCoreRuntime.runtimes(appContext)')) {
+  fail('retired runtime-status shell dispatcher returned to embedded package fallback');
 }
 for (const retiredPkg of ['com.riftpp.editor', 'com.codynex.editor']) {
   if (runtimeProviders.includes(retiredPkg)) fail(`provider registry hardcodes retired project identity: ${retiredPkg}`);
@@ -1920,43 +1914,26 @@ if (!nativeShell.includes('.put("webViewRequired", false)')) fail('native RiftSh
 if (/"(?:riftpp-editor|codynex-editor)"\s*->|execute(?:Riftpp|Codynex)EditorCommand|usage: (?:riftpp-editor|codynex-editor)/.test(nativeShell)) {
   fail('project-owned editor command parser returned to RiftShell');
 }
-for (const required of ['"riftbuild" ->', '"qjs" ->', '"git" ->', '"ps" ->', '"apps" ->', '"open" ->', '"permissions" ->', 'cancelAllShellJobs("Native RiftShell closed")']) {
+for (const required of ['"git" ->', '"ps" ->', '"apps" ->', '"open" ->', '"permissions" ->', 'cancelAllShellJobs("Native RiftShell closed")']) {
   if (!nativeShell.includes(required)) fail('generic OS shell command was lost during editor ownership cleanup: ' + required);
 }
-if (!nativeShell.includes('headlessJs.executeRiftpp(args, cwd)')) fail('Rift++ is not routed through the headless runtime');
-if (!nativeShell.includes('headlessJs.executeSemnexis(args, cwd)')) fail('Semnexis is not routed through the headless runtime');
-if (!nativeShell.includes('dump-ir|emit-arm32-proof|emit-arm32-runtime')) fail('Semnexis IR/backend shell surface is missing');
-if (!nativeShell.includes('headlessJs.executeQuickJs(args, cwd)')) fail('bounded qjs is not routed through the headless runtime');
+// Retired project-owned build/language shell surfaces must not be restored.
+for (const retired of ['"riftbuild" ->', '"qjs" ->', '"semx" ->', '"riftpp" ->', '"rift-tool" ->', 'headlessJs.', 'RiftCoreRuntime.buildPlatform(appContext)', 'riftbuild compiler-status|']) {
+  if (nativeShell.includes(retired)) fail('retired APK shell command resurfaced: ' + retired);
+}
 if (/riftclang|RiftNativeToolchain|nativeToolchain/.test(nativeShell)) fail('retired native Semnexis compiler path returned');
 if (/compatibilityFallback|RiftShellBridge/.test(nativeShell) || hasWebKitDependency(nativeShell)) fail('native RiftShell regained renderer fallback authority');
 if (!runtime.includes('private var nativeShell: RiftNativeShell?') || !runtime.includes('fun shellExecutor(): RiftShellExecutor? = nativeShell')) fail('MCP does not retain process-owned native shell authority');
 if (/registerShellBridge|setCompatibilityFallback|clearCompatibilityFallback/.test(runtime)) fail('MCP runtime regained shell-WebView fallback wiring');
 
-for (const required of ['quickJs {', 'preparedVmSource()', 'preparedCoreSource()', 'preparedSemnexisSource()', 'src/riftpp-core.js', 'src/riftvm.js', 'src/semnexis-bootstrap.js']) {
-  if (!headless.includes(required)) fail(`headless Rift++ runtime is missing ${required}`);
-}
-if (hasWebKitDependency(headless) || /ProcessBuilder|Runtime\.getRuntime|Socket\(/.test(headless)) fail('headless Rift++ runtime gained renderer/process/socket authority');
+// The old headless QuickJS/Rift++/Semnexis host and its bundled scripts are retired.
+if (kotlinFiles.some(file => file.endsWith('/RiftHeadlessJsRuntime.kt'))) fail('retired headless language host returned to APK');
 const semnexisSource = read('src/semnexis-bootstrap.js');
 for (const required of ['SEMNEXIS_NATIVE_IR_V0', 'SNIRV0', 'SNIRV7', 'NATIVE_IR_BINARY_VERSION_V7', 'encodeNativeIRV2', 'decodeNativeIRV2', 'encodeNativeIRV3', 'decodeNativeIRV3', 'encodeNativeIRV4', 'decodeNativeIRV4', 'encodeNativeIRV5', 'decodeNativeIRV5', 'encodeNativeIRV6', 'decodeNativeIRV6', 'encodeNativeIRV7', 'decodeNativeIRV7', 'zext.u8.i32', 'Slice<u8>', 'slice.len', 'slice.get.u8', 'record.make', 'record.get', 'ret.record', 'phi.record', 'MAX_SEMNEXIS_FLAT_RECORD_WORDS', 'arm32LdrbReg', 'MAX_SEMNEXIS_TYPE_DEPTH', 'SEMNEXIS_ARM32_ELF_PROOF_V0', 'SEMNEXIS_ARM32_RUNTIME_ELF_V0', 'verifyNativeIREffectsAndCapabilities', 'verifyArm32RuntimeElfStructureV0', 'source IR is required for canonical verification', 'MAX_SEMNEXIS_SOURCE_CHARS', 'MAX_SEMNEXIS_EXPRESSION_DEPTH', 'MAX_SEMNEXIS_CFG_BLOCKS', 'MAX_ARM32_RUNTIME_ELF_BYTES', 'advisory-correlation-id-v0', 'linear-scan-r4-r7-v0', 'cfg-spill-v0', 'verifyNativeIRControlFlow', 'phi.i32', 'br.cmp.lt', 'loop_backedge', 'buildArm32RuntimeDivHelperV0', "checkedArithmetic:['add','sub','mul','div']", 'constantEvaluated:false', 'runtimeLowered:true', 'generated-artifact-not-executed-from-riftfs']) {
   if (!semnexisSource.includes(required)) fail(`Semnexis compiler/backend contract is missing ${required}`);
 }
-if (!headless.includes('/documents/builds/Semnexis/semx-arm32-proof.elf') ||
-    !headless.includes('/documents/builds/Semnexis/semx-arm32-runtime.elf') ||
-    !headless.includes('__rift_write_semnexis_binary')) fail('Semnexis fixed ARM32 artifact writer is missing');
-for (const required of ['MAX_SEMNEXIS_SOURCE_BYTES', 'MAX_SEMNEXIS_OUTPUT_CHARS', 'semnexis-bootstrap-self-test/17', 'sliceIrBinaryFormat', 'arm32SliceBytes', 'recordIrBinaryFormat', 'arm32RecordBytes', 'projectionIrBinaryFormat', 'arm32ProjectionBytes', 'recordConditionalIrBinaryFormat', 'arm32RecordConditionalBytes', 'recordLoopIrBinaryFormat', 'arm32RecordLoopBytes', 'decimalIrBinaryFormat', 'arm32DecimalBytes', 'decimalZextCount', 'hardeningDerivedEffects', 'hardeningCanonicalMachineVerify', 'hardeningExpressionBudget']) {
-  if (!headless.includes(required)) fail(`Semnexis hardening host contract is missing ${required}`);
-}
 const packageJson = read('package.json');
 if (!packageJson.includes('test-semnexis-arm32-exec.mjs')) fail('Semnexis independent ARM32 machine execution regression is not wired into npm check');
-const qjsStart = headless.indexOf('fun executeQuickJs(args: List<String>, cwd: String): CommandResult');
-const qjsEnd = headless.indexOf('fun executeDeveloperTool(args: List<String>): CommandResult', qjsStart);
-if (qjsStart < 0 || qjsEnd <= qjsStart) fail('bounded qjs implementation is missing');
-const qjsSlice = headless.slice(qjsStart, qjsEnd);
-for (const required of ['QJS_EVALUATION_TIMEOUT_MS', 'MAX_QJS_SOURCE_BYTES', 'MAX_QJS_TOTAL_BYTES', 'MAX_QJS_FILES', 'MAX_QJS_OUTPUT_BYTES', 'function("__rift_qjs_read_text")', '.put("riftFsWrite", false)', '.put("processAuthority", false)', '.put("networkAuthority", false)', '.put("androidAuthority", false)']) {
-  if (!qjsSlice.includes(required)) fail(`bounded qjs contract is missing ${required}`);
-}
-if (/__rift_write_text|ProcessBuilder|Runtime\.getRuntime|Socket\(|startActivity|nativeGit/.test(qjsSlice)) fail('bounded qjs gained write/process/socket/Android/Git authority');
-
 if (!browserWindow.includes('WebChromeClient.FileChooserParams') || !browserWindow.includes('onActivityResult(')) fail('RiftBrowser does not own its file chooser lifecycle');
 if (!browserHost.includes('appOrigin(app.id)') || !browserHost.includes('https://app-$token.riftos.local') || !browserHost.includes('WebViewCompat.addWebMessageListener')) fail('installed RiftBrowser app host origin/capability bridge is incomplete');
 if (browserBridge.includes('RiftShellBridge') || browserBridge.includes('rift_shell_result')) fail('browser compatibility bridge regained RiftShell execution authority');
@@ -1971,10 +1948,6 @@ const vm = read('src/riftvm.js');
 if (!riftpp.includes("RIFTPP_CORE_VERSION='0.10.0-bootstrap'") || !riftpp.includes('MAX_VEC_CAPACITY=256') || !riftpp.includes('MAX_BUFFER_CAPACITY=100000') || !riftpp.includes('MAX_SOURCE_CODE_UNITS=4*1024*1024') || !riftpp.includes('MAX_STRING_BUILDER_UNITS=4*1024*1024') || !riftpp.includes("BUILTIN_VALUE_TYPES=new Set(['SourceText','TextCursor'])") || !riftpp.includes("['Vec','Buffer','Slice','StringBuilder','Option','Result']")) fail('Rift++ Core 0.10.0 text/byte/storage contract regressed');
 if (!riftpp.includes("SUPPORTED_PRIMITIVES=new Set(['unit','bool','u8','u32','s32','f64','string'])") || !riftpp.includes("BYTE_BUILTINS=new Set(['u8_to_u32','u8_from_u32'])") || !riftpp.includes("emit({op:'u8_to_u32'})") || !riftpp.includes("emit({op:'u8_from_u32'})") || !vm.includes("u8:[0n,255n]") || !vm.includes("case'u8_to_u32'") || !vm.includes("case'u8_from_u32'")) fail('Rift++ native u8 byte substrate regressed');
 if (!vm.includes('maxVecCapacity:256') || !vm.includes('maxBufferCapacity:100000') || !vm.includes('maxSourceTextCodeUnits:4*1024*1024') || !vm.includes('maxStringBuilderUnits:4*1024*1024') || !vm.includes('function canonicalUtf8ByteLength(text)') || !vm.includes("'source_text','source_code_unit_len','source_utf8_byte_len','source_cursor','source_slice','source_to_string'") || !vm.includes("'parse_u32','parse_s32','parse_f64','format_u32','format_s32','format_f64'") || !vm.includes("RIFT_VM_ABI='riftvm-1'")) fail('RiftVM ABI/text/numeric contract regressed');
-if (!headless.includes("schema:'riftpp-shell-self-test/3'") || !headless.includes('let max: u8 = 255') || !headless.includes('Buffer<u8, 8>') || !headless.includes('u8_from_u32(256)') || !headless.includes("includes('u8 overflow')")) fail('Rift++ bounded u8 self-test proof regressed');
-if (!headless.includes("schema: 'riftpp-text-model-benchmark-v2'") || !headless.includes("alternateCandidate: 'utf8-bytes-plus-code-unit-index'") || !headless.includes('utf8IndexBuildMs') || !headless.includes('lexerLike') || !headless.includes('codeUnitRandomAccess')) fail('Rift++ text-model benchmark v2 contract regressed');
-if (!headless.includes('const input = Array.from(view, value => value & 255);') || !headless.includes('const raw = __rift_sha256(input);') || !headless.includes('return out.buffer;')) fail('Rift++ SHA-256 typed-array bridge regressed');
-if (!headless.includes('private fun canonicalUtf8Bytes(value: String): ByteArray') || !headless.includes('const out = new Uint8Array(raw.length);') || !headless.includes('out[i] = raw[i] & 255;') || headless.includes('.toByteArray(Charsets.UTF_8)')) fail('Rift++ headless UTF-8 canonicalization contract regressed');
 
 for (const asset of ['riftbrowser-mcp-app.js', 'adapters/ai-adapter-registry.js']) {
   requireFile(`android/app/src/main/assets/${asset}`, 'browser injection asset is missing');

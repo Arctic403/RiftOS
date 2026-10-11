@@ -138,8 +138,6 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftBrowserWindow.kt",
         "src/main/java/com/riftos/app/RiftBoundedAsync.kt",
         "src/main/java/com/riftos/app/RiftDebugHub.kt",
-        "src/main/java/com/riftos/app/RiftApkV2Verifier.kt",
-        "src/main/java/com/riftos/app/RiftBuildInstaller.kt",
         "src/main/java/com/riftos/app/RiftAppDiagnosticBridge.kt",
         "src/main/java/com/riftos/app/RiftJvmDexService.kt",
         "src/main/java/com/riftos/app/RiftLocalBuildCapability.kt",
@@ -149,7 +147,6 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftMcpEventBus.kt",
         "src/main/java/com/riftos/app/RiftDiffEngineV2.kt",
         "src/main/java/com/riftos/app/RiftFileIdentityV2.kt",
-        "src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt",
         "src/main/java/com/riftos/app/RiftLlmDevClient.kt",
         "src/main/java/com/riftos/app/RiftLocalAgentBatch.kt",
         "src/main/java/com/riftos/app/RiftMcpActivity.kt",
@@ -245,13 +242,11 @@ val verifyRiftOsAndroidSources by tasks.registering {
         }
     }
 }
-val syncRiftOsWebAssets by tasks.registering(Sync::class) {
-    from(rootProject.projectDir.parentFile) {
-        include("src/riftpp-core.js")
-        include("src/riftvm.js")
-        include("src/semnexis-bootstrap.js")
-    }
-    into(layout.buildDirectory.dir("generated/riftosAssets/www"))
+
+// Remove assets left behind by older builds before Android packages generated assets.
+// Active registered compiler-seed and Kotlin toolchain assets are unaffected.
+val pruneRetiredWebAssets by tasks.registering(Delete::class) {
+    delete(layout.buildDirectory.dir("generated/riftosAssets/www"))
 }
 
 val syncRiftBuildKotlinToolchain by tasks.registering {
@@ -405,7 +400,7 @@ val validateRiftBrowserWebViewOwnership by tasks.registering {
 tasks.named("preBuild").configure {
     dependsOn(verifyRiftOsAndroidSources)
     dependsOn(validateRiftBrowserWebViewOwnership)
-    dependsOn(syncRiftOsWebAssets)
+    dependsOn(pruneRetiredWebAssets)
     dependsOn(syncRiftBuildKotlinToolchain)
     dependsOn(syncRiftBuildCompilerSeeds)
 }

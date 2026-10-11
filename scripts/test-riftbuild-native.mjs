@@ -8,8 +8,6 @@ const paths = {
   capability: 'android/app/src/main/java/com/riftos/app/RiftLocalBuildCapability.kt',
   jvmDex: 'android/app/src/main/java/com/riftos/app/RiftJvmDexService.kt',
   platform: 'android/app/src/main/java/com/riftos/app/RiftBuildPlatformTools.kt',
-  verifier: 'android/app/src/main/java/com/riftos/app/RiftApkV2Verifier.kt',
-  installer: 'android/app/src/main/java/com/riftos/app/RiftBuildInstaller.kt',
   managed: 'android/app/src/main/java/com/riftos/app/RiftBuildManagedToolchains.kt',
   jvmTool: 'android/app/src/main/java/com/riftos/app/RiftManagedJvmToolService.kt',
   nativeBuffer: 'android/app/src/main/java/com/riftos/app/RiftNativeBufferCompilerService.kt',
@@ -37,6 +35,8 @@ const retired = [
   'android/app/src/main/java/com/riftos/app/RiftBuildNativeToolchain.kt',
   'android/app/src/main/java/com/riftos/app/RiftBuildNativeApp.kt',
   'android/app/src/main/java/com/riftos/app/RiftApkV2Signer.kt',
+  'android/app/src/main/java/com/riftos/app/RiftApkV2Verifier.kt',
+  'android/app/src/main/java/com/riftos/app/RiftBuildInstaller.kt',
   'apps/riftbuild-hosted/runtime.js',
   'apps/riftbuild-hosted/riftapp.json',
   'apps/riftbuild-hosted/program.json',
@@ -48,8 +48,6 @@ for (const file of retired) {
 const capability = read(paths.capability);
 const jvmDex = read(paths.jvmDex);
 const platform = read(paths.platform);
-const verifier = read(paths.verifier);
-const installer = read(paths.installer);
 const managed = read(paths.managed);
 const jvmTool = read(paths.jvmTool);
 const nativeBuffer = read(paths.nativeBuffer);
@@ -106,24 +104,15 @@ for (const required of [
 
 for (const required of [
   'class RiftBuildPlatformTools',
-  '"compiler-status"',
-  '"compiler-run"',
-  '"jvm-status"',
-  '"jvm-dex"',
-  '"pack-rapp"',
-  '"install-rapp"',
-  '"uninstall-rapp"',
-  'uninstallRapp(id: String)',
-  '"launch-rapp"',
-  '"rapp-list"',
-  '"verify"',
-  '"install-proof"',
-  '"install-status"',
-  '"launch-proof"',
-  'RiftApkV2Verifier()',
+  'fun installRapp(rawArtifact: String)',
+  'fun uninstallRapp(id: String)',
   'RiftCoreRuntime.packages(appContext)',
-  'RiftCoreRuntime.runtimes(appContext)',
-]) assert.ok(platform.includes(required), 'platform tool contract missing: ' + required);
+  'resolveArtifact(rawArtifact)',
+  'confinedTo(artifactRoot, file)',
+]) assert.ok(platform.includes(required), 'embedded-only RAPP fallback contract missing: ' + required);
+for (const retired of ['fun executeShell(', 'fun packRapp(', 'fun launchRapp(', 'fun verifyArtifact(', 'fun installProof(', 'RiftLocalBuildCapability(', 'RiftApkV2Verifier(', 'RiftBuildInstaller(']) {
+  assert.ok(!platform.includes(retired), 'legacy build proof/CLI resurfaced in embedded fallback: ' + retired);
+}
 assert.doesNotMatch(platform, /RiftRappManager\(appContext\)|RiftExternalRuntimeProviders\(appContext\)/, 'platform tools must delegate package/runtime ownership to Core');
 for (const forbidden of [
   '"kotlin-compile"',
@@ -136,25 +125,6 @@ for (const forbidden of [
   '"pack" ->',
   'signArtifact(',
 ]) assert.ok(!platform.includes(forbidden), 'retired platform command resurfaced: ' + forbidden);
-
-for (const required of [
-  'class RiftApkV2Verifier',
-  'fun verify(',
-  'APK Sig Block 42',
-  'V2_BLOCK_ID = 0x7109871a',
-  'SIGNATURE_ALGORITHM_ID = 0x0103',
-  'SHA256withRSA',
-  'v2 signed-data RSA signature verification failed',
-  'v2 protected APK content digest mismatch',
-]) assert.ok(verifier.includes(required), 'APK verifier contract missing: ' + required);
-assert.doesNotMatch(
-  verifier,
-  /AndroidKeyStore|KeyGenParameterSpec|KeyPairGenerator|KeyStore|fun sign\(/,
-  'APK verifier must remain keyless and verification-only'
-);
-assert.match(installer, /verified: RiftApkV2Verifier\.VerifyResult/);
-assert.match(installer, /PackageInstaller\.SessionParams/);
-assert.match(installer, /USER_ACTION_REQUIRED/);
 
 for (const required of [
   'Capability.BUILD_LOCAL',
@@ -244,30 +214,17 @@ assert.match(absolute, /Layout\s*\.\s*ABSOLUTE/);
 assert.match(absolute, /NodeKind\s*\.\s*TEXT_INPUT/);
 assert.match(absolute, /EventKind\s*\.\s*TEXT_INPUT/);
 
-// RiftBuild is a legacy diagnostic/build bridge. Keep it reachable only
-// lazily for embedded Core: an external Core must NEVER construct the APK's
-// embedded RiftCoreRuntime merely by creating RiftNativeShell.
-assert.match(shell, /private val riftBuild by lazy \{/);
-assert.match(shell, /RiftHostCoreComponents\.status\(\)\.optBoolean\("externalCoreEnabled", false\)/);
-assert.match(shell, /RiftCoreRuntime\.buildPlatform\(appContext\)/);
-assert.doesNotMatch(shell, /private val riftBuild = RiftCoreRuntime\.buildPlatform\(appContext\)/);
-assert.match(shell, /riftbuild compiler-status\|compiler-run\|jvm-status\|jvm-dex\|runtime-status\|pack-rapp\|install-rapp\|uninstall-rapp\|launch-rapp\|rapp-list\|verify\|install-proof\|install-status\|launch-proof/);
-for (const retiredCommand of [
-  'riftbuild doctor|validate|plan',
-  'kotlin-compile',
-  'compile-native',
-  'prepare-native-app',
-  '|pack|sign|',
-]) assert.ok(!shell.includes(retiredCommand), 'retired RiftShell build surface resurfaced: ' + retiredCommand);
+// The old RiftBuild shell facade must not be resurrected. The generic
+// host build, pack/install and protected Core services remain available.
+for (const retired of ['private val riftBuild by lazy', '"riftbuild" ->', 'RiftCoreRuntime.buildPlatform(appContext)', 'riftbuild compiler-status|']) {
+  assert.ok(!shell.includes(retired), 'retired APK RiftBuild shell route resurfaced: ' + retired);
+}
 
-for (const required of [
-  '"compiler-run"',
-  '"jvm-dex"',
-  '"pack-rapp"',
-  '"install-rapp"',
-  '"verify"',
-  '"install-proof"',
-]) assert.ok(toolHost.includes(required), 'persistent job classifier missing surviving operation: ' + required);
+assert.ok(toolHost.includes('val runAsJob = action == "submit"'), 'generic durable shell jobs must require explicit submit');
+assert.ok(toolHost.includes('"auto", "exec", "submit", "status", "result", "cancel", "list"'), 'generic shell job control API must remain');
+for (const retired of ['shouldSubmitShellJob(', '"compiler-run"', '"jvm-dex"', '"pack-rapp"', '"install-rapp"', '"install-proof"']) {
+  assert.ok(!toolHost.includes(retired), 'retired shell-specific job classifier resurfaced: ' + retired);
+}
 for (const retiredCommand of [
   '"kotlin-compile"',
   '"compile-native"',
@@ -292,7 +249,6 @@ for (const required of [
   '"src/main/java/com/riftos/app/RiftLocalBuildCapability.kt"',
   '"src/main/java/com/riftos/app/RiftJvmDexService.kt"',
   '"src/main/java/com/riftos/app/RiftBuildPlatformTools.kt"',
-  '"src/main/java/com/riftos/app/RiftApkV2Verifier.kt"',
   '"src/main/java/com/riftos/app/RiftBuildManagedToolchains.kt"',
 ]) assert.ok(gradle.includes(required), 'Gradle generic platform source contract missing: ' + required);
 for (const retiredSource of [
@@ -301,6 +257,8 @@ for (const retiredSource of [
   'RiftBuildNativeToolchain.kt',
   'RiftBuildNativeApp.kt',
   'RiftApkV2Signer.kt',
+  'RiftApkV2Verifier.kt',
+  'RiftBuildInstaller.kt',
 ]) assert.ok(!gradle.includes(retiredSource), 'Gradle retained retired RiftBuild source: ' + retiredSource);
 
 for (const required of [

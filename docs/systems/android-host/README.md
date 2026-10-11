@@ -1,5 +1,10 @@
 # Android Host
 
+## 2026-10-11 — retired APK build-proof installer components
+
+The old RiftBuild-only APK install proof Activity and receiver and their unreferenced verifier/installer classes have been removed from the upcoming source APK. The dedicated `:riftRecovery` process, protected component staging/SHA/DEX verification, embedded migration fallback and manual restore remain intact. The installed #715 build predates this cleanup; earlier sections below describing the deleted proof receiver are historical, not current host ownership. No new signed APK has been built.
+
+
 ## 2026-10-11 — User-approved three-patch simple recovery; B source integration pending signed proof
 
 **Current target supersedes the older deep automatic N-1 design below.** A dedicated `:riftRecovery` Android APK process was user-device-proven after force-stopping RiftOS on signed #709. Patch B source now adds the APK-local user-picked Core/Shell manifest+DEX installer, separate user confirmation to select for next startup, one atomic backed-up external revision only if previously device-accepted, and confirmed manual restore to that backup or the signed embedded Core/Shell. It reuses `RiftProtectedComponentInstaller`, `RiftBootstrapComponentStore`, `RiftProtectedRevisionRecovery` SHA/qualification and temporarily reconciles `RiftComponentReleaseLedger`. QuickJS/MCP remain host services. No running Core/Shell is hot-swapped.

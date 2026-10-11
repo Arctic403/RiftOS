@@ -2,7 +2,7 @@
 
 This ledger assigns implementation/build/test/reference source files to the README responsible for documenting them. Ownership does **not** imply that a source is packaged, live, verified, trusted or device-proven. Runtime activation must be established from current build/source wiring.
 
-For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftvm.js`, and `src/semnexis-bootstrap.js` from the `src/` tree. Other `src/` entries are retained reference/test/migration sources unless a later audit proves otherwise. `scripts/validate-rift-docs.mjs` checks that every maintained source has a documentation owner.
+As of the post-#715 APK legacy-language cleanup, Gradle packages **none** of `src/riftpp-core.js`, `src/riftvm.js`, or `src/semnexis-bootstrap.js`; these remain reference and independent compiler test sources, not base APK assets. Other `src/` entries are retained reference/test/migration sources unless a later audit proves otherwise. `scripts/validate-rift-docs.mjs` checks that every maintained source has a documentation owner.
 
 ## Root/build sources
 
@@ -92,8 +92,6 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftNativeBufferCompilerService.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
 | `android/app/src/main/java/com/riftos/app/RiftManagedJvmToolService.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBuildPlatformTools.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/systems/shell/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftApkV2Verifier.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftBuildInstaller.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
 | `android/app/src/main/java/com/riftos/app/RiftAppDiagnosticBridge.kt` | `docs/systems/diagnostics/README.md` + `docs/systems/riftbuild/README.md` + `docs/systems/android-host/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftAppAbi.kt` | `docs/systems/riftbuild/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftRappRiftppWs15Adapter.kt` | `docs/systems/riftbuild/README.md` |
@@ -178,7 +176,6 @@ For the current Android engine, Gradle packages `src/riftpp-core.js`, `src/riftv
 | `android/app/src/main/java/com/riftos/app/RiftSecretStore.kt` | `docs/systems/secrets/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` | `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` + `docs/systems/kernel/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftShellExecutor.kt` | `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftHeadlessJsRuntime.kt` | `docs/systems/shell/README.md` + `docs/systems/riftpp-core/README.md` + `docs/systems/semnexis-bootstrap/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeShellServices.kt` | `docs/systems/shell/README.md` + `docs/systems/riftllm-bridge/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/vortex-agent/README.md` + `docs/systems/engine/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeGit.kt` | `docs/systems/git/README.md` + `docs/systems/secrets/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftNativeWorkspaceApps.kt` | `docs/systems/files-app/README.md` + `docs/systems/settings/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/workspace/live/README.md` + `docs/systems/engine/README.md` |

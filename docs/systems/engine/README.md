@@ -1,5 +1,10 @@
 # RiftOS Engine
 
+## 2026-10-11 — external Core live; retired shell-only language host removed from next APK source
+
+User-signed #715 demonstrated independent external Core v0.6 boot and four RAPP graphical start/stop proofs. The new source no longer includes `RiftHeadlessJsRuntime.kt`, shell-only language/legacy build commands or the three compiler/VM web assets. **Active QuickJS RAPP execution remains behind `RiftHostQuickJsV1`; it must not be removed until the external provider has real device proof.** Embedded Core and Recovery remain migration fallbacks. Treat older diagrams and "current" statements below as historical unless reconciled with this checkpoint.
+
+
 ## 2026-10-10 — Planned stable host and independent Core/Shell ownership
 
 See [the external Core/Shell migration roadmap](../android-host/EXTERNAL_CORE_SHELL_ROADMAP.md). This remains a plan, not verified new engine behavior. A stable Android APK should own lifecycle, protected Binder/signer consent, component verification, crash supervisor, MCP and relay. A real independent external Core must execute all RAPP, C:/D:, session, input, and capability work without calling embedded Core. The graphical desktop/window manager should then move to a separately versioned Shell. Both must recover failed updates to last-known-good **external** versions with available crash evidence; embedded versions are fallback only during migration. After signed/device-proven host readiness, routine compatible Core/Shell updates should not require APK builds, except actual host/ABI or final embedded-removal changes. Last signed installed device proof is #695 with embedded E0.

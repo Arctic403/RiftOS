@@ -148,7 +148,7 @@ class RiftToolHost(
     fun tools(): JSONArray = JSONArray()
         .put(tool(
             "rift_shell_exec",
-            "Execute or manage RiftShell commands through the process-owned native core. Long RiftBuild commands auto-submit as persistent local shell jobs so MCP calls do not die at the synchronous timeout. Actions: auto, exec, submit, status, result, cancel, list. RiftShell batch and batch --dry-run remain DISABLED; never call batch or batch --dry-run.",
+            "Execute or manage native RiftShell commands through the process-owned host. auto and exec execute synchronously; submit starts an explicit bounded persistent shell job, managed by status, result and cancel. No legacy compiler/build command auto-routing. RiftShell batch and batch --dry-run remain DISABLED.",
             objectSchema(
                 JSONObject()
                     .put(
@@ -156,7 +156,7 @@ class RiftToolHost(
                         JSONObject()
                             .put("type", "string")
                             .put("enum", JSONArray(listOf("auto", "exec", "submit", "status", "result", "cancel", "list")))
-                            .put("description", "Optional action. Defaults to auto. auto executes short commands synchronously and submits known long RiftBuild commands as jobs.")
+                            .put("description", "Optional action, default auto. auto/exec run commands synchronously; explicitly select submit for long-running generic shell jobs.")
                     )
                     .put("command", stringProperty("RiftShell command for auto, exec, or submit. The batch command remains DISABLED."))
                     .put("cwd", stringProperty("Optional RiftShell working directory."))
@@ -599,9 +599,8 @@ class RiftToolHost(
             }
 
             val cwd = args.optString("cwd", "/")
-            val runAsJob =
-                action == "submit" ||
-                    (action == "auto" && shouldSubmitShellJob(command))
+            // Explicit submit owns long jobs; retired language/build CLIs are not routed by hidden classifiers.
+            val runAsJob = action == "submit"
 
             if (runAsJob) {
                 try {
@@ -799,19 +798,6 @@ class RiftToolHost(
         }
         out.put("operations", normalized)
         return out
-    }
-
-    private fun shouldSubmitShellJob(command: String): Boolean {
-        val parts = command.trim().split(Regex("\\s+"), limit = 3)
-        if (parts.firstOrNull()?.lowercase() != "riftbuild") return false
-        return parts.getOrNull(1)?.lowercase() in setOf(
-            "compiler-run",
-            "jvm-dex",
-            "pack-rapp",
-            "install-rapp",
-            "verify",
-            "install-proof"
-        )
     }
 
     private fun canonicalName(raw: String): String = when (raw.trim()) {

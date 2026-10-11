@@ -24,22 +24,6 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.RiftOS"
         android:usesCleartextTraffic="false">
-        <activity
-            android:name=".RiftBuildInstallActivity"
-            android:excludeFromRecents="true"
-            android:exported="false"
-            android:launchMode="singleTop"
-            android:noHistory="true"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
-        <receiver
-            android:name=".RiftBuildInstallReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.PACKAGE_FIRST_LAUNCH" />
-                <data android:scheme="package" />
-            </intent-filter>
-        </receiver>
-
         <!-- Experimental external DEX proof is process-isolated and non-exported;
              never started automatically or by a RAPP. -->
         <service

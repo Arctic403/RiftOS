@@ -1,5 +1,12 @@
 # RiftOS
 
+## 2026-10-11 — post-#715 APK legacy shell cleanup (source only; unsigned)
+
+User-signed #715 physically booted independent external Core v0.6 (schema `riftos.external.core/1`, owner `independent-external-dex`, four installed JSON RAPPs successfully ran/frame/stopped at 15/12/21/26 nodes). This is **manual-trial proof**, not production acceptance, native-buffer external-Core qualification, accepted-backup rollback, or Patch C clearance. The installed #715 APK is unchanged by the cleanup below.
+
+In the **next unbuilt APK source**, unused native RiftShell `riftbuild`, `qjs`, `semx`, `riftpp`, and `rift-tool` commands and their shell-only `RiftHeadlessJsRuntime` host were removed. The three old web/compiler JS assets are no longer bundled by Gradle; their source remains in the repository as historical/test reference. This does **not** remove the actual generic `RiftHostQuickJsV1`/`RiftRappQuickJsExecutor` that serves RAPPs, the embedded Core migration fallback, independent Recovery, registered build.local/D8/signing services, or MCP/relay. Source and Builder checks now reject reintroducing old in-APK language CLIs/assets. No production Core acceptance and no signed build is implied.
+
+
 ## 2026-10-11 — External Core v0.6 manual-trial source checkpoint
 
 The existing independently built Core (not a duplicate embedded Core) now includes transactional RAPP installs/uninstalls, QuickJS and Rift++ native-buffer execution, Core-owned frame/session state, scoped filesystem, fresh and prior permission grants through the existing Shell consent ticket channel, registered `build.local` compiler/D8 and Android Keystore signing identity. The Android APK supplies **generic** host execution/consent/build transport only; no application-specific Core ownership returns to the APK. `EXTERNAL_CORE_MANUAL_DEVICE_TRIAL_ALLOWED=true` permits an explicitly confirmed protected Recovery device trial, but `EXTERNAL_CORE_PROMOTION_PROVEN=false` remains intact.

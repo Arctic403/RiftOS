@@ -1,5 +1,15 @@
 # RiftBuild platform boundary
 
+## 2026-10-11 — final removal of orphaned in-APK proof paths
+
+`RiftBuildPlatformTools` now implements only legacy embedded-Core RAPP **install/uninstall migration fallback**, never shell CLI execution. The unused `RiftApkV2Verifier.kt`, `RiftBuildInstaller.kt`, `RiftBuildInstallActivity` and `RiftBuildInstallReceiver` were deleted from source/manifest; they have no current runtime callers. This does **not** remove the Builder's own final APK verifier, the protected component installer/Recovery, the active generic build.local/D8 pipeline, or signing identity support. MCP explicit persistent shell job controls remain without retired command classifiers. Changes pending first signed Android build.
+
+
+## 2026-10-11 — retired APK-native RiftBuild command versus active platform services
+
+The obsolete `riftbuild` **RiftShell command** was removed from the next APK source; it is not the hosted RiftBuild RAPP, generic `RiftHostBuildLocalV1`, registered compiler/D8 worker, native-buffer service, package manager, installer, signing identity, or protected Recovery. The retired command's previous external-Core guard was deliberate isolation and not an external Core defect. Other persistent platform code must remain until its replacement is proven; these changes are source-only and have not been signed/device-qualified.
+
+
 **C0.2.5 runtime-provider migration:** See [RUNTIME_PROVIDERS.md](RUNTIME_PROVIDERS.md) for the versioned package-external runtime ABI, signer-pinned Binder provider registry, staged fallback behavior, pending independent QuickJS provider APK, and manual device-promotion gates. QuickJS is **still embedded during gate A** and must not be removed before RiftBuild Hosted and other consumers are proven against the external provider.
 
 ## Verification status
@@ -192,7 +202,7 @@ The main RiftOS application must not embed the desktop Kotlin compiler implement
 
 `RiftNativeShell` routes `riftbuild` to `RiftBuildPlatformTools`.
 
-`RiftToolHost.shouldSubmitShellJob` recognizes only surviving long generic operations. Retired build commands must not be recognized or silently aliased.
+The obsolete `RiftToolHost.shouldSubmitShellJob` auto-classifier was removed. Generic durable shell jobs require explicit MCP `submit` and retain `status`/`result`/`cancel`; no retired RiftBuild subcommand is specially classified.
 
 Browser apps do not receive the old `Rift.build.doctor/plan/prepare/submit/runs/artifacts` orchestration API. Build providers use the RAPP capability broker instead.
 

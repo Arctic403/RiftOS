@@ -1,5 +1,17 @@
 # RiftOS Project Status
 
+## 2026-10-11 — legacy APK build-proof island fully retired (source only)
+
+Follow-up dependency audit confirmed no production callers for the old `RiftBuildPlatformTools.executeShell` dispatcher, `RiftApkV2Verifier` proof parser, `RiftBuildInstaller` proof flow, or its manifest Activity/receiver. The next APK source now retains only the embedded-Core RAPP `installRapp`/`uninstallRapp` migration fallback in `RiftBuildPlatformTools`; the obsolete verifier/installer sources and manifest components are deleted. MCP `rift_shell_exec` still supports explicit bounded job `submit/status/result/cancel` without a hard-coded legacy RiftBuild auto-classifier. Modern protected external Core Recovery, generic build.local/D8/signing services, and live RAPP QuickJS remain intact. This cleanup is NOT yet a green signed Android build.
+
+
+## 2026-10-11 — #715 external Core first boot and retired APK language CLI cleanup (source pending signed build)
+
+The user installed signed host #715 (source `68be6fc81a763b3e99794380935245b9c11e3c4f`), staged and explicitly selected experimental external Core v0.6 (`1f3c3850b0c0dc945944719cced77eec3091dc868a16d004413567d28ea1f3df`). Real MCP `core status` reported `owner: independent-external-dex`; all four installed JSON RAPPs launched, displayed 15/12/21/26-node graphical frames, and stopped cleanly. Its production acceptance, native-buffer external-Core trial, UI capability services, Shell restart and accepted-backup rollback are **still pending**. The legacy `riftbuild` native-shell command was deliberately disabled whenever external Core owns app state; that was a safe guard, not a Core failure.
+
+New unsigned source cleanup removes the **orphaned shell-only** `riftbuild`, `qjs`, `semx`, `riftpp`, and `rift-tool` command routes plus `RiftHeadlessJsRuntime.kt`, their three bundled JS source assets and the empty Gradle web sync task. Retained: active RAPP QuickJS execution, generic host/capability/build services, embedded Core migration fallback, independent Recovery, MCP/relay and manual signed Builder flow. Tests and Builder verifier are being reconciled to forbid reintroduction. No new APK compiled, installed or signed by this cleanup. Historical sections below are preserved as checkpoint records, not the current state.
+
+
 ## 2026-10-11 — #714 native-buffer host device PASS; verified external v0.6 pair staged for future local Recovery import (not activated)
 
 User-installed signed #714 passed four original JSON/QuickJS RAPP graphical smoke tests and independent Recovery after Android force-stop. Separately, a disposable, SHA-verified prior Rift++ Stage 3 native-buffer RAPP (`rift-nativebuffer-host-gate-714`) was packed via normal RiftBuild, installed, executed to a **real 16-node attached graphical surface**, stopped cleanly and uninstalled. Both APK host execution types are now smoke-tested on embedded Core, NOT independent external Core.
