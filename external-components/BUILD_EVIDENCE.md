@@ -1,5 +1,12 @@
 # Independent component build evidence — 2026-10-10
 
+## 2026-10-11 — external Core v0.6.1 fs.write Cancel and reprompt confirmed PASS
+
+After an earlier `fs.write` Deny on disposable RAPP `rift-v061-consent-denial`, the user explicitly confirmed that a **fresh permission dialog appeared again**, and that they tapped **Cancel**. The resulting user screenshot displayed `CORE EFFECT RESULT fs.write DENIED/FAILED token=44 RAPP permission denied or expired`. Independent directory inspection after the Cancel still found only the seeded `/D:/Workspace/tmp/v061-consent-denial-test/probe-data.txt`, with **no** denied-output file `probe-v2-write.txt`. This directly establishes repeat-prompt behavior after a Deny, explicit user Cancel rejection, effect-result delivery and no unauthorized write side effects. Combined with the earlier explicit user-confirmed Allow for read/write, both positive and fs.write negative consent paths are now device-proven. Core remained `independent-external-dex`, v0.6.1 PID 6869, `deviceQualificationComplete=false`, `readyForPromotion=false`.
+
+**Next gate:** under the same disposable app, tap `TEST FS.READ CONSENT`, select **Deny** on the *fs.read* dialog (no prior read grant for this app), and send the result screenshot. Confirm `fs.read DENIED/FAILED token=43` and no pending effect requests. Grant revocation, timeouts and Shell-absent fail-closed behavior remain unqualified. Do not force-stop or promote this Core.
+
+
 ## 2026-10-11 — external Core v0.6.1 repeat fs.write Cancel-path rejection, no file side effect
 
 After the first denied write, the user was directed to press `TEST FS.WRITE CONSENT` again on fresh-ID `rift-v061-consent-denial`, choose **Cancel**, and send the result. Their screenshot at 6:11 shows `CORE EFFECT RESULT fs.write DENIED/FAILED token=44 RAPP permission denied or expired` again. Independent MCP directory inspection after this repeat still found **only** `/D:/Workspace/tmp/v061-consent-denial-test/probe-data.txt`; no `probe-v2-write.txt` exists and no denied write reached storage. Live Core remained `independent-external-dex` candidate v0.6.1 PID 6869, unqualified and unpromoted; two app sessions attached, zero pending effects.
