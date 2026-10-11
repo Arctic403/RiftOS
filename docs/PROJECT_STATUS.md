@@ -6,6 +6,8 @@ User approved continuing external-Core qualification after signed #710 Patch B i
 
 Registered Kotlin compiler and generic D8 executed successfully for the external Core's **12** sources with six compile-only APK ABI classes stripped: **2,748,192-byte** DEX SHA `c7e13955c4cb23587397e7de3704651fbcc3d7d70fd701b7739e2a968665f713`, independently verified and preserved outside the RiftOS repo. Source regression: 14/14 structural checks. Signed Builder preflight synchronized; the normal user-only signed build/install flow is unchanged.
 
+**Native-buffer device-test fixture needed:** RiftOS MCP `riftbuild rapp-list` confirmed all four existing installed apps (`rift-critical-component-builder`, `rift-module-builder`, `riftbuild-hosted`, `riftpp-compiler-lab`) use `json-generic-v1`; those apps cannot by themselves exercise the new native-buffer host path. On a signed APK with this bridge, first run the four-app QuickJS regression, then separately install/run a verified native-buffer RAPP fixture before claiming native runtime parity.
+
 **Not yet a qualified external Core:** Installed signed **#710** predates this host ABI; user must manually trigger and install a new signed APK before the generic native-buffer bridge can be physically proven. New grant consent and several privileged Android capability services are still not independently qualified, and no external Core/Shell was staged or activated. Patch B actual backup-and-restore acceptance and Patch C cleanup remain blocked. See `external-components/BUILD_EVIDENCE.md` and `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md`.
 
 ## 2026-10-11 — Signed #710 Patch B safe Recovery UI/picker and cold startup accepted; real restore pending
