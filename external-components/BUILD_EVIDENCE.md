@@ -1,5 +1,21 @@
 # Independent component build evidence — 2026-10-10
 
+## 2026-10-11 — signed #722 external Core v0.6.1 live device RAPP proof (UNACCEPTED)
+
+After independent v0.6.1 SHA `2bbb861f5a7feda953c9fb49ea1ee207d942d0c2173d8d55c06d8050e6a1e4e7` passed protected **inactive-load** Recovery staging, the user explicitly installed the staged update and restarted RiftOS #722. Actual MCP `core status` returned `schema=riftos.external.core/1`, `owner=independent-external-dex`, `candidateRevision=0.6.1`, process PID **6869**, `runtimeExecutionReady=true`, `manualDeviceTrialAllowed=true`, `candidateComplete=true`, `deviceQualificationComplete=false`, `readyForPromotion=false`, and five installed RAPPs. The independent Core status does not itself echo its loaded SHA; SHA binding is grounded in the preceding exact-manifest structural staging/installation, not a new raw on-process SHA attestation.
+
+**Actual five-RAPP graphical execution and cleanup under v0.6.1:** each `core app-start` returned starting/attached; subsequent `core apps` reported running/error=null, `core surfaces` reported graphical frame, and `core app-stop` returned stopped:
+- `rift-module-builder`: 15 nodes, generation 1, PASS.
+- `rift-critical-component-builder`: 16 nodes, generation 2, PASS.
+- `riftbuild-hosted`: 21 nodes, generation 3, PASS.
+- `riftpp-compiler-lab`: 26 nodes, generation 4, PASS.
+- `rift-critical-component-builder-v061`: 18 nodes, generation 5, PASS.
+
+Final `core apps`, `core surfaces`, and `core sessions` returned **0 running apps, 0 surfaces, 0 sessions, 0 attached, 0 pending events**. Owner remained `independent-external-dex` PID 6869 after cleanup.
+
+This is **device RAPP launch/render/stop evidence, not final external Core acceptance**. The nested session report still says `runtimeExecutionReady=false` while top-level runtime status says true and actual graphical apps passed; investigate only if relevant to specific missing capability. No verified native-buffer/consent side effects, build.local + D8 under external Core, Shell process independence/restart, robust cold-boot and Recovery/known-good rollback acceptance yet. Do NOT call `acceptProven`, clear boot markers, disable embedded migration fallback, or remove quarantine based on this proof alone. No automatic protected update or promotion was performed by MCP.
+
+
 ## 2026-10-11 — independent external Core v0.6.1 compiled; DEX SHA independently verified (NOT ACTIVATED)
 
 Signed host RiftOS #722, embedded Core. User installed the isolated `rift-critical-component-builder-v061` diagnostic RAPP, granted capabilities, then pressed BUILD INDEPENDENT CORE DEX. Screenshot reports `Status: complete · Compiled core.dex independently; Core/Shell NOT ACTIVATED`; registered managed-external `kotlin-android` compilation succeeded, eight APK ABI compile-only classes stripped by the producer, D8 completed, and the following versioned pair exists:
