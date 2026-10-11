@@ -1,5 +1,11 @@
 # Independent component build evidence — 2026-10-10
 
+## Latest #702 external Core v0.2.1 — larger RAPP executable, registered Kotlin+D8 proof
+
+After lifting the *native APK-host* RAPP executable `runtime.bin` cap from 1 MiB to **8 MiB** (and compressed/extracted `.rapp` limit from 4 MiB to **16 MiB**), aligned **incomplete independent Core** `IndependentRappSessionsV1.MAX_RUNTIME` and its per-file SHA catalogue reader with the 8 MiB source limit. Persistent RAPP `program.bin/state.bin` stays **1 MiB** and bounded event/result I/O remains unchanged. This permits *larger RAPP JS sources*, not inherently faster Kotlin/D8 compilation.
+
+User-signed, installed #702 executed the registered `kotlin-android` compiler successfully on the revised source. All four compile-only host interface classes were removed before D8. D8 produced a single Core **v0.2.1** DEX of **2,604,100 bytes**, SHA-256 **`61b3e47bc9ebd7b3af654f10335f576251dea53579f8e79bf5370da4f2ee15ae`**; independent MCP hash confirms it, and native RiftShell stat confirms the saved `/D:/Builds/Components/core/core.dex` size. The exact `component.json` fields, `sha256` and `buildSha256`, both match the final DEX hash. Prior v0.2.0 DEX/manifest were copied into `/D:/Builds/Components/core/previous/` before replacement. This v0.2.1 Core remains intentionally **NON-SELECTABLE**: no independently proven JS VM or capability broker, no stage/activate/accepted N-1 proof. Installed #702 *host* still enforces 1 MiB until a later user-manual signed APK install.
+
 ## Later signed #702 Core v0.2 independent compiler evidence (2026-10-10)
 
 On the user-installed signed **#702** host (run `38098117132`, source `eb6682f3eed93f5ea30478140d53df72c3273e9e`), the generic `External Core & Shell Builder` RAPP obtained ordinary **build.local** user permission and showed `Registered compiler + D8 ready`, confirming live `kotlin-android` registration.

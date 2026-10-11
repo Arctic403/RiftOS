@@ -1,5 +1,9 @@
 # RiftOS Roadmap
 
+## 2026-10-10 — Lift narrow RAPP executable limit, keep bounded runtime state
+
+The 1 MiB **runtime.js executable source** ceiling is now **8 MiB**; ZIP package limit is **16 MiB** (both compressed artifact size and extracted total). The separate **1 MiB mutable program/state** and bounded event/result queues are deliberately unchanged until measured, end-to-end runtime transport tests justify larger values. `RiftRappManager`, QuickJS loader, and independent Core source stay aligned via new `scripts/test-rapp-payload-limits.mjs` plus signed Builder static gates. This removes source-size rejection; it does **not** make existing compiler runs faster. Requires next manual signed Android host APK for effect; installed #702 is unchanged, and incomplete external Core v0.2 remains inactive.
+
 ## 2026-10-10 — Real external Core session engine v0.2 milestone
 
 Installed signed #702 host is healthy; ordinary generic builder `build.local` permission and registered Kotlin/D8 readiness were physically confirmed. `external-components/IndependentRappSessionsV1.kt` now owns Core RAPP session generations, focus, bounded event queue, frame validation, durable state, and explicit denied capability-effect continuations, with an independent `IndependentJavascriptVmV1` interface and sealed runtime lookup. Compiled `core.dex` v0.2.0 with registered Kotlin + D8 (**2,603,876 bytes, SHA c1b44f56481e…**), exported strict manifest, and preserved prior v0.1 Core under `/D:/Builds/Components/core/previous/`. The runtime VM SHA pin remains empty, so RAPP JavaScript BOOT is correctly blocked and no Core/Shell staging/activation is permitted. Next: implement independent JS runtime and capability broker, prove real RAPP sessions in an isolated test without importing embedded APK execution, then complete graphical Shell parity and physical recovery gates.

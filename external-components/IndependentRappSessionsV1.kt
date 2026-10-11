@@ -122,7 +122,7 @@ internal class IndependentRappSessions(
     companion object {
         private const val MAX_APPS = 32
         private const val MAX_QUEUE = 64
-        private const val MAX_RUNTIME = 1024 * 1024
+        private const val MAX_RUNTIME = 8 * 1024 * 1024
         private const val MAX_FRAME_NODES = 256
         private const val MAX_FRAME_TEXT = 16 * 1024
         private const val MAX_OUTPUT = 512 * 1024

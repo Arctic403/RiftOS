@@ -1,5 +1,9 @@
 # Build and Validation System
 
+## 2026-10-10 — Independent executable source size regression gate
+
+The application packaging cap is now **8 MiB per RAPP executable runtime** rather than 1 MiB, and **16 MiB per compressed/extracted RAPP package** rather than 4 MiB. `RiftRappManager`, `RiftRappQuickJsExecutor`, and `external-components/` share these bounds; existing **1 MiB program/state** and 512 KiB per-event QuickJS I/O remain bounded. `scripts/test-rapp-payload-limits.mjs` runs in canonical `npm check`; separate signed Builder source preflight and Python selftest require exact manager cap markers. This allows larger RAPP source payloads but is not a Kotlin compiler performance optimization. APK build/install is user-manual; signed #702 still has the earlier cap.
+
 ## 2026-10-10 — Protected DEX host versus registered Kotlin+D8 compatibility gate
 
 Real external Core/Shell v0.1 Kotlin compiler+D8 passed on signed #701. Registered `RiftJvmDexService` always adds `kotlin-stdlib.jar` as D8 PROGRAM, yielding standard-library class definitions outside the component package. `RiftProtectedDexVerifier` source now permits only `Lkotlin/` support definitions in addition to the exact independent Core/Shell namespace, forbids any APK-owned class definitions/foreign modules, rejects duplicate definitions and reports `bundledKotlinRuntimeClassCount`. Builder preflight and Python selftest enforce these markers. This fix **is not installed in #701**; next manual signed host build and actual DEX stage verification still required. `external-components/` contains the non-APK source, registered Kotlin project `riftbuild-hot.json`, compile requests, and generic RAPP producer; production DEX outputs under `/D:/Builds/Components` are versioned separately from APK. Core runtime/executor incomplete and not activated.

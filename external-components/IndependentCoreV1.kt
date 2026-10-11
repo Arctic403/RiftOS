@@ -30,6 +30,8 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
         private const val APP_SCHEMA = "riftos.rapp/1"
         private const val MAX_APPS = 128
         private const val MAX_META_BYTES = 65536L
+        private const val MAX_PROGRAM_BYTES = 1024 * 1024L
+        private const val MAX_RUNTIME_BYTES = 8L * 1024 * 1024
         // This is NOT a production Core until both external JS execution
         // and independent user-grant/effect authority pass device evidence.
         private const val RAPP_ENGINE_AND_BROKER_PROVEN = false
@@ -110,7 +112,7 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
             val asset = File(folder, name)
             require(asset.isFile && !Files.isSymbolicLink(asset.toPath()) &&
                 asset.canonicalFile.parentFile == folder.canonicalFile &&
-                asset.length() in 1L..1048576L) {
+                asset.length() in 1L..(if (name == "runtime.bin") MAX_RUNTIME_BYTES else MAX_PROGRAM_BYTES)) {
                 "Installed RAPP executable bytes not valid"
             }
             val expected = rapp.getString(

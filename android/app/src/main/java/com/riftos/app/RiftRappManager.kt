@@ -66,8 +66,10 @@ class RiftRappManager(context: Context) {
         private const val STATE_ENTRY = "state.bin"
         private const val MAX_MANIFEST_BYTES = 64 * 1024
         private const val MAX_PROGRAM_BYTES = 1024 * 1024
-        private const val MAX_RUNTIME_BYTES = 1024 * 1024
-        private const val MAX_PACKAGE_BYTES = 4L * 1024L * 1024L
+        // Executable RAPP source may be larger than its separately bounded state.
+        // 8 MiB runtime plus 1 MiB program fits within a 16 MiB ZIP cap.
+        private const val MAX_RUNTIME_BYTES = 8 * 1024 * 1024
+        private const val MAX_PACKAGE_BYTES = 16L * 1024L * 1024L
         private const val MAX_INSTALLED_APPS = 128
         private val SAFE_ID = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$")
         private val SAFE_TOKEN = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")

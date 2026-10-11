@@ -1,5 +1,7 @@
 # Independent RiftOS Core and Shell components
 
+**Latest Core v0.2.1 development artifact:** `/D:/Builds/Components/core/core.dex` **2,604,100 bytes**, SHA `61b3e47bc9ebd7b3af654f10335f576251dea53579f8e79bf5370da4f2ee15ae` with exact v0.2.1 manifest. The external Core catalogue and session reader now allow **8 MiB executable JS runtime bytes**, matching updated Android RAPP manager and QuickJS source limits; program/state stays **1 MiB**. This is a maximum accepted size, **not a compiler speed optimization**. v0.2.0 is archived under `core/previous/`. Core still refuses initialize until real independent VM/capability proofs exist. Installed host #702 requires next manual signed APK to adopt the larger RAPP packaging and QuickJS limit.
+
 This source/build producer is versioned in RiftOS main under external-components/, strictly outside android/app and the signed APK Gradle source list. It uses the registered external Kotlin compiler and D8. Its production DEX outputs live independently under /D:/Builds/Components/ and do not require repacking RiftOS for source-only changes.
 
 ## Implemented

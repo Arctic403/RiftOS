@@ -1,10 +1,10 @@
 {
   "schema": "riftos.protected-component/1",
   "component": "core",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "entrypoint": "com.riftos.external.core.IndependentCoreV1",
-  "sha256": "c1b44f56481ee4ffc90b7e74812e07b64f5cc73e9c07e3e6b113f79a13399113",
-  "buildSha256": "c1b44f56481ee4ffc90b7e74812e07b64f5cc73e9c07e3e6b113f79a13399113",
+  "sha256": "61b3e47bc9ebd7b3af654f10335f576251dea53579f8e79bf5370da4f2ee15ae",
+  "buildSha256": "61b3e47bc9ebd7b3af654f10335f576251dea53579f8e79bf5370da4f2ee15ae",
   "payload": "core.dex",
   "abi": 1,
   "minSdk": 28,

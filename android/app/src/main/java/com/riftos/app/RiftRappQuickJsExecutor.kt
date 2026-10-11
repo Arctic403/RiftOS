@@ -16,7 +16,7 @@ import kotlinx.coroutines.runBlocking
 class RiftRappQuickJsExecutor {
     companion object {
         private const val MAX_RUNTIME_BYTES =
-            1024 * 1024
+            8 * 1024 * 1024
         private const val MAX_INPUT_BYTES =
             512 * 1024
         private const val MAX_OUTPUT_BYTES =
