@@ -1,6 +1,14 @@
 # RiftOS — Simple APK-owned bootstrap, updates and manual recovery
 **Architecture decision: user-approved, 2026-10-10. Implementation status: DESIGN LOCK ONLY.**
 
+## 2026-10-11 — Patch A signed #709 independent-startup device proof ACCEPTED
+
+The user installed the manually signed **RiftOS #709**, Builder run `38111396273`, source `c0b01e864e2afb8d502edb000c6ad7678e73067d`. Physical screenshot shows the dedicated **RiftOS Recovery** Android Activity, its read-only status, Core/Shell selected `embedded`, both working backups `absent`, both startup markers `absent`, and first-install embedded fallback. The user then **force-stopped RiftOS and confirmed Recovery opened directly from its separate launcher icon without launching ordinary RiftOS first**. This is the key independent `:riftRecovery` startup Gate A device proof, not an inference from a screenshot with Core already running.
+
+The installed #709 host was separately checked: normal embedded Core PID 20949, Shell PID 21417, supervisor PID 20995, four installed RAPPs retained; `rift-module-builder` launched, reported running and produced a real 15-node surface revision 1, and was stopped cleanly. **Gate A's essential independent Recovery startup, empty-backup status and normal-host regression are device-proven.** The screenshot shows the Refresh/Close buttons but their actual taps were not explicitly reported. Tampered/invalid backup behavior is source-validated but not destructively device-tested; do not manufacture a corrupted protected record on the user's installed OS merely for proof.
+
+**Patch B may now be planned/implemented when separately authorized**, but no manual backup restore, writer, external Core activation, automatic recovery removal, or Gate B/C claim follows from Gate A. The historical 'awaiting signed build' checkpoint immediately below is retained as provenance; it is superseded by this #709 evidence.
+
 ## Patch A source checkpoint — 2026-10-10 (awaiting user-manual signed APK / device proof)
 
 Implemented only the new independently launcher-accessible `RiftManualRecoveryActivity` in Android process `:riftRecovery`, with an explicit `RiftCoreApplication.onCreate` bypass before all Core/Shell bootstrap. No Core, Shell, MCP, RAPP, or external DEX loading occurs in the recovery UI. The first Recovery screen provides working Refresh/Close actions, read-only status for both Core and Shell active slots, and the last-working backup-record contract `riftos.host.working-backup/1` using `$component.working-backup.json` under APK-private `bootstrap-components`.
