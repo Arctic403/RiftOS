@@ -1,5 +1,14 @@
 # RiftOS independent Core and Shell components
 
+## 2026-10-11 — new Core v0.6.1 source candidate (compile/device proof PENDING)
+
+The first v0.6.0 DEX SHA `1f3c3850b0c0dc945944719cced77eec3091dc868a16d004413567d28ea1f3df` physically executed four installed RAPPs on signed #715, but was subsequently marked `interrupted-boot` when the host reverted to embedded Core. The protected journal intentionally quarantines that exact SHA, so Recovery refuses re-selecting it. **Do not erase quarantine, clear app data, or rename the rejected bytes.** Prepare and independently compile a distinct **v0.6.1** source revision instead; its `candidateRevision` appears in Core status while `deviceQualificationComplete=false` and `readyForPromotion=false` remain unchanged.
+
+The 13-source `compile-core-v061.json` recipe uses a distinct classes output. The updated `runtime.js` producer recipe writes into `/D:/Builds/Components/core/trial-v061/` (not the historical `core/` or v0.6.0 `core/trial/` directory), with protected manifest version `0.6.1`. **The already installed v0.6.0 Builder RAPP does NOT automatically use a changed source `runtime.js` until that RAPP is repacked and reinstalled.** If the existing installed producer is used for a one-time on-device Kotlin/D8 build, it compiles current source but still exports its old root `core.dex`/manifest location and old version; preserve old root files and only produce a verified isolated manifest/DEX pair after obtaining the actual new SHA. The old root v0.2.1 pair was copied to `/D:/Builds/Components/core/pre-v061-root/` before work. The old `core/trial` pair was not changed.
+
+**Current checkpoint:** new source identity and producer/compile recipes prepared and static-checked, but no compiler/D8 run, no new SHA, no protected stage/install, no activation, and no acceptance yet. User may perform RAPP compilation only through the registered compiler workflow; signed RiftOS APK #722 and the active embedded Core remain unchanged. Verify the exact new DEX bytes/SHA and Recovery's staged manifest before any separate user-confirmed activation.
+
+
 ## 2026-10-11 — v0.6 independent Core manual trial candidate (compiled, NOT device accepted)
 
 User explicitly requested finishing the external replacement before personally installing and 100%-testing it. This checkpoint closes the remaining implementation seams in source, **but does not assert release qualification before real device proof**. The existing `IndependentCoreV1` still owns RAPP catalogue/install/update/uninstall, state, sessions, input/frames, execution routing and authorization. Nothing calls the embedded `RiftCoreRuntime` or moves package/grant policy back into the APK.

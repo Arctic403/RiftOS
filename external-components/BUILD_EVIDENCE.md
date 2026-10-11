@@ -1,5 +1,12 @@
 # Independent component build evidence — 2026-10-10
 
+## 2026-10-11 — v0.6.1 candidate SOURCE PREPARED; NO compiler evidence yet
+
+After signed #722 selected embedded Core, the previous experimental v0.6.0 SHA was found in the revision rejection ledger as `interrupted-boot`. Protected `recordPrepared` correctly prohibits reactivating that exact SHA. The user authorized a genuine new independent Core trial revision. `IndependentCoreV1.kt` now emits immutable status `candidateRevision: 0.6.1`, leaving `deviceQualificationComplete=false` and promotion disabled. `compile-core-v061.json` reproduces the 13-source Kotlin recipe in distinct build directories; updated `runtime.js` produces the next versioned `core/trial-v061` DEX/manifest when the RAPP is repacked. Old private v0.2.1 root Core files were preserved at `/D:/Builds/Components/core/pre-v061-root/`, and the quarantined v0.6.0 trial pair remains untouched.
+
+**No Kotlin+D8 build success, class-inventory/closure verification, new DEX hash or physical Core execution is claimed in this checkpoint.** The installed graphical component Builder is still the old package until explicitly repacked/reinstalled. Do not label its old root output v0.6.1 without verifying a fresh compiler output, recording the exact new SHA, and constructing a matching strict manifest in a separately versioned folder. The user owns protected Recovery activation after staging.
+
+
 ## 2026-10-11 — External Core v0.6 device-trial candidate: 13 Kotlin sources + D8 REAL PASS
 
 User-authorized continuation from the paused external-Core checkpoint. The new external Core now uses the existing Core-to-Shell bounded consent ticket transport and registered `RiftLocalBuildCapability` host primitive, but owns declaration/grant checks, persistence, stale session detection and effect ordering itself. Signing identity is implemented by external-Core code using the existing Android Keystore alias. Device trial eligibility is separate from production acceptance: `EXTERNAL_CORE_MANUAL_DEVICE_TRIAL_ALLOWED=true`, `EXTERNAL_CORE_PROMOTION_PROVEN=false`, `deviceQualificationComplete=false`.

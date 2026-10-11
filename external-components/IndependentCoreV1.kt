@@ -25,6 +25,8 @@ import java.security.MessageDigest
 class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
     companion object {
         private const val SCHEMA = "riftos.external.core/1"
+        // Independently recompiled trial revision; never implies device acceptance.
+        private const val CANDIDATE_VERSION = "0.6.1"
         private const val APP_SCHEMA = "riftos.rapp/1"
         private const val MAX_APPS = 128
         private const val MAX_META_BYTES = 65536L
@@ -256,6 +258,7 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
         val application = context(context)
         return JSONObject().put("schema", SCHEMA)
             .put("owner", "independent-external-dex")
+            .put("candidateRevision", CANDIDATE_VERSION)
             .put("pid", Process.myPid())
             .put("uptimeMs", (SystemClock.elapsedRealtime() - startedElapsedMs).coerceAtLeast(0L))
             .put("installedRappCount", installed(application).length())
