@@ -1,5 +1,17 @@
 # Independent component build evidence — 2026-10-10
 
+## 2026-10-11 — independent external Core v0.6.1 compiled; DEX SHA independently verified (NOT ACTIVATED)
+
+Signed host RiftOS #722, embedded Core. User installed the isolated `rift-critical-component-builder-v061` diagnostic RAPP, granted capabilities, then pressed BUILD INDEPENDENT CORE DEX. Screenshot reports `Status: complete · Compiled core.dex independently; Core/Shell NOT ACTIVATED`; registered managed-external `kotlin-android` compilation succeeded, eight APK ABI compile-only classes stripped by the producer, D8 completed, and the following versioned pair exists:
+
+- `/D:/Builds/Components/core/trial-v061/component.json`
+- `/D:/Builds/Components/core/trial-v061/core.dex`
+
+Manifest fields: `schema=riftos.protected-component/1`, `component=core`, `version=0.6.1`, `entrypoint=com.riftos.external.core.IndependentCoreV1`, `abi=1`, `payload=core.dex`, `minSdk=28`, `maxSdk=1000`. The DEX size is **2,773,244 bytes**. A separately copied byte-for-byte DEX read through workspace hashing gives full SHA-256 `2bbb861f5a7feda953c9fb49ea1ee207d942d0c2173d8d55c06d8050e6a1e4e7`, exactly matching `sha256` and `buildSha256` in the manifest. Original v0.6.0 trial pair remains `1f3c3850b0c0dc945944719cced77eec3091dc868a16d004413567d28ea1f3df`; revision ledger still quarantines only that earlier SHA as `interrupted-boot`. Current external Core activation pointer is absent, `pendingSha256=null`, current selected Core embedded, five RAPPs installed including diagnostic builder.
+
+**Next gate is user-driven protected Recovery STAGE ONLY**, using exact `/D:/Builds/Components/core/trial-v061` folder. Stage checks structural closure, entrypoint and ABI and creates an inactive-load qualification receipt. No install/activation until its result is inspected; stage and a matching SHA are not full device acceptance. Core `deviceQualificationComplete=false`, promotion disabled, and proper native-buffer/consent/recovery tests remain pending.
+
+
 ## 2026-10-11 — v0.6.1 first device compiler attempt FAILED; diagnostic RAPP prepared
 
 On signed RiftOS #722, the previously installed `rift-critical-component-builder` RAPP reached the registered managed-external Kotlin compiler but showed `Independent core Kotlin compilation failed` without the compiler receipt. Its current `runtime.js` was an older packed version that discards `response.messages`, `response.exitCode`, and failure detail. The on-device `core-classes` output is empty and **no new DEX** was produced or staged. The generic managed Kotlin tool does return `state`, `exitCode`, `messages` and `errorClass`; no unsupported compiler cause is asserted without these details.
