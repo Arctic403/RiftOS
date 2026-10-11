@@ -1,0 +1,43 @@
+# RiftOS — Simple APK-owned bootstrap, updates and manual recovery
+**Architecture decision: user-approved, 2026-10-10. Implementation status: DESIGN LOCK ONLY.**
+
+## Source of truth and scope
+
+This document supersedes the *target architecture and future work* in earlier automatic Core/Shell rollback, multi-revision promotion, automatic supervisor and N-1 recovery plans. Those existing sources and historical device receipts remain untouched until replacement gates pass. Do not mistake this plan for an implemented or device-proven recovery feature.
+
+**Permanent Android APK** is the boot authority. It owns (1) the trusted Core and Shell startup selector, (2) versioned component verification/install/update, (3) a durable currently-selected component and single known-working backup, (4) a minimal manual recovery UI reachable without loading Core or Shell, (5) QuickJS as a bounded generic execution engine, and (6) Android integration including MCP/relay. Installer/recovery/switch execute before and independently of external Core. No installed RAPP, Core module or Shell can silently rewrite protected selection/backup records.
+
+**External Core** is a replaceable OS implementation: RAPP application lifecycle, state, event scheduling, filesystem policy, capability/grant broker, package services, Core behavior. Core does not select/replace/restore itself. **External graphical RiftShell** owns desktop/windows/interaction and is independently updateable, but cannot act as the only recovery interface.
+
+### Desired normal flow
+
+1. On a clean APK install, ensure a trusted compatible initial Core is available **before** normal Core startup. During migration retain the currently verified embedded Core; for final minimal host, ship a signed/verified initial Core seed in APK assets and provision it into the same two-slot store. Never assume an already installed Core exists.
+2. APK verifies a selected Core's DEX digest, manifest ABI and allowed classes and starts it. External Core starts its normal services; Shell is started separately. No APK-owned duplicate application executor is permitted after migration.
+3. For an update, trusted APK installer verifies the new Core outside the active slot, preserves the **last user-confirmed working Core** as backup, atomically selects the new revision for the **next Core process start** and restarts only the necessary process. Never overwrite the only backup with a pending or failed candidate.
+4. User confirms a tested revision works (or a minimal explicit acceptance step records this). Only then does it become the new known-working backup for a later update. Mere success in D8, static validation, install or process boot is not application correctness.
+5. If an update fails, the user launches **RiftOS Recovery** from a separately launchable Android activity/process, independent of both RiftShell and Core. Recovery reads local active/backup status and error, verifies the backup again, and on explicit user selection atomically points to that known-working Core and restarts it. It should also allow selecting the first-install seed if backup is unavailable. It must not require MCP/relay, Core, Shell or any RAPP to function.
+
+**No automatic cross-version rotation, multi-layer approval maze or ever-growing revision ledger.** Minimal persistence is a verified active pointer, a protected known-working backup, optional staging marker, and compact error information. Keep SHA/ABI/class-closure checks, atomic writes, bounded files, and a user confirmation for protected install/restore. This is deliberately a trusted same-UID APK architecture, not an untrusted-code sandbox.
+
+Manual recovery is a backup path, not an automatic boot-loop watchdog. Android may terminate all app processes; recovery is user-launchable even after Core crashes. A plain Activity in the normal Core process is **not enough**; wire a dedicated Android process, separate launcher/Recovery entrypoint and a minimal Application.onCreate path that does not initialize Core or RiftShell. Recovery must not depend on the last failed DEX.
+
+### Reuse before remove (actual current sources)
+
+- Reuse/narrow `RiftBootstrapComponentStore` for protected DEX bytes and atomic pointers; `RiftProtectedDexVerifier` and protected manifest format for binary integrity.
+- Reuse/narrow `RiftProtectedComponentInstaller` for APK-owned staging and install; `RiftCoreCandidateSwitch` and `RiftShellCandidateSwitch` for startup selection; `RiftBootstrapHost` and `RiftCoreApplication` for process gating.
+- Replace the **policy complexity** of `RiftComponentReleaseLedger`, `RiftProtectedRevisionRecovery` and automatic `RiftCoreRecoverySupervisorService` only **after** manual recovery has real-device proof. Do not delete referenced APIs and break call sites ahead of their replacement.
+- Keep the permanently APK-owned `RiftHostQuickJsV1` execution primitive, independent of Core state/permissions. MCP/relay continue APK-owned and usable when desktop is not foreground.
+
+### Implementation — exactly three focused patches
+
+**Patch A — APK recovery entry and two-slot contract.** Reuse protected storage/verifier. Introduce the minimal active + known-good + staging records and a separate, launcher-accessible `:riftRecovery` Activity. It must open without Core/Shell/MCP and verify/report available backup. Initial-install seed/migration fallback behavior must be explicit. Keep all existing active functionality. **Manual device gate A:** recovery opens while Core and Shell are stopped/unavailable; empty backup and intact/invalid backup handling is safe; normal signed host boot still works.
+
+**Patch B — Installer, selector and user-initiated restore.** Wire trusted APK-owned Core/Shell staging to atomic next-boot selection, preserve last user-confirmed working revision, implement explicit restore and clean restart. Reuse exact SHA verification and existing APK admin entry where practical; keep user confirmation, remove redundant approval/promote layers once simple path is proved. **Manual device gate B:** clean first launch; install real compatible external Core; run actual installed RAPP through APK QuickJS with state, UI and effects; mark working; simulate a rejected/bad new candidate without overwriting backup; recovery manually restores prior Core, with the desktop accessible again. Verify Shell independently. A successful Core loader alone is NOT a pass.
+
+**Patch C — retire redundant automatic machinery.** Only after A/B verified on signed installed devices, remove or reduce automatic supervisor/restarter, deep release ledger/quarantine/N-1 orchestration, duplicate approver flows, leftover embedded Core and legacy hooks that no longer have callers. Keep Android crash diagnostics only if useful, not as required machinery. Update host/Builder source validators and docs in this patch. **Manual device gate C:** no orphan references, clean signed build, relaunch/cold boot, Core crash recovery screen still opens, manual backup restore works and four original RAPPs retained. Only then claim minimal stable host and Core/Shell updates without repacking the APK.
+
+**Process rules:** Every signed Android APK is dispatched and installed **manually by the user** through normal Riftos-builder. Do not use old RiftBuild signing routes or automatic builds. Do not activate the currently incomplete external Core or Shell and do not clear the known-working backup during migration. Current installed signed #706 proves the embedded-Core shared QuickJS path and original RAPP GUI; it does **not** prove external Core update, manual Recovery or N-1 restoration. Keep current source work/experimental capability broker uncommitted unless separately authorized to integrate.
+
+## Why this replaces the older recovery roadmap
+
+It avoids inventing a second OS inside the OS. The APK is the one owner of its own components, with a tiny, independently reachable recovery interface. Core and Shell can fail and be replaced without being asked to repair their own executable. After successful migration, external Core/Shell can be updated without a signed APK rebuild, unless the stable host ABI or Android platform integration itself changes.

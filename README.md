@@ -1,5 +1,11 @@
 # RiftOS
 
+## 2026-10-10 — New target: simple APK bootstrap and manual recovery (decision locked)
+
+The permanent APK owns **Core/Shell selection, verified update installation, one last-working backup and manual recovery**. If an external Core update breaks startup, a user-launchable APK Recovery screen in its **own process** (no Core/Shell dependency) verifies and restores the previous working Core. Clean initial APK installs must provide a known-good Core seed or retained embedded migration implementation. QuickJS and MCP/relay remain APK services; replaceable Core and Shell must not repair/update themselves.
+
+Implement in **three short patches:** A recovery entry + simple backup records; B APK installer/switch/manual restore with signed real-device proof; C remove obsolete auto-supervisor/N-1/complex promotion flows **only after manual recovery works**. [Authoritative decision + gates](docs/systems/android-host/SIMPLE_BOOTSTRAP_RECOVERY_LOCK.md) supersede historical auto-recovery targets. This is documented design, not an implemented Recovery feature. Installed #706 currently uses the existing embedded Core and device-passed shared QuickJS/RAPP smoke.
+
 ## 2026-10-10 — Core extraction rule: QuickJS remains a generic APK-host service
 
 **Locked by user:** QuickJS is the one persistent APK-hosted JavaScript engine, **not part of embedded Core ownership**. `RiftHostQuickJsV1` provides bounded, versioned JavaScript execution to both the existing Core and independently compiled replacement Core. Core alone owns RAPP lifecycle, queues, program state, grants/effects and presentation data; graphical Shell remains independently replaceable. No separate independently compiled QuickJS VM is required. This host ABI requires one future manually signed APK build and device validation before external Core can use it; compatible later Core changes should not rebuild the APK. The independent Core remains fail-closed pending broker/install/device N-1 parity. Signed installed #705 already passed >1 MiB ordinary RAPP pack/install/execute, but **not** this external Core ABI. See [external component contract](external-components/README.md), [build evidence](external-components/BUILD_EVIDENCE.md), and [roadmap](docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md).

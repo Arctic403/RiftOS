@@ -1,5 +1,11 @@
 # Independent protected Core / graphical Shell artifacts — format and trust contract
 
+## 2026-10-10 — POLICY OVERRIDE: APK first, single backup and manual Recovery
+
+The user replaced the previous automatic multi-revision acceptance/recovery design with the [Simple Bootstrap Recovery Lock](SIMPLE_BOOTSTRAP_RECOVERY_LOCK.md). Protected **manifest/DEX integrity, SHA, ABI, class allowlist and atomic storage** stay essential, but the host APK will own the entire **install/select/backup/manual restore** path independent of Core and Shell. One selected revision and one preserved last-user-confirmed-working revision are enough, plus temporary staging/compact error evidence; the user can manually launch a separate `:riftRecovery` Android activity/process when a new Core fails and restore a verified backup. The first clean install must have a trusted seed/embedded migration Core available.
+
+The three-approval promotion, automatic N-1 rotation, supervisor-driven rollback and deep release ledger instructions **below are historical descriptions of existing sources only**, not the new target. Do **not** rip them out before the separate Recovery entry and manual restore are tested on a signed device. The user controls signed host Builder runs and activation; no external Core/Shell installation/activation has yet passed its recovery acceptance gate. Signed #706 validated **embedded Core** using the common host QuickJS service, not the external component.
+
 ## 2026-10-10 — Actual registered Kotlin+D8 producer and support-class verifier compatibility
 
 The first independent component producer now resides in `external-components/` (outside Android APK Gradle sources), with a separate generic RAPP (`rift-critical-component-builder`) and exact registered `kotlin-android` → D8 workflow. Core and Shell source compiled separately with compile-only ABI stubs stripped BEFORE D8. Both actual DEX files and strict manifests exist on device at the canonical `/D:/Builds/Components/{core|shell}` locations; [precise evidence and SHA](../../../external-components/BUILD_EVIDENCE.md). Core is incomplete for JS RAPP execution and MUST NOT be activated. Shell UI implements generic RAPP windows but does not yet replace all system GUI behavior; also not activated.
