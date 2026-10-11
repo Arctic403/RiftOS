@@ -55,6 +55,7 @@ assert.match(hostQuickJs,/private val engine = RiftRappQuickJsExecutor\(\)/);
 assert.match(hostQuickJs,/engine\.execute\(runtime, input, outputLimit\)/);
 const embeddedExecutor=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftCoreAppExecutor.kt',root),'utf8');
 assert.match(embeddedExecutor,/RiftHostQuickJsV1\.execute\(runtime, envelope, OUTPUT_BYTES\)/);
+assert.match(embeddedExecutor,/RiftHostNativeBufferV1\.execute\(app, runtime, envelope, OUTPUT_BYTES\)/);
 assert.doesNotMatch(embeddedExecutor,/private val quickJs = RiftRappQuickJsExecutor\(\)/);
 assert.doesNotMatch(hostQuickJs,/RiftCoreRuntime|RiftCoreAppExecutor|RiftRappCapabilityBroker/);
 const verifier=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftProtectedDexVerifier.kt',root),'utf8');

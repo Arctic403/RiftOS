@@ -786,7 +786,7 @@ if (!nativeShell.includes('RiftHostCoreComponents.executionView().sessionsView(a
 // C1.1-B1: interpreter execution, deadlines and persisted state belong to Core.
 for (const required of [
   'class RiftCoreAppExecutor', 'RiftBoundedAsync.submit(',
-  'RiftNativeBufferCompilerService.compile(', 'RiftHostQuickJsV1.execute(',
+  'RiftHostNativeBufferV1.execute(', 'RiftHostQuickJsV1.execute(',
   'adapter.encodeEvent(', 'adapter.decodeOutput(', 'sessions.commitFromExecution(',
   'fun execute(', 'RiftCoreRuntime.runtimes(app)', 'sessions.matchesExecution('
 ]) if (!coreExecutor.includes(required)) fail(`C1.1-B1 Core execution missing: ${required}`);

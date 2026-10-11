@@ -176,25 +176,7 @@ class RiftCoreAppExecutor(context: Context) {
     ): ByteArray = when (kind) {
         RiftAppExecutionKind.NATIVE_BUFFER ->
             providers.execute(kind, runtime, envelope, OUTPUT_BYTES) {
-                val result = RiftNativeBufferCompilerService.compile(
-                    app, runtime, envelope, OUTPUT_BYTES
-                )
-                val status = result.getString("status") ?: "host-reject"
-                require(status == "success") {
-                    buildString {
-                        append("RAPP runtime ")
-                        append(status)
-                        append(" · host=")
-                        append(result.getInt("hostStatus", -1))
-                        append(" · return=")
-                        append(result.getLong("returnValue", 0xffffffffL))
-                        result.getString("detail")
-                            ?.takeIf { it.isNotBlank() }
-                            ?.let { append(" · "); append(it) }
-                    }
-                }
-                result.getByteArray("output")
-                    ?: error("RAPP runtime succeeded without output")
+                RiftHostNativeBufferV1.execute(app, runtime, envelope, OUTPUT_BYTES)
             }
 
         RiftAppExecutionKind.QUICKJS ->
