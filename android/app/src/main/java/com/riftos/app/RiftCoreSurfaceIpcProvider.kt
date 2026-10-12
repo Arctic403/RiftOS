@@ -36,7 +36,6 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
         const val METHOD_SHELL_FOCUS = "shell.focus"
         const val METHOD_SHELL_EVENT = "shell.event"
         const val METHOD_SHELL_EXECUTE = "shell.execute"
-        const val METHOD_SHELL_SYSTEM = "shell.system"
         const val METHOD_SHELL_INSTALL = "shell.install"
         const val METHOD_SHELL_UNINSTALL = "shell.uninstall"
         const val METHOD_SHELL_UI_POLL = "shell.ui.poll"
@@ -237,29 +236,6 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
                     "status" -> RiftCoreAdminConsent.status(ctx)
                     else -> error("Core admin consent action not supported")
                 }.put("corePid", Process.myPid())
-            }
-            METHOD_SHELL_SYSTEM -> {
-                // This method already passed the production :riftShell Binder
-                // UID/PID + OS process-name check above. RAPPs and MCP clients
-                // cannot forge the caller identity or this structured request.
-                val raw = extras?.getString("systemRequest")
-                    ?: error("Core system request missing")
-                require(raw.toByteArray(Charsets.UTF_8).size in 1..(70 * 1024)) {
-                    "Core system request exceeded IPC bound"
-                }
-                require(id.isEmpty()) { "System IPC forbids caller-supplied app actor" }
-                val input = JSONObject(raw)
-                require(input.getString("schema") == "riftos.core.system-request/1") {
-                    "Core system request schema invalid"
-                }
-                val result = RiftHostCoreComponents.systemServices()
-                    .systemRequest(ctx, input)
-                require(result.getString("schema") == "riftos.core.system-result/1") {
-                    "Selected Core returned wrong system result schema"
-                }
-                JSONObject().put("schema", "riftos.core.shell-control/1")
-                    .put("corePid", Process.myPid())
-                    .put("systemResult", result)
             }
             METHOD_SHELL_EXECUTE -> {
                 val command = id

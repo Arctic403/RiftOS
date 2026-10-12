@@ -1,12 +1,8 @@
 # Android Host
 
-## 2026-10-12 — Minimal Android host for Core v0.7 private-OS services (source gate)
+## 2026-10-12 — Retire unused v0.7 typed Core system-service host bridge
 
-An additive signed-APK ABI `RiftCoreSystemServicesV1` and authenticated `RiftCoreSurfaceIpcProvider.METHOD_SHELL_SYSTEM` (`shell.system`) expose structured independent Core services to the real `:riftShell` process. Only the already authenticated UID/PID + production Shell process identity can invoke that route. `RiftHostCoreComponents.systemServices()` casts the selected Core to this optional interface, **failing closed** if V061 or an embedded component lacks it; no embedded service fallback or in-process hot swap is introduced. `RiftShellCoreClient.systemRequest` and the additive Shell presentation platform-services method make this callable by future external Shell v2. The existing V1 RAPP Core ABI is unchanged and user-saved V061/Shell V1 artifacts remain usable as selected/Recovery versions.
-
-**APK intentionally retains:** MCP server, relay, tool host, operation journal, native Git bridge, QuickJS/native-buffer execution primitives and Android integration, trusted SAF/pickers, protected component DEX verification, admin approval paths still required by existing components, and separately launchable `:riftRecovery` manual save/restore. The Core V07 source contains NONE of MCP/relay/backend classes. Ordinary Core filesystem/task/user-setting/RAPP-grant operations are authenticated by production Shell Core IPC rather than a newly invented enterprise ticket stack; independent Recovery and protected install paths still require explicit user action.
-
-This **does not purge historical APK admin/embedded source**; first finish v07 and v2 parity and perform a dependency-driven audit before removal. The signed #731 APK does not yet expose the new interface, so a new APK built by the user's existing *manual* Builder flow is required before selecting Core V07. Static validation alone cannot establish device execution, ABI linkage or Core restart/recovery behavior.
+The unqualified Core v0.7 system-service interface and `shell.system` IPC route were removed from the Android host, Shell adapter and protected DEX special-case verifier. They were not invoked by the selected Core v0.6.3 or embedded graphical Shell. The stable V1 Core/Shell execution interfaces, authenticated IPC for RAPPs and Shell, MCP/relay, independent Recovery and `apk.install` host bridge stay unchanged. This source cleanup requires the user's usual **manual** signed APK Builder run before host bytecode changes take effect on device.
 
 ## 2026-10-11 — External Shell bootstrap DEX class inventory parity
 

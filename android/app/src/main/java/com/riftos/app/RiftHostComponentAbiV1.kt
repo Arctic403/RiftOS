@@ -47,16 +47,6 @@ interface RiftCoreExecutionViewV1 {
 }
 
 /**
- * C07 additive system-service ABI; existing Core v0.6.1 only implements the
- * unchanged V1 app/execution interfaces and remains a valid manual backup.
- * Shell calls use authenticated Core IPC. No MCP/relay objects live here.
- * Unsupported selected Core must fail closed, never call embedded executors.
- */
-interface RiftCoreSystemServicesV1 {
-    fun systemRequest(context: Context, request: JSONObject): JSONObject
-}
-
-/**
  * Stable APK-owned JavaScript execution primitive for independent Core DEXes.
  *
  * QUICKJS IS THE ONE EMBEDDED EXECUTION ENGINE EXCEPTION: this service owns
@@ -225,11 +215,6 @@ internal object RiftHostCoreComponents {
     fun executionView(): RiftCoreExecutionViewV1 =
         selected as? RiftCoreExecutionViewV1
             ?: error("Selected Core lacks independent RAPP execution/recovery ABI")
-
-    /** Optional V07 ownership; old selected Core remains intact, no fallback. */
-    fun systemServices(): RiftCoreSystemServicesV1 =
-        selected as? RiftCoreSystemServicesV1
-            ?: error("Selected Core does not provide the V07 system service ABI")
 
     /** Called only once after host-owned recoveries in the actual Core process. */
     @Synchronized

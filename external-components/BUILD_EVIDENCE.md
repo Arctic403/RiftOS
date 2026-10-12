@@ -1,5 +1,9 @@
 # Independent component build evidence — 2026-10-10
 
+## Current state: v0.7 retired, v0.6.3 selected
+
+The v0.7 entries below are historical *real device test evidence* from a prior temporary selection. They do not mean v0.7 completed qualification or is still active. Current selected Core is **v0.6.3**, and its saved Recovery backup is preserved; the v0.7 source and Builder option have been retired at the user's request. Preserve this history without treating v0.7 tests as present-day functionality.
+
 ## 2026-10-12 — Core v0.7 RAPP consent Allow and actual fs.write bytes PASS; Deny/Cancel fresh-grant proof remains pending
 
 User reported that the Core v0.7 consent tests passed. MCP verified that the external Core is **still v0.7.0, PID 23671**, that the freshly installed `rift-c07-consent-allow` RAPP appears in the Core/host catalogue, and that persistent capability grants include **fs.read and fs.write** for it. The independent on-device filesystem path `/D:/Workspace/tmp/c07-consent-allow-probe-20261012/probe-v2-write.txt` exists, is exactly **12 bytes**, and independently hashed SHA-256 **`eaac74feae5eabfefbc7a1b53b7c037c7ebb1fd393112b155dd859ff089fa055`**. That digest is an exact match for the expected literal bytes `C07 WRITE OK` emitted by the test RAPP. Mark positive **fs.write Allowed actual side-effect PASS** and **fs.read Allow user-confirmed**, with persistent fs.read grant observed. Subsequent Core sessions reported zero attached/zero pending events. No attempt was made to reset/revoke any real RAPP permissions.

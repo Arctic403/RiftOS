@@ -1,5 +1,9 @@
 # RiftOS Core ↔ RiftShell — canonical architecture (C1 series)
 
+## Current selection — Core v0.6.3; v0.7 retired
+
+Core v0.6.3 is selected and running. The historical C07 sections below record temporary v0.7 device-selection/testing, **not** a current or fully qualified Core interface. v0.7 source, its optional system-service IPC and Builder compile route have been removed by request. Do not follow the old C07 stage/activate instructions. The existing signed host and saved manual Recovery backups remain unchanged pending user-manual APK rebuild.
+
 ## 2026-10-12 — C07 permission UI Allow, Deny and Cancel user-confirmed; independent positive write PASS
 
 The user confirmed they personally pressed **Allow, Deny and Cancel** in permission prompts on external Core v0.7 and reported these UI tests passed. Under independent Core v0.7 PID 23671, MCP verified both consent probe RAPPs installed and persistent fs.read/fs.write grants for both. The Allow probe produced the expected 12-byte on-disk `C07 WRITE OK` output (SHA `eaac74feae5eabfefbc7a1b53b7c037c7ebb1fd393112b155dd859ff089fa055`). Mark the **Allow filesystem side effect independently PASS**, and **Deny/Cancel user-confirmed UI outcomes**; do not misrepresent the latter as separately no-write-verified, because the Deny RAPP acquired grants and has an output file, and there is no before/after negative-path observation. A fresh, ungranted app is required only if an independently proved no-write Deny/Cancel gate is required. No permissions were revoked by testing; both Recovery backups remain intact. No systemRequest authenticated Core-service device test has happened. See `external-components/BUILD_EVIDENCE.md`.

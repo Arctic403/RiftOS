@@ -38,11 +38,6 @@ interface RiftCoreExecutionViewV1 {
     fun stopApp(context: Context, id: String): JSONObject
 }
 
-/** Compile-only; v0.7 implements this additive typed system-services seam. */
-interface RiftCoreSystemServicesV1 {
-    fun systemRequest(context: Context, request: JSONObject): JSONObject
-}
-
 /**
  * Compile-only mirror of APK-hosted, zero-authority QuickJS V1.
  * Its generated class MUST be stripped before producing external DEX.
@@ -112,7 +107,6 @@ interface RiftShellPlatformServicesV1 {
     fun uninstallRapp(id: String): JSONObject
     fun pollUi(): JSONObject
     fun respondConsent(ticket: Long, approved: Boolean): Boolean
-    fun systemRequest(request: JSONObject): JSONObject
     fun execute(command: String, cwd: String?): JSONObject
     fun reportDesktop(snapshot: JSONObject): JSONObject
     fun claimRecovery(): JSONObject

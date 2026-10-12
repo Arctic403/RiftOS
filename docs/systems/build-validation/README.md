@@ -1,12 +1,8 @@
 # Build and Validation System
 
-## 2026-10-12 — External Core v0.7 source-only validation gate
+## 2026-10-12 — Retired v0.7 source validation requirements
 
-C07 adds an **additive** APK `RiftCoreSystemServicesV1` host interface and authenticated `shell.system` IPC. Independent `IndependentCoreV07.kt` reuses the proven `IndependentCoreV1.kt` RAPP engine, with only `IndependentCoreSystemServicesV07.kt` implementing bounded private-OS filesystem, tasks, settings and RAPP-grant operations. MCP and relay remain APK-owned, and no new Core admin-ticket stack is added. The existing Core v0.6.1 and graphical Shell v0.1 DEX/Recovery backups remain selected and untouched.
-
-The standalone component-builder RAPP `runtime.js` exposes manual **Core v0.7** button 106 and selects `compile-core-v07.json`: 15 Kotlin sources, isolated `build/riftbuild/core-v07-classes`, `core.dex` and `component.json` under `/D:/Builds/Components/core/v07/`, exact entrypoint `com.riftos.external.core.IndependentCoreV07`, version `0.7.0`. Its D8 strip list includes all compile-only APK class stubs, including `RiftCoreSystemServicesV1.class`. Existing v0.6.1 and Shell v0.1/v2 compiler outputs remain separate. The component builder **does not activate or promote** anything.
-
-`scripts/test-external-components.mjs`, `scripts/validate-rift-wiring.mjs`, and the matching user-manual Builder's source/Python contracts assert the selected ABI, independent Core ownership, exact Binder authentication and strict protected verifier, unchanged legacy `shell.execute` MCP route, isolated component recipe and no automatic Recovery mutation. JavaScript simulations of registered compiler requests are **not** Kotlin/D8 binary compilation. The signed #731 APK does not have the new ABI: user must manually rebuild/install the host APK through the established Builder workflow, repack/install the component-builder RAPP, compile v0.7, verify SHA/manifest, and manually select/test via independent Recovery. Full test suite, Android compile/sign and real device qualification are pending until the user runs the flow.
+The independent Core **v0.7** entrypoint, private system-services source, compile recipe, RAPP button, and V07-only source/host regression requirements were removed. The current external Core is **v0.6.3**, so the Android source gates retain the proven Core V1 execution/Recovery contract and `apk.install` bridge. Builder must **not** reject an APK because retired v0.7 files or its optional typed IPC are missing. Historical validation of v0.7 is archived in component build evidence; do not treat it as required for current builds.
 
 ## 2026-10-12 — Isolated external graphical Shell V2 source-only regression gate
 

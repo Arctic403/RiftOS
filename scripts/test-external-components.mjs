@@ -6,7 +6,7 @@ const read = name => fs.readFileSync(new URL(name, dir), 'utf8');
 const host = fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftHostComponentAbiV1.kt', root),'utf8')
  + fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftShellComponentAbiV1.kt', root),'utf8');
 const stub=read('HostAbiCompileOnly.kt'), core=read('IndependentCoreV1.kt'), shell=read('IndependentGraphicalShellV1.kt'), engine=read('IndependentRappSessionsV1.kt'), producer=read('runtime.js');
-const names=['RiftCoreComponentV1','RiftCoreExecutionViewV1','RiftCoreSystemServicesV1','RiftShellGraphicalComponentV1','RiftShellPlatformServicesV1'];
+const names=['RiftCoreComponentV1','RiftCoreExecutionViewV1','RiftShellGraphicalComponentV1','RiftShellPlatformServicesV1'];
 function iface(text,name) {
  const start=text.indexOf('interface '+name+' {'); assert.ok(start>=0,'missing interface '+name);
  let open=text.indexOf('{',start),n=1,end=open+1;
@@ -235,65 +235,15 @@ assert.match(manifest,/android:name="androidx\.core\.content\.FileProvider"/);
 assert.match(manifest,/@xml\/rift_build_apk_paths/);
 assert.match(producer,/coreV063:108/);
 assert.match(producer,/trial-v063\//);
-const coreV07=read('IndependentCoreV07.kt');
-const systemV07=read('IndependentCoreSystemServicesV07.kt');
-const recipeV07=JSON.parse(read('compile-core-v07.json'));
-const recipeV061=JSON.parse(read('compile-core-v061.json'));
-assert.deepEqual(recipeV07.sources,[
- ...recipeV061.sources,
- 'IndependentCoreSystemServicesV07.kt',
- 'IndependentCoreV07.kt'
-]);
-assert.notEqual(recipeV07.outputDir,recipeV061.outputDir);
-assert.equal(recipeV07.outputDir,'build/riftbuild/core-v07-classes');
-assert.match(coreV07,/class IndependentCoreV07 : IndependentCoreV1\(\), RiftCoreSystemServicesV1/);
-assert.match(coreV07,/override fun systemRequest\(context: Context, request: JSONObject\): JSONObject/);
-assert.match(coreV07,/override fun coreStatus\(context: Context\): JSONObject/);
-assert.match(coreV07,/"candidateRevision", VERSION/);
+// Preserve selected Core V1/0.6.3 and authenticated Shell IPC invariants.
 assert.match(core,/open class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1/);
 assert.match(core,/withLiveGrantChange\(context: Context, id: String/);
-for(const action of [
- 'status','volumes','tasks.list','tasks.close','fs.list','fs.stat',
- 'fs.read','fs.write','fs.mkdir','fs.delete','fs.copy','fs.move',
- 'settings.get','settings.set','permissions.list','permissions.revoke'
-]) assert.ok(systemV07.includes('"'+action+'"'),'Missing Core V07 system service: '+action);
-for(const requirement of [
- 'RiftVolumePaths.normalizeDisplay','RiftVolumePaths.resolveRelative',
- 'Files.isSymbolicLink','AtomicFile','MAX_FILE_TEXT',
- 'settings.edit().putString(key, value).commit()',
- 'core.withLiveGrantChange(app, id)',
- 'Only files can be deleted','Protected component build output',
- 'Core grant revocation was not persisted',
- 'File(root, "documents/builds/Components").canonicalFile',
- '!value.path.startsWith(components.path + File.separator)'
-]) assert.ok(systemV07.includes(requirement),'Core V07 operation invariant missing: '+requirement);
-assert.doesNotMatch(systemV07,/RiftMcpRuntime|RiftMcpRelayClient|RiftCoreAdminConsent|RiftManualRecoveryStore|RiftProtectedComponentInstaller|RiftCoreRuntime/);
-assert.doesNotMatch(coreV07,/RiftMcpRuntime|RiftMcpRelayClient|RiftCoreAdminConsent|RiftManualRecoveryStore|RiftProtectedComponentInstaller|RiftCoreRuntime/);
-assert.match(host,/interface RiftCoreSystemServicesV1/);
-assert.match(host,/fun systemServices\(\): RiftCoreSystemServicesV1/);
-assert.match(host,/selected as\? RiftCoreSystemServicesV1/);
-assert.match(host,/fun systemRequest\(request: JSONObject\): JSONObject/);
-assert.match(stub,/interface RiftCoreSystemServicesV1/);
-assert.match(verifier,/Lcom\/riftos\/app\/RiftCoreSystemServicesV1;/);
-assert.match(verifier,/RiftCoreSystemServicesV1::class\.java\.isAssignableFrom\(type\)/);
-assert.match(producer,/'RiftCoreSystemServicesV1\.class'/);
-assert.match(producer,/coreV07:106/);
-assert.match(producer,/k==='core-v07'\?'v07\/'/);
-assert.match(producer,/k==='core-v07'\?'0\.7\.0'/);
-assert.match(producer,/'IndependentCoreSystemServicesV07\.kt','IndependentCoreV07\.kt'/);
-const coreIpc=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftCoreSurfaceIpcProvider.kt',root),'utf8');
-const shellIpc=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftShellCoreClient.kt',root),'utf8');
-const shellAbi=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftShellComponentAbiV1.kt',root),'utf8');
-assert.match(coreIpc,/const val METHOD_SHELL_SYSTEM = "shell\.system"/);
-assert.match(coreIpc,/if \(method != METHOD_SNAPSHOT\) requireProductionShellCaller\(\)/);
-assert.match(coreIpc,/METHOD_SHELL_SYSTEM -> \{/);
-assert.match(coreIpc,/RiftHostCoreComponents\.systemServices\(\)[\s\S]*?\.systemRequest\(ctx, input\)/);
-assert.match(shellIpc,/fun systemRequest\(request: JSONObject\): JSONObject/);
-assert.match(shellAbi,/override fun systemRequest\(request: JSONObject\): JSONObject =\s*client\.systemRequest\(request\)/);
-assert.match(coreIpc,/RiftMcpRuntime\.nativeShell\(ctx\)\.execute\(command, cwd\)/);
-assert.match(coreV07,/VERSION = "0\.7\.0"/);
 assert.match(shellLoader,/manualRecoveryOnly/);
- // Shell v2 remains a separately compiled component. System tools use Core's
+const coreIpc=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftCoreSurfaceIpcProvider.kt',root),'utf8');
+assert.match(coreIpc,/if \(method != METHOD_SNAPSHOT\) requireProductionShellCaller\(\)/);
+assert.match(coreIpc,/RiftMcpRuntime\.nativeShell\(ctx\)\.execute\(command, cwd\)/);
+assert.doesNotMatch(producer,/core-v07|coreV07|IndependentCoreV07|RiftCoreSystemServicesV1/);
+// Shell v2 remains a separately compiled component. System tools use Core's
 // authenticated command IPC, but never forge an installed RAPP session.
 const shellV2=read('IndependentGraphicalShellV2.kt');
 const v1Recipe=JSON.parse(read('compile-shell.json'));
@@ -384,13 +334,12 @@ assert.deepEqual(Array.from(v2Request.sources),v2Recipe.sources);
 assert.equal(v2Request.outputDir,v2Recipe.outputDir);
 assert.ok(!v2Request.sources.includes('IndependentGraphicalShellV1.kt'));
 
-// Simulate the newly registered v0.7-only Core compile path without issuing
-// any real Kotlin/D8 operation or mutating a device/component/recovery pointer.
+// Simulate retained v0.6.3 Core build option, without Recovery mutation.
 const chosenCore=JSON.parse(context.riftRappMain(JSON.stringify({
- event:{kind:1,targetId:106}
+ event:{kind:1,targetId:108}
 })));
 const stateCore=JSON.parse(Buffer.from(chosenCore.stateBase64,'base64').toString('utf8'));
-assert.equal(stateCore.mode,'core-v07');
+assert.equal(stateCore.mode,'core-v063');
 assert.equal(chosenCore.effect.operation,'toolchainStatus');
 const requestedCore=JSON.parse(context.riftRappMain(JSON.stringify({
  stateBase64:chosenCore.stateBase64,
@@ -401,13 +350,12 @@ const requestedCore=JSON.parse(context.riftRappMain(JSON.stringify({
 })));
 assert.equal(requestedCore.effect.operation,'compilerRun');
 const coreRequest=JSON.parse(requestedCore.effect.text).request;
-assert.deepEqual(Array.from(coreRequest.sources),recipeV07.sources);
-assert.equal(coreRequest.outputDir,recipeV07.outputDir);
-assert.ok(!coreRequest.sources.includes('IndependentGraphicalShellV2.kt'));
+assert.deepEqual(Array.from(coreRequest.sources),recipeV063.sources);
+assert.equal(coreRequest.outputDir,recipeV063.outputDir);
 assert.ok(!coreRequest.sources.includes('RiftMcpRuntime.kt'));
 assert.match(producer,/k==='shell-v2'\?'v2\/'/);
-assert.match(producer,/version:k==='core'\?'0\.6\.1':k==='core-v062'\?'0\.6\.2':k==='core-v063'\?'0\.6\.3':k==='core-v07'\?'0\.7\.0':k==='shell-v2'\?'0\.2\.0'/);
-assert.match(producer,/entry:k==='core'\?'com\.riftos\.external\.core\.IndependentCoreV1':k==='core-v062'\?'com\.riftos\.external\.core\.IndependentCoreV062':k==='core-v063'\?'com\.riftos\.external\.core\.IndependentCoreV063':k==='core-v07'\?'com\.riftos\.external\.core\.IndependentCoreV07':k==='shell-v2'\?'com\.riftos\.external\.shell\.IndependentGraphicalShellV2'/);
+assert.match(producer,/version:k==='core'\?'0\.6\.1':k==='core-v062'\?'0\.6\.2':k==='core-v063'\?'0\.6\.3':k==='shell-v2'\?'0\.2\.0'/);
+assert.match(producer,/entry:k==='core'\?'com\.riftos\.external\.core\.IndependentCoreV1':k==='core-v062'\?'com\.riftos\.external\.core\.IndependentCoreV062':k==='core-v063'\?'com\.riftos\.external\.core\.IndependentCoreV063':k==='shell-v2'\?'com\.riftos\.external\.shell\.IndependentGraphicalShellV2'/);
 assert.doesNotMatch(producer,/RiftProtectedComponentInstaller|RiftManualRecoveryStore|acceptProven\(/);
 const gradle=fs.readFileSync(new URL('android/app/build.gradle.kts',root),'utf8');
 assert.ok(!gradle.includes('external-components/'));
