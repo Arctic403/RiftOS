@@ -16,6 +16,44 @@ const ledger = kotlin('RiftComponentReleaseLedger.kt');
 const bootstrap = kotlin('RiftBootstrapComponentStore.kt');
 const roadmap = fs.readFileSync(new URL('docs/systems/android-host/SIMPLE_BOOTSTRAP_RECOVERY_LOCK.md', root), 'utf8');
 
+// Graphical Shell fatal dumps are owned by APK host, not external Shell/Core,
+// and must remain readable when the selected desktop never starts.
+const shellCrash = kotlin('RiftShellCrashDiagnostics.kt');
+const shellActivity = kotlin('RiftShellActivity.kt');
+const shellRecovery = kotlin('RiftCoreShellRecovery.kt');
+const coreRuntime = kotlin('RiftCoreRuntime.kt');
+const nativeShell = kotlin('RiftNativeShell.kt');
+assert.ok(gradle.includes('"src/main/java/com/riftos/app/RiftShellCrashDiagnostics.kt"'),
+  'Crash recorder must be compiled into the permanent signed APK');
+for (const required of [
+  'riftos.shell.crash-diagnostics/1',
+  'last-crash.json', 'last-exit.json',
+  'Thread.setDefaultUncaughtExceptionHandler',
+  'previous.uncaughtException(thread, error)',
+  'lastCapturedFailure !== error',
+  'getHistoricalProcessExitReasons(',
+  'it.processName == context.packageName + ":riftShell"',
+  'fullNativeTombstoneGuaranteed", false',
+  'automaticRollbackEnabled", false'
+]) assert.ok(shellCrash.includes(required), 'Shell failure capture missing: ' + required);
+assert.ok(app.includes('RiftShellCrashDiagnostics.install(this)'),
+  'Crash observer must install in Shell Application before DEX boot');
+assert.ok(shellActivity.includes('RiftShellCrashDiagnostics.recordFailure(application, "selected-dex-load", failure)') &&
+          shellActivity.includes('RiftShellCrashDiagnostics.recordFailure(application, "external-shell-attach", failure)'),
+  'Shell loader and attach exceptions must preserve their exact startup stage');
+assert.ok(shellRecovery.includes('crashPollWorker.execute {') &&
+          shellRecovery.includes('crashPollInFlight.compareAndSet(false, true)') &&
+          shellRecovery.includes('RiftShellCrashDiagnostics.refreshHistoricalExit(context)'),
+  'Independent Core must poll Android exit reports off heartbeat main thread');
+assert.ok(coreRuntime.includes('.put("shellCrashDiagnostics", RiftShellCrashDiagnostics.status(context))') &&
+          nativeShell.includes('"shell-crash" -> RiftShellCrashDiagnostics.report(appContext)'),
+  'Headless Core must expose graphical Shell dump after desktop failure');
+for (const forbidden of [
+  'RiftManualRecoveryStore.restore(', 'writeProtectedPointer(',
+  'resetShellToEmbedded(', 'RiftComponentReleaseLedger.acceptProven('
+]) assert.ok(!shellCrash.includes(forbidden),
+  'Crash recorder cannot automatically change user-owned component selection: ' + forbidden);
+
 for (const file of ['RiftManualRecoveryActivity.kt', 'RiftManualRecoveryStore.kt',
                     'RiftManualRecoveryInstaller.kt']) {
   const source = 'android/app/src/main/java/com/riftos/app/' + file;

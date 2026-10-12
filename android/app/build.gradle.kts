@@ -86,6 +86,7 @@ val verifyRiftOsAndroidSources by tasks.registering {
         "src/main/java/com/riftos/app/RiftHostComponentAbiV1.kt",
         "src/main/java/com/riftos/app/RiftCoreCandidateSwitch.kt",
         "src/main/java/com/riftos/app/RiftCoreRecoveryDiagnostics.kt",
+        "src/main/java/com/riftos/app/RiftShellCrashDiagnostics.kt",
         "src/main/java/com/riftos/app/RiftComponentReleaseLedger.kt",
         "src/main/java/com/riftos/app/RiftCoreRecoverySupervisorService.kt",
         "src/main/java/com/riftos/app/RiftManualRecoveryStore.kt",

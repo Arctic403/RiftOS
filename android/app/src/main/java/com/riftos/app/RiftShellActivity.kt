@@ -81,7 +81,12 @@ class RiftShellActivity : Activity() {
         // A qualified external graphical component owns the ENTIRE desktop
         // branch. The embedded window manager is never constructed when it
         // successfully attaches, and remains the protected default otherwise.
-        val candidate = RiftShellCandidateSwitch.selectAtBoot(application)
+        val candidate = try {
+            RiftShellCandidateSwitch.selectAtBoot(application)
+        } catch (failure: Throwable) {
+            RiftShellCrashDiagnostics.recordFailure(application, "selected-dex-load", failure)
+            throw failure
+        }
         if (candidate != null) {
             try {
                 val externalCore = RiftShellCoreClient(applicationContext)
@@ -95,6 +100,7 @@ class RiftShellActivity : Activity() {
             } catch (failure: Throwable) {
                 android.util.Log.e("RiftShellActivity",
                     "External graphical Shell startup rejected", failure)
+                RiftShellCrashDiagnostics.recordFailure(application, "external-shell-attach", failure)
                 runCatching { RiftShellCandidateSwitch.reportStopped(application) }
                 runCatching { candidate.onDestroy() }
                 // Never choose embedded Shell automatically after a selected

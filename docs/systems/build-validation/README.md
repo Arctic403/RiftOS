@@ -1,5 +1,9 @@
 # Build and Validation System
 
+## 2026-10-11 — Shell crash diagnostic signed-host source gate
+
+The new `RiftShellCrashDiagnostics.kt` is an **APK Kotlin owner**, not an independently compiled external Shell DEX source. It must appear exactly once in Gradle's strict `verifyRiftOsAndroidSources` list and `docs/SOURCE_OWNERSHIP.md`. Node `validate-rift-wiring.mjs` and `test-simple-recovery.mjs` require the Java crash observer, Shell DEX load/attach catch, asynchronous Core-side Android exit polling, bounded independent RiftFS records and the `core shell-crash` command. The paired Builder `riftos-build.sh` and Python contract test assert the same signed source and disallow any automatic Recovery pointer mutation. A green source/static check does not establish Gradle compilation, device reliability or availability of full native tombstones. Signed Builder dispatch and phone installation remain user-manual; do not initiate builds automatically.
+
 ## 2026-10-10 — Independent executable source size regression gate
 
 The application packaging cap is now **8 MiB per RAPP executable runtime** rather than 1 MiB, and **16 MiB per compressed/extracted RAPP package** rather than 4 MiB. `RiftRappManager`, `RiftRappQuickJsExecutor`, and `external-components/` share these bounds; existing **1 MiB program/state** and 512 KiB per-event QuickJS I/O remain bounded. `scripts/test-rapp-payload-limits.mjs` runs in canonical `npm check`; separate signed Builder source preflight and Python selftest require exact manager cap markers. This allows larger RAPP source payloads but is not a Kotlin compiler performance optimization. APK build/install is user-manual; signed #702 still has the earlier cap.

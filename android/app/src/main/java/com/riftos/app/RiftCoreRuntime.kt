@@ -126,6 +126,7 @@ object RiftCoreRuntime {
             .put("appSurfaces", surfaces(context).list())
             .put("coreApps", lifecycle(context).status())
             .put("shellRecovery", RiftCoreShellRecovery.status())
+            .put("shellCrashDiagnostics", RiftShellCrashDiagnostics.status(context))
             .put("bootstrapHost", RiftBootstrapHost.status(context))
             .put("hostComponents", RiftHostCoreComponents.status())
             .put("coreRecoveryDiagnostics", RiftCoreRecoveryDiagnostics.status(context))

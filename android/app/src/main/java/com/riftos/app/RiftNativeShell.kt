@@ -411,7 +411,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "write <file> <text>  touch <file>  mkdir <dir>  cp|mv <from> <to> [--force]  rm <path>\n" +
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
                     "workspace [cd|info|ls|status|push]\n" +
-                    "core status|sessions|surfaces|focus|apps|app-start|app-stop|alt-list|alt-attach|alt-render|alt-detach|alt-graphic-open|ipc-view   [CORE / ALT SHELL]\n" +
+                    "core status|shell-crash|sessions|surfaces|focus|apps|app-start|app-stop|alt-list|alt-attach|alt-render|alt-detach|alt-graphic-open|ipc-view   [CORE / ALT SHELL]\n" +
                     "riftcrash help|status|start|capture|latest|reset [package]   [LOCALHOST DIAGNOSTIC BRIDGE]\n" +
                     "Project-specific language/tool CLIs are not APK built-ins; use installed RAPPs/providers.",
                 cwd,
@@ -506,7 +506,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     args.firstOrNull()?.lowercase()?.startsWith("alt-") == true) {
                     error("Legacy alternate Core surface renderer disabled for independent external Core")
                 }
-                val usage = "usage: core status|sessions|surfaces|focus|apps|app-start <id>|app-stop <id>|alt-list|alt-attach <id>|alt-render <id>|alt-detach <id>|alt-graphic-open <id>|ipc-view <id>"
+                val usage = "usage: core status|shell-crash|sessions|surfaces|focus|apps|app-start <id>|app-stop <id>|alt-list|alt-attach <id>|alt-render <id>|alt-detach <id>|alt-graphic-open <id>|ipc-view <id>"
                 val state = when {
                     args.size == 1 -> when (args.single().lowercase()) {
                         "status" -> RiftHostCoreComponents.executionView()
@@ -514,9 +514,12 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                             .put("hostCoreSelector", RiftHostCoreComponents.status())
                             .put("manualRecovery",
                                 RiftManualRecoveryStore.status(appContext))
+                            .put("shellCrashDiagnostics",
+                                RiftShellCrashDiagnostics.status(appContext))
                             .put("legacyCoreBootMarkerPresent",
                                 File(RiftBootstrapComponentStore.root(appContext),
                                     "core.booting").exists())
+                        "shell-crash" -> RiftShellCrashDiagnostics.report(appContext)
                         "sessions" -> RiftHostCoreComponents.executionView().sessionsView(appContext)
                         "surfaces" -> RiftHostCoreComponents.executionView().surfacesView(appContext)
                         "focus" -> RiftHostCoreComponents.executionView().focusView(appContext)

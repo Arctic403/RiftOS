@@ -33,6 +33,9 @@ class RiftCoreApplication : Application() {
             // embedded compatibility entry preserves C1.4 recovery ordering.
             RiftBootstrapHost.startCore(this)
         } else if (currentProcess == packageName + ":riftShell" && Build.VERSION.SDK_INT >= 28) {
+            // Install the durable Shell fatal observer before WebView setup,
+            // candidate DEX loading, or graphical Activity lifecycle.
+            RiftShellCrashDiagnostics.install(this)
             // Android WebView requires its own browser data directory per
             // process; otherwise moving the real browser into RiftShell may
             // fail due to the Core/browser helper process holding the lock.

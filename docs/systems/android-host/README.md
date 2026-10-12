@@ -1,5 +1,11 @@
 # Android Host
 
+## 2026-10-11 — Independent graphical Shell crash evidence (source only)
+
+An external graphical `:riftShell` DEX may fail before it attaches or reports a heartbeat. The permanent APK now owns `RiftShellCrashDiagnostics`: its `Application.onCreate` installs a default Java uncaught-exception observer **before WebView or Shell DEX selection** and delegates to Android's original handler after bounded AtomicFile evidence. The real `RiftShellActivity` also records exact `selected-dex-load` and `external-shell-attach` errors before rethrow. The separate Core process asynchronously polls `ActivityManager.getHistoricalProcessExitReasons` even if the Shell never connects; native traces are best-effort, not guaranteed tombstones. No unattended component fallback, auto acceptance, quarantine, version replacement, or Recovery backup mutation.
+
+After the user's NEXT manually signed APK build, query `core shell-crash` via MCP/headless RiftShell. Core status also exposes `shellCrashDiagnostics`. Bounded persistent files under RiftFS: `/D:/Diagnostics/RiftShell/last-crash.json` (Java stack, PID, exact selected Shell SHA and stage) and `/D:/Diagnostics/RiftShell/last-exit.json` (Android process exit reason and optional excerpt/hash). These files contain diagnostic text and should not be published publicly without review. Full native tombstones are not guaranteed. Old #729 cannot produce the new dump; installed Core v0.6.1, the manually saved Core backup and embedded Shell Recovery remain unchanged until the user chooses otherwise. Gradle exact Kotlin inventory, source validator, regression test and Builder preflight must all agree before that build is considered ready. No assistant-initiated signed build or device activation.
+
 ## 2026-10-11 — retired APK build-proof installer components
 
 The old RiftBuild-only APK install proof Activity and receiver and their unreferenced verifier/installer classes have been removed from the upcoming source APK. The dedicated `:riftRecovery` process, protected component staging/SHA/DEX verification, embedded migration fallback and manual restore remain intact. The installed #715 build predates this cleanup; earlier sections below describing the deleted proof receiver are historical, not current host ownership. No new signed APK has been built.

@@ -107,6 +107,7 @@ As of the post-#715 APK legacy-language cleanup, Gradle packages **none** of `sr
 | `android/app/src/main/java/com/riftos/app/RiftHostComponentAbiV1.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCoreCandidateSwitch.kt` | `docs/systems/android-host/README.md` + `docs/systems/android-host/E1_CORE_CANDIDATE.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCoreRecoveryDiagnostics.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftShellCrashDiagnostics.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftComponentReleaseLedger.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftProtectedComponentManifest.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftProtectedDexVerifier.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/build-validation/README.md` |

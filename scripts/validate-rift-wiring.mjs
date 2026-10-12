@@ -318,8 +318,45 @@ if (!gradle.includes('"src/main/java/com/riftos/app/RiftShellComponentAbiV1.kt"'
 }
 
 const coreRecoveryDiagnostics = read(`${kotlinDir}/RiftCoreRecoveryDiagnostics.kt`);
+const shellCrashDiagnostics = read(`${kotlinDir}/RiftShellCrashDiagnostics.kt`);
 const componentReleaseLedger = read(`${kotlinDir}/RiftComponentReleaseLedger.kt`);
 const coreSupervisor = read(`${kotlinDir}/RiftCoreRecoverySupervisorService.kt`);
+
+// Independent graphical Shell may crash before first Core heartbeat. Capture
+// bounded same-UID evidence without altering manual component selection.
+for (const marker of [
+  'riftos.shell.crash-diagnostics/1',
+  'RiftVolumePaths.resolveRelative("/D:/Diagnostics/RiftShell")',
+  'Thread.setDefaultUncaughtExceptionHandler',
+  'previous.uncaughtException(thread, error)',
+  'lastCapturedFailure !== error',
+  'getHistoricalProcessExitReasons(',
+  'it.processName == context.packageName + ":riftShell"',
+  'AtomicFile(path)',
+  'last-crash.json',
+  'last-exit.json',
+  'fullNativeTombstoneGuaranteed", false',
+  'automaticRollbackEnabled", false',
+]) if (!shellCrashDiagnostics.includes(marker)) {
+  fail('S Shell crash evidence contract missing: ' + marker);
+}
+const shellApplication = read(`${kotlinDir}/RiftCoreApplication.kt`);
+const shellRecovery = read(`${kotlinDir}/RiftCoreShellRecovery.kt`);
+const nativeShellForCrash = read(`${kotlinDir}/RiftNativeShell.kt`);
+if (!gradle.includes('"src/main/java/com/riftos/app/RiftShellCrashDiagnostics.kt"') ||
+    !shellApplication.includes('RiftShellCrashDiagnostics.install(this)') ||
+    !shellActivityForSwitch.includes('RiftShellCrashDiagnostics.recordFailure(application, "selected-dex-load", failure)') ||
+    !shellActivityForSwitch.includes('RiftShellCrashDiagnostics.recordFailure(application, "external-shell-attach", failure)') ||
+    !shellRecovery.includes('RiftShellCrashDiagnostics.refreshHistoricalExit(context)') ||
+    !shellRecovery.includes('crashPollWorker.execute {') ||
+    !coreRuntime.includes('.put("shellCrashDiagnostics", RiftShellCrashDiagnostics.status(context))') ||
+    !nativeShellForCrash.includes('"shell-crash" -> RiftShellCrashDiagnostics.report(appContext)') ||
+    !nativeShellForCrash.includes('RiftShellCrashDiagnostics.status(appContext)')) {
+  fail('S graphical Shell crash evidence not integrated into signed Gradle, APK startup, worker and headless Core CLI');
+}
+for (const forbidden of ['RiftManualRecoveryStore.restore(', 'writeProtectedPointer(', 'resetShellToEmbedded(', 'RiftComponentReleaseLedger.acceptProven(']) {
+  if (shellCrashDiagnostics.includes(forbidden)) fail('S Shell crash evidence must never modify Recovery selection: ' + forbidden);
+}
 
 const protectedManifest = read(kotlinDir + '/RiftProtectedComponentManifest.kt');
 const protectedDex = read(kotlinDir + '/RiftProtectedDexVerifier.kt');

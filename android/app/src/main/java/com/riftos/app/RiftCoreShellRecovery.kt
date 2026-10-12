@@ -7,6 +7,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Process
 import android.os.SystemClock
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -37,6 +39,11 @@ object RiftCoreShellRecovery {
     private var phase = "idle"
     private var lastError = ""
     private var recoverySerial = 0L
+    private var lastCrashPollElapsed = 0L
+    private val crashPollInFlight = AtomicBoolean(false)
+    private val crashPollWorker = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "rift-shell-exit-diagnostics").apply { isDaemon = true }
+    }
     private val tick = object : Runnable {
         override fun run() {
             runCatching { inspect() }
@@ -96,8 +103,23 @@ object RiftCoreShellRecovery {
     @Synchronized
     private fun inspect() {
         val context = app ?: return
-        if (!hasSeenShell || !foreground || ownerPid <= 0) return
         val now = SystemClock.elapsedRealtime()
+        // Poll even before the first successful Shell attach. A DEX/class
+        // loader failure can kill :riftShell before it reports any heartbeat.
+        if (now - lastCrashPollElapsed >= 5_000L &&
+            crashPollInFlight.compareAndSet(false, true)) {
+            lastCrashPollElapsed = now
+            runCatching {
+                crashPollWorker.execute {
+                    try {
+                        RiftShellCrashDiagnostics.refreshHistoricalExit(context)
+                    } finally {
+                        crashPollInFlight.set(false)
+                    }
+                }
+            }.onFailure { crashPollInFlight.set(false) }
+        }
+        if (!hasSeenShell || !foreground || ownerPid <= 0) return
         if (now - beat < STALE_MS) return
         // Do not infer death from one Binder failure or from backgrounding.
         // Verify process absence in Android's OS-owned process registry.
