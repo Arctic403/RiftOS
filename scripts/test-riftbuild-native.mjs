@@ -83,7 +83,14 @@ assert.ok(wiringValidator.includes("if (nativeShell.includes('RiftCoreRuntime.bu
   'C1.0 validator must reject the retired embedded RiftBuild shell coupling');
 assert.ok(!wiringValidator.includes("if (!nativeShell.includes('RiftCoreRuntime.buildPlatform(appContext)') ||"),
   'C1.0 validator must not demand the retired embedded RiftBuild shell coupling');
-for (const route of ['coreStatus(appContext)', 'startApp(appContext, args[1])', 'stopApp(appContext, args[1])']) {
+// The selected-Core status call spans Kotlin lines; require the real,
+// whitespace-tolerant validator guard and verify the Shell calls that ABI.
+const selectedCoreStatusRoute = /RiftHostCoreComponents\.executionView\(\)\s*\.coreStatus\(appContext\)/;
+assert.ok(wiringValidator.includes('!' + selectedCoreStatusRoute + '.test(nativeShell)'),
+  'C1.0 validator must require selected-Core status across Kotlin whitespace');
+assert.match(shell, selectedCoreStatusRoute,
+  'C1.0 Shell must call selected-Core status rather than an embedded facade');
+for (const route of ['startApp(appContext, args[1])', 'stopApp(appContext, args[1])']) {
   assert.ok(wiringValidator.includes('RiftHostCoreComponents.executionView().' + route),
     'C1.0 validator must require actual selected-Core route: ' + route);
 }
