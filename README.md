@@ -1,5 +1,10 @@
 # RiftOS
 
+## 2026-10-11 — NEW Core boot-success known-good policy (source only, not installed)
+
+Per user instruction, **successful real Core startup automatically promotes the selected exact SHA for Recovery**. `RiftBootstrapHost` now finishes selected Core initialization, starts the host recovery coordinator, verifies the Core execution-view status ABI, then records `lastKnownGood` and clears `core.booting` through APK-only protected release code. No full RAPP, compiler, consent, graphical Shell or MCP device-test gate, and no third 45-second admin acceptance ticket. An unfinished boot still recovers to prior/embedded; post-boot crashes are recorded without retracting successful Core boot acceptance. External graphical Shell boot policy is a **later separate task**; the original trusted stage/activate approval and embedded fallback remain. The host-owned `core status` output now includes protected revision/marker truth. **This is not yet a signed or device-proven build**, and cannot retroactively change installed #722 behavior. See [Core boot promotion source and proof plan](docs/systems/android-host/CORE_BOOT_SUCCESS_PROMOTION.md).
+
+
 ## 2026-10-11 — post-#715 APK legacy shell cleanup (source only; unsigned)
 
 User-signed #715 physically booted independent external Core v0.6 (schema `riftos.external.core/1`, owner `independent-external-dex`, four installed JSON RAPPs successfully ran/frame/stopped at 15/12/21/26 nodes). This is **manual-trial proof**, not production acceptance, native-buffer external-Core qualification, accepted-backup rollback, or Patch C clearance. The installed #715 APK is unchanged by the cleanup below.

@@ -140,8 +140,8 @@ internal class RiftNativeAdminApprovals(
         button("Stage & verify approved Core/Shell candidate") { stageProtectedComponent() }
         button("Select exact Core/Shell activation scope") { selectProtectedActivation() }
         button("Activate Core/Shell for NEXT restart only") { activateProtectedComponent() }
-        button("Select exact running Core/Shell acceptance scope") { selectProtectedAcceptance() }
-        button("Accept running verified Core/Shell as known-good") { acceptProtectedComponent() }
+        button("Select exact running Shell acceptance scope") { selectProtectedAcceptance() }
+        button("Accept running verified Shell as known-good") { acceptProtectedComponent() }
         button("Select ProbeV1 DEX from RiftOS Files") { pickRiftFsProbeDex() }
         button("Select external ProbeV1 DEX (Android picker)") { pickProbeDex() }
         button("Stage selected DEX using one-use approval") { stageProbe() }
@@ -571,7 +571,11 @@ internal class RiftNativeAdminApprovals(
             return
         }
         val choice = selectedProtected ?: run {
-            show("Choose the exact built Core/Shell revision before acceptance.")
+            show("Choose the exact built Shell revision before acceptance.")
+            return
+        }
+        if (choice.manifest.component == "core") {
+            show("Core is accepted automatically after its verified boot; no manual promotion approval is required.")
             return
         }
         operation = RiftCoreAdminConsent.PROTECTED_ACCEPT
@@ -584,6 +588,10 @@ internal class RiftNativeAdminApprovals(
 
     private fun acceptProtectedComponent() {
         val choice = selectedProtected ?: run { show("Select exact critical revision."); return }
+        if (choice.manifest.component != "shell") {
+            show("Core boot success automatically promotes its SHA; manual acceptance is Shell-only.")
+            return
+        }
         val expected = "component://accept/" +
             choice.manifest.component + "/" + choice.manifest.sha256
         if (operation != RiftCoreAdminConsent.PROTECTED_ACCEPT || target != expected ||

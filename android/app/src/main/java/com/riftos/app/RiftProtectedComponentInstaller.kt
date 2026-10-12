@@ -176,7 +176,38 @@ internal object RiftProtectedComponentInstaller {
     }
 
     /**
-     * Explicit one-use approved promotion AFTER a real installed-device test.
+     * APK-owned Core boot acceptance, called ONLY after its real process
+     * completed selected-Core initialization and the host startup coordinator.
+     * This is not a RAPP/shell/admin API and cannot select or execute a DEX.
+     * Binary identity, startup marker and pending journal must still match.
+     */
+    @Synchronized
+    fun acceptBootedCore(context: Context, sha: String): JSONObject {
+        require(sha.matches(SHA)) { "Booted Core digest invalid" }
+        val selected = RiftCoreCandidateSwitch.status()
+        require(selected.optString("selected") == "external-unaccepted" &&
+            selected.optString("selectedSha256") == sha) {
+            "Only the currently booted external Core may be auto-accepted"
+        }
+        val manifest = staged(context, "core", sha)
+        val pointer = RiftBootstrapComponentStore.active(context, "core")
+            ?: error("Booted Core pointer missing")
+        require(pointer.getString("sha256") == sha &&
+            pointer.getString("entrypoint") == manifest.entrypoint &&
+            File(RiftBootstrapComponentStore.root(context), "core.booting").isFile) {
+            "Booted Core acceptance has no matching startup marker and pointer"
+        }
+        RiftComponentReleaseLedger.acceptProven(context, "core", sha)
+        RiftBootstrapComponentStore.clearProtectedStartupMarker(context, "core")
+        return JSONObject().put("schema", SCHEMA).put("component", "core")
+            .put("sha256", sha).put("deviceAccepted", true)
+            .put("lastKnownGood", true).put("bootVerified", true)
+            .put("inProcessHotSwapEnabled", false)
+    }
+
+    /**
+     * Legacy explicit acceptance remains for compatibility / Shell;
+     * the Core boot-success path no longer requires this admin ticket.
      * The running implementation SHA and Android process identity must match;
      * staging/activation alone can NEVER set last-known-good.
      */
@@ -224,5 +255,7 @@ internal object RiftProtectedComponentInstaller {
         .put("core", RiftComponentReleaseLedger.status(context, "core"))
         .put("shell", RiftComponentReleaseLedger.status(context, "shell"))
         .put("inProcessHotSwapEnabled", false)
-        .put("automaticPromotionEnabled", false)
+        .put("automaticPromotionEnabled", true)
+        .put("coreBootPromotionEnabled", true)
+        .put("shellBootPromotionEnabled", false)
 }

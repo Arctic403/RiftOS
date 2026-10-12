@@ -148,7 +148,7 @@ internal object RiftCoreCandidateSwitch {
         return implementation.getDeclaredConstructor().newInstance() as RiftCoreComponentV1
     }
 
-    /** Any interrupted unaccepted Core boot is rolled back on the NEXT start. */
+    /** Any interrupted Core startup is rolled back on the NEXT start. */
     @Synchronized
     fun selectAtBoot(application: Application): RiftCoreComponentV1? {
         lastSelection = "embedded"
@@ -185,6 +185,17 @@ internal object RiftCoreCandidateSwitch {
         return candidate
     }
 
+    /** Only the host may confirm the verified, now journal-accepted boot SHA. */
+    @Synchronized
+    fun markAccepted(application: Application, sha: String) {
+        require(lastSelection == "external-unaccepted" && lastSelectedSha == sha &&
+            RiftComponentReleaseLedger.isAccepted(application, "core", sha) &&
+            !File(root(application), BOOT_MARKER).exists()) {
+            "Core boot acceptance missing matching known-good journal or marker clearance"
+        }
+        lastSelection = "external-known-good"
+    }
+
     /** Revoke only the fixed private Core activation pointer; retain sealed DEX. */
     @Synchronized
     fun fallback(application: Application, reason: String) {
@@ -204,6 +215,6 @@ internal object RiftCoreCandidateSwitch {
         .put("selectedSha256", lastSelectedSha ?: JSONObject.NULL)
         .put("lastFallback", lastFallback)
         .put("inactiveCandidateOnly", lastSelection == "embedded")
-        .put("automaticPromotionEnabled", false)
+        .put("automaticPromotionEnabled", true)
         .put("inProcessHotSwapEnabled", false)
 }

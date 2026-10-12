@@ -14,7 +14,9 @@ import java.security.MessageDigest
  * critical components still run embedded until physical modularization proof.
  * Probe remains the only component eligible for generic bootstrap loading.
  * Core uses a separate verified V1 selection route with embedded failback;
- * Shell remains embedded. No production Core qualification writer is exposed.
+ * Shell remains embedded. Exact-SHA Core boot-success acceptance is APK-owned:
+ * once Core initialization and host recovery coordinator complete, the
+ * journal is advanced to known-good without any RAPP or UI approval gate.
  */
 interface RiftBootstrapEntry {
     fun start(application: Application)
@@ -72,7 +74,18 @@ internal object RiftBootstrapHost {
             override fun start(application: Application) {
                 RiftHostCoreComponents.initializeAtBoot(application)
                 RiftCoreShellRecovery.initialize(application)
-                RiftMcpRuntime.relayClient(application).start()
+                // Exact selected Core initialized, and its APK-owned startup
+                // coordinator is live: this is the Core boot-success boundary.
+                // Feature tests, RAPP activity, MCP and Shell UI are NOT gates.
+                // A failed durable commit leaves core.booting in place so the
+                // next startup can safely recover, without crashing this boot.
+                runCatching {
+                    RiftHostCoreComponents.acceptSuccessfulBoot(application)
+                }.onFailure {
+                    Log.e(TAG, "Core boot known-good acceptance did not commit", it)
+                }
+                runCatching { RiftMcpRuntime.relayClient(application).start() }
+                    .onFailure { Log.w(TAG, "Optional MCP relay startup unavailable", it) }
                 runCatching {
                     application.startService(android.content.Intent(
                         application, RiftCoreRecoverySupervisorService::class.java))

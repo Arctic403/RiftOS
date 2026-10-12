@@ -455,7 +455,8 @@ for (const marker of [
   'Core candidate did not implement APK-owned Core V1 ABI',
   'Core DEX SHA mismatch',
   'unaccepted-core-startup',
-  'automaticPromotionEnabled", false',
+  'fun markAccepted(application: Application, sha: String)',
+  'automaticPromotionEnabled", true',
   'inProcessHotSwapEnabled", false',
 ]) if (!e1CoreSwitch.includes(marker)) {
   fail(`E1 fail-safe Core selection verification missing: ${marker}`);
@@ -466,6 +467,27 @@ for (const marker of ['fun resetCoreToEmbedded(context: Context)',
 }
 if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreCandidateSwitch.kt"')) {
   fail('E1 guarded Core candidate selector missing from exact Gradle Kotlin sources');
+}
+for (const [source, marker] of [
+  [bootstrapHost, 'RiftHostCoreComponents.acceptSuccessfulBoot(application)'],
+  [e0HostComponent, 'fun acceptSuccessfulBoot(application: android.app.Application)'],
+  [e0HostComponent, 'executionView().coreStatus(application).optString("schema").isNotBlank()'],
+  [protectedInstaller, 'fun acceptBootedCore(context: Context, sha: String): JSONObject'],
+  [protectedInstaller, 'RiftComponentReleaseLedger.acceptProven(context, "core", sha)'],
+  [protectedInstaller, 'RiftBootstrapComponentStore.clearProtectedStartupMarker(context, "core")'],
+  [e1CoreSwitch, 'fun markAccepted(application: Application, sha: String)'],
+  [e1CoreSwitch, 'RiftComponentReleaseLedger.isAccepted(application, "core", sha)'],
+]) if (!source.includes(marker)) {
+  fail('Core boot-success known-good promotion integration missing: ' + marker);
+}
+if (coreRecoveryDiagnostics.includes('RiftProtectedRevisionRecovery.rollback(')) {
+  fail('Post-boot Core diagnostics must not demote a successfully booted revision');
+}
+if (bootstrapHost.indexOf('RiftHostCoreComponents.acceptSuccessfulBoot(application)') <
+    bootstrapHost.indexOf('RiftCoreShellRecovery.initialize(application)') ||
+    bootstrapHost.indexOf('RiftHostCoreComponents.acceptSuccessfulBoot(application)') >
+    bootstrapHost.indexOf('RiftMcpRuntime.relayClient(application).start()')) {
+  fail('Core auto-promotion must follow host boot init, before optional relay work');
 }
 
 for (const marker of ['interface RiftCoreComponentV1',

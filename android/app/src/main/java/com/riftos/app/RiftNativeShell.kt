@@ -509,7 +509,14 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 val usage = "usage: core status|sessions|surfaces|focus|apps|app-start <id>|app-stop <id>|alt-list|alt-attach <id>|alt-render <id>|alt-detach <id>|alt-graphic-open <id>|ipc-view <id>"
                 val state = when {
                     args.size == 1 -> when (args.single().lowercase()) {
-                        "status" -> RiftHostCoreComponents.executionView().coreStatus(appContext)
+                        "status" -> RiftHostCoreComponents.executionView()
+                            .coreStatus(appContext)
+                            .put("hostCoreSelector", RiftHostCoreComponents.status())
+                            .put("hostCoreRelease",
+                                RiftComponentReleaseLedger.status(appContext, "core"))
+                            .put("hostCoreStartupMarkerPresent",
+                                File(RiftBootstrapComponentStore.root(appContext),
+                                    "core.booting").exists())
                         "sessions" -> RiftHostCoreComponents.executionView().sessionsView(appContext)
                         "surfaces" -> RiftHostCoreComponents.executionView().surfacesView(appContext)
                         "focus" -> RiftHostCoreComponents.executionView().focusView(appContext)

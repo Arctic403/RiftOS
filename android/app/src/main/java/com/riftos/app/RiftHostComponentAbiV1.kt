@@ -237,12 +237,9 @@ internal object RiftHostCoreComponents {
                 application, "core", sha)
             selectedKind = if (alreadyAccepted) "external-known-good"
                 else "external-unaccepted"
-            if (alreadyAccepted) {
-                // The same verified external revision can restart normally.
-                // Android process-exit evidence still detects post-start crashes.
-                RiftBootstrapComponentStore.clearProtectedStartupMarker(
-                    application, "core")
-            }
+            // Preserve core.booting until the common post-initialization
+            // boot-health checkpoint, even for an already accepted revision.
+            // A crash before that point is still a failed startup.
         } catch (failure: Throwable) {
             RiftCoreRecoveryDiagnostics.recordCandidateFailure(application, "initialize", failure)
             RiftCoreCandidateSwitch.fallback(application, "external-startup-exception")
@@ -251,6 +248,40 @@ internal object RiftHostCoreComponents {
             if (failure is VirtualMachineError || failure is ThreadDeath) throw failure
             embedded.initialize(application)
         }
+    }
+
+    /**
+     * Called at the end of the APK-owned Core boot sequence, not by UI,
+     * RAPPs, optional relay services, or feature/device test suites.
+     * A responding selected Core ABI proves initial process readiness.
+     */
+    @Synchronized
+    fun acceptSuccessfulBoot(application: android.app.Application) {
+        if (selectedKind != "external-unaccepted" &&
+            selectedKind != "external-known-good") return
+        val sha = RiftCoreCandidateSwitch.status().optString("selectedSha256")
+        require(sha.matches(Regex("^[0-9a-f]{64}$"))) {
+            "Selected Core boot identity missing"
+        }
+        require(executionView().coreStatus(application).optString("schema").isNotBlank()) {
+            "Selected Core did not respond to initial status ABI"
+        }
+        if (selectedKind == "external-unaccepted") {
+            val committed = RiftProtectedComponentInstaller.acceptBootedCore(application, sha)
+            require(committed.optBoolean("lastKnownGood") &&
+                committed.optString("sha256") == sha) {
+                "Core boot was not accepted as known-good"
+            }
+        } else {
+            // An existing known-good Core must still finish THIS boot before
+            // the fresh marker is cleared; no duplicate ledger promotion.
+            require(RiftComponentReleaseLedger.isAccepted(application, "core", sha)) {
+                "Previously accepted Core SHA lost its trusted journal"
+            }
+            RiftBootstrapComponentStore.clearProtectedStartupMarker(application, "core")
+        }
+        RiftCoreCandidateSwitch.markAccepted(application, sha)
+        selectedKind = "external-known-good"
     }
 
     fun status(): JSONObject = JSONObject()

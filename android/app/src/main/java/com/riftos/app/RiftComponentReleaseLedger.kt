@@ -10,8 +10,10 @@ import java.nio.file.Files
  * Permanent APK-owned revision journal for separately compiled Core and Shell.
  *
  * No public/RAPP/terminal entry point stages or promotes an implementation.
- * Only trusted host callers may propose a QUALIFIED version and accept it
- * after a separate physical proof. All operations are serialized and atomic.
+ * Only trusted host code may stage a verified revision. For Core alone,
+ * completed real-process bootstrap commits the exact SHA as known-good;
+ * Shell acceptance still follows its separate trusted graphical receipt.
+ * All journal operations remain serialized and atomic.
  *
  * A pending revision is NEVER last-known-good. A failed pending revision is
  * quarantined by SHA and we select the previous accepted external revision
