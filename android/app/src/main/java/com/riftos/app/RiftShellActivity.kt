@@ -95,10 +95,11 @@ class RiftShellActivity : Activity() {
             } catch (failure: Throwable) {
                 android.util.Log.e("RiftShellActivity",
                     "External graphical Shell startup rejected", failure)
-                RiftShellCandidateSwitch.fallback(application, "external-shell-attach-exception")
                 runCatching { RiftShellCandidateSwitch.reportStopped(application) }
                 runCatching { candidate.onDestroy() }
-                host.removeAllViews()
+                // Never choose embedded Shell automatically after a selected
+                // external Shell fails: independent Recovery is user-owned.
+                throw failure
             }
         }
 

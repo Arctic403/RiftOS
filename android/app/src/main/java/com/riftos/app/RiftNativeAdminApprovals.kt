@@ -81,7 +81,7 @@ internal class RiftNativeAdminApprovals(
         addText("RiftOS administrator approvals", 19f).typeface = Typeface.DEFAULT_BOLD
         addText("One-use OS admin tickets: isolated old C:/registry proofs and " +
             "separately approved Core/Shell DEX stage, next-start activation and " +
-            "post-device SHA/PID acceptance. Signed Core verifies every operation; " +
+            "user-managed protected component installation. Signed Core verifies stage/activation; " +
             "ordinary apps cannot gain protected component authority.")
         scopeText = addText("Test scope: $operation on $target\n" +
             "Core controls the caller, signer, scope, 45-second expiry and one-time use.")
@@ -140,8 +140,6 @@ internal class RiftNativeAdminApprovals(
         button("Stage & verify approved Core/Shell candidate") { stageProtectedComponent() }
         button("Select exact Core/Shell activation scope") { selectProtectedActivation() }
         button("Activate Core/Shell for NEXT restart only") { activateProtectedComponent() }
-        button("Select exact running Shell acceptance scope") { selectProtectedAcceptance() }
-        button("Accept running verified Shell as known-good") { acceptProtectedComponent() }
         button("Select ProbeV1 DEX from RiftOS Files") { pickRiftFsProbeDex() }
         button("Select external ProbeV1 DEX (Android picker)") { pickProbeDex() }
         button("Stage selected DEX using one-use approval") { stageProbe() }

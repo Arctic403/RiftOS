@@ -1,9 +1,8 @@
 # Independent protected Core / graphical Shell artifacts — format and trust contract
 
-## 2026-10-11 — Core boot-success auto-promotion supersedes manual Core acceptance
+## 2026-10-11 — NEW superseding policy: manual backup and Recovery only
 
-**Current source target:** once the exact separately verified external Core initializes successfully and answers the mandatory Core status ABI after APK startup coordinator initialization, the APK commits that SHA as `lastKnownGood` and clears `core.booting` automatically. No third administrator acceptance ticket and no RAPP/feature test is required. Installation and activation remain protected; Shell automatic promotion is **not** included in this Core-first patch. A broken/unfinished startup retains the marker and protected rollback. Late runtime crashes are diagnostic, not an automatic Core version rejection. [Authoritative new policy and device-proof plan](CORE_BOOT_SUCCESS_PROMOTION.md). **Source change not yet device-proven or installed on #722.**
-
+No boot-success auto-promotion or automatic failure rollback for either Core or Shell. The user explicitly selects verified components for next boot, manually saves one Recovery backup per component with a separate confirmation, and manually restores the saved SHA or embedded migration version in the independent Recovery app if necessary. SHA, ABI, sealed-byte and receipt verification remain mandatory; no automatic boot-good/bad scoring, accepted ledger, 45-second third approval or backup overwrite. **This is source-only; the installed #722 is not updated.** [Current authoritative policy](MANUAL_RECOVERY_ONLY.md).
 
 ## 2026-10-10 — POLICY OVERRIDE: APK first, single backup and manual Recovery
 

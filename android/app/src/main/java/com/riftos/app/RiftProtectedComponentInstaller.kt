@@ -12,10 +12,10 @@ import java.nio.file.Files
  * a RAPP, generic module or raw shell command; Core IPC one-use trusted
  * admin ticket gates must be checked by the caller before entering here.
  *
- * Stage re-verifies exact manifest/DEX identity and static binary closure,
- * then writes an immutable revision-specific qualification receipt.
- * Activation requires a FRESH separate user approval for SHA/component and
- * only updates the next-start pointer; never hot-swaps an active classloader.
+ * Stage checks exact manifest/DEX identity and static binary closure,
+ * writing a sealed revision-specific structural receipt. User-authorized
+ * activation only changes the next-start pointer, never a backup or the
+ * running classloader; manual Recovery exclusively owns backup/restore.
  */
 internal object RiftProtectedComponentInstaller {
     const val SCHEMA = "riftos.protected-component-operation/1"
@@ -146,26 +146,15 @@ internal object RiftProtectedComponentInstaller {
     fun activate(context: Context, component: String, sha: String): JSONObject {
         val manifest = staged(context, component, sha)
         val pointer = manifest.activationRecord()
-        val root = RiftBootstrapComponentStore.root(context)
-        val marker = File(root, "$component.booting")
-        require(!marker.exists() &&
-            RiftBootstrapComponentStore.active(context, component)
-                ?.optString("sha256") != sha) {
-            "Protected component already active or startup still unaccepted"
+        require(RiftBootstrapComponentStore.active(context, component)
+            ?.optString("sha256") != sha) {
+            "Exact protected component is already selected"
         }
-        // Preserve the previously device-accepted revision BEFORE changing
-        // the next-boot selector. An unaccepted candidate cannot replace it.
-        RiftManualRecoveryStore.preserveAcceptedBeforeUpdate(context, component)
-        RiftComponentReleaseLedger.recordPrepared(context, component, pointer)
-        try {
-            RiftBootstrapComponentStore.writeProtectedPointer(context, component, pointer)
-        } catch (failure: Throwable) {
-            runCatching {
-                RiftProtectedRevisionRecovery.rollback(
-                    context, component, "activation-pointer-failed")
-            }.onFailure { failure.addSuppressed(it) }
-            throw failure
-        }
+        // The user owns backups: NEVER overwrite the Recovery backup during
+        // installation. No pending boot-health or acceptance journal is made.
+        // Retire legacy startup markers when the user chooses a new pointer.
+        RiftBootstrapComponentStore.clearProtectedStartupMarker(context, component)
+        RiftBootstrapComponentStore.writeProtectedPointer(context, component, pointer)
         return JSONObject().put("schema", SCHEMA)
             .put("component", component)
             .put("sha256", sha)
@@ -176,38 +165,9 @@ internal object RiftProtectedComponentInstaller {
     }
 
     /**
-     * APK-owned Core boot acceptance, called ONLY after its real process
-     * completed selected-Core initialization and the host startup coordinator.
-     * This is not a RAPP/shell/admin API and cannot select or execute a DEX.
-     * Binary identity, startup marker and pending journal must still match.
-     */
-    @Synchronized
-    fun acceptBootedCore(context: Context, sha: String): JSONObject {
-        require(sha.matches(SHA)) { "Booted Core digest invalid" }
-        val selected = RiftCoreCandidateSwitch.status()
-        require(selected.optString("selected") == "external-unaccepted" &&
-            selected.optString("selectedSha256") == sha) {
-            "Only the currently booted external Core may be auto-accepted"
-        }
-        val manifest = staged(context, "core", sha)
-        val pointer = RiftBootstrapComponentStore.active(context, "core")
-            ?: error("Booted Core pointer missing")
-        require(pointer.getString("sha256") == sha &&
-            pointer.getString("entrypoint") == manifest.entrypoint &&
-            File(RiftBootstrapComponentStore.root(context), "core.booting").isFile) {
-            "Booted Core acceptance has no matching startup marker and pointer"
-        }
-        RiftComponentReleaseLedger.acceptProven(context, "core", sha)
-        RiftBootstrapComponentStore.clearProtectedStartupMarker(context, "core")
-        return JSONObject().put("schema", SCHEMA).put("component", "core")
-            .put("sha256", sha).put("deviceAccepted", true)
-            .put("lastKnownGood", true).put("bootVerified", true)
-            .put("inProcessHotSwapEnabled", false)
-    }
-
-    /**
-     * Legacy explicit acceptance remains for compatibility / Shell;
-     * the Core boot-success path no longer requires this admin ticket.
+     * Inert legacy accept API retained for old admin protocol compatibility.
+     * Manual Recovery now determines selected and backed-up versions; no
+     * production startup or Recovery UI calls this acceptance routine.
      * The running implementation SHA and Android process identity must match;
      * staging/activation alone can NEVER set last-known-good.
      */
@@ -255,7 +215,8 @@ internal object RiftProtectedComponentInstaller {
         .put("core", RiftComponentReleaseLedger.status(context, "core"))
         .put("shell", RiftComponentReleaseLedger.status(context, "shell"))
         .put("inProcessHotSwapEnabled", false)
-        .put("automaticPromotionEnabled", true)
-        .put("coreBootPromotionEnabled", true)
+        .put("automaticPromotionEnabled", false)
+        .put("coreBootPromotionEnabled", false)
         .put("shellBootPromotionEnabled", false)
+        .put("manualRecoveryOnly", true)
 }

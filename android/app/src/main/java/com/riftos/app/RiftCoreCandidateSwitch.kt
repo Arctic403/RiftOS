@@ -12,7 +12,7 @@ import java.nio.file.Files
 import java.security.MessageDigest
 
 /**
- * E1 safe-startup selector infrastructure.
+ * APK-owned exact-SHA selector with user-manual Recovery policy.
  *
  * The APK-owned, proven embedded Core is always available. A future extracted
  * Core DEX can be selected ONLY after a separate trusted installer produces
@@ -148,65 +148,21 @@ internal object RiftCoreCandidateSwitch {
         return implementation.getDeclaredConstructor().newInstance() as RiftCoreComponentV1
     }
 
-    /** Any interrupted Core startup is rolled back on the NEXT start. */
+    /**
+     * Manual recovery: load exactly the protected Core selected by the user.
+     * Never infer boot health, auto-promote, quarantine, or change the pointer.
+     * Failed verified loading remains an explicit manual Recovery decision.
+     */
     @Synchronized
     fun selectAtBoot(application: Application): RiftCoreComponentV1? {
         lastSelection = "embedded"
         lastSelectedSha = null
-        val root = root(application)
-        val marker = File(root, BOOT_MARKER)
-        if (marker.exists()) {
-            fallback(application, "interrupted-boot")
-            return null
-        }
-        val record = runCatching { RiftBootstrapComponentStore.active(application, "core") }
-            .getOrElse {
-                fallback(application, "invalid-activation-record")
-                return null
-            } ?: return null
-        val candidate = runCatching { load(application, record) }.getOrElse {
-            Log.e(TAG, "Core candidate rejected, using embedded", it)
-            RiftCoreRecoveryDiagnostics.recordCandidateFailure(application, "verification", it)
-            fallback(application, "candidate-verification-failed")
-            return null
-        }
-        try {
-            require(marker.createNewFile()) { "Core startup marker not exclusive" }
-            FileOutputStream(marker, false).use {
-                it.write("unaccepted-core-startup\n".toByteArray(Charsets.UTF_8))
-                it.fd.sync()
-            }
-        } catch (failure: Throwable) {
-            fallback(application, "startup-marker-failed")
-            return null
-        }
-        lastSelection = "external-unaccepted"
+        val record = RiftBootstrapComponentStore.active(application, "core")
+            ?: return null
+        val candidate = load(application, record)
+        lastSelection = "external-selected"
         lastSelectedSha = record.getString("sha256")
         return candidate
-    }
-
-    /** Only the host may confirm the verified, now journal-accepted boot SHA. */
-    @Synchronized
-    fun markAccepted(application: Application, sha: String) {
-        require(lastSelection == "external-unaccepted" && lastSelectedSha == sha &&
-            RiftComponentReleaseLedger.isAccepted(application, "core", sha) &&
-            !File(root(application), BOOT_MARKER).exists()) {
-            "Core boot acceptance missing matching known-good journal or marker clearance"
-        }
-        lastSelection = "external-known-good"
-    }
-
-    /** Revoke only the fixed private Core activation pointer; retain sealed DEX. */
-    @Synchronized
-    fun fallback(application: Application, reason: String) {
-        lastSelection = "embedded"
-        lastSelectedSha = null
-        lastFallback = reason
-        val decision = RiftProtectedRevisionRecovery.rollback(
-            application, "core", reason)
-        if (!decision.optBoolean("rollbackRecorded", false)) {
-            Log.w(TAG, "Core revision recovery degraded to embedded")
-        }
     }
 
     fun status(): JSONObject = JSONObject()
@@ -215,6 +171,7 @@ internal object RiftCoreCandidateSwitch {
         .put("selectedSha256", lastSelectedSha ?: JSONObject.NULL)
         .put("lastFallback", lastFallback)
         .put("inactiveCandidateOnly", lastSelection == "embedded")
-        .put("automaticPromotionEnabled", true)
+        .put("automaticPromotionEnabled", false)
+        .put("manualRecoveryOnly", true)
         .put("inProcessHotSwapEnabled", false)
 }

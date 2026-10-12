@@ -116,51 +116,17 @@ internal object RiftShellCandidateSwitch {
         return type.getDeclaredConstructor().newInstance() as RiftShellGraphicalComponentV1
     }
 
+    /** Load only the revision the user selected. Recovery never auto-rolls back. */
     @Synchronized
     fun selectAtBoot(application: Application): RiftShellGraphicalComponentV1? {
         selection = "embedded"
         selectedSha = null
-        val marker = File(RiftBootstrapComponentStore.root(application), "shell.booting")
-        if (marker.exists()) {
-            fallback(application, "interrupted-shell-boot")
-            return null
-        }
-        val active = runCatching {
-            RiftBootstrapComponentStore.active(application, "shell")
-        }.getOrElse {
-            fallback(application, "invalid-shell-activation")
-            return null
-        } ?: return null
-        val candidate = runCatching { load(application, active) }.getOrElse {
-            Log.e(TAG, "External graphical Shell rejected", it)
-            fallback(application, "invalid-shell-candidate")
-            return null
-        }
-        try {
-            require(marker.createNewFile()) { "Shell startup already in progress" }
-            FileOutputStream(marker, false).use {
-                it.write("unaccepted-shell-startup\n".toByteArray(Charsets.UTF_8))
-                it.fd.sync()
-            }
-        } catch (failure: Throwable) {
-            fallback(application, "shell-startup-marker-failed")
-            return null
-        }
-        selection = "external-unaccepted"
-        selectedSha = active.getString("sha256")
+        val record = RiftBootstrapComponentStore.active(application, "shell")
+            ?: return null
+        val candidate = load(application, record)
+        selection = "external-selected"
+        selectedSha = record.getString("sha256")
         return candidate
-    }
-
-    @Synchronized
-    fun fallback(application: Application, reason: String) {
-        selection = "embedded"
-        selectedSha = null
-        fallbackReason = reason
-        val decision = RiftProtectedRevisionRecovery.rollback(
-            application, "shell", reason)
-        if (!decision.optBoolean("rollbackRecorded", false)) {
-            Log.w(TAG, "Shell revision recovery degraded to embedded")
-        }
     }
 
     /**
@@ -170,20 +136,13 @@ internal object RiftShellCandidateSwitch {
      */
     fun reportAttached(application: Application) {
         val sha = selectedSha ?: error("Embedded Shell has no external receipt")
-        require(selection == "external-unaccepted") {
+        require(selection == "external-selected") {
             "Cannot report an unselected graphical Shell"
         }
         val active = RiftBootstrapComponentStore.active(application, "shell")
             ?: error("Shell activation pointer absent")
         require(active.getString("sha256") == sha) {
             "Graphical Shell active SHA changed before attach"
-        }
-        val alreadyAccepted = RiftComponentReleaseLedger.isAccepted(
-            application, "shell", sha)
-        if (alreadyAccepted) {
-            RiftBootstrapComponentStore.clearProtectedStartupMarker(
-                application, "shell")
-            selection = "external-known-good"
         }
         val record = JSONObject().put("schema", "riftos.shell.attached/1")
             .put("sha256", sha)
@@ -243,5 +202,6 @@ internal object RiftShellCandidateSwitch {
         .put("selectedSha256", selectedSha ?: JSONObject.NULL)
         .put("lastFallback", fallbackReason)
         .put("automaticPromotionEnabled", false)
+        .put("manualRecoveryOnly", true)
         .put("inProcessHotSwapEnabled", false)
 }

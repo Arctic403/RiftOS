@@ -108,24 +108,9 @@ object RiftCoreShellRecovery {
         if (phase != "relaunch-requested" && phase != "waiting-for-android") {
             phase = "shell-process-gone"
             previousPid = ownerPid
-            // If the *accepted* external graphical Shell truly disappeared,
-            // reject only that exact observed SHA/PID and restore external N-1.
-            // A pending/unaccepted Shell retains its startup marker and is
-            // recovered by the next Shell process's guarded selector.
-            val attached = runCatching {
-                RiftShellCandidateSwitch.attached(context)
-            }.getOrNull()
-            if (attached?.optInt("pid", -1) == ownerPid) {
-                val sha = attached.optString("sha256")
-                val active = runCatching {
-                    RiftBootstrapComponentStore.active(context, "shell")
-                }.getOrNull()
-                if (active?.optString("sha256") == sha &&
-                    RiftComponentReleaseLedger.isAccepted(context, "shell", sha)) {
-                    RiftProtectedRevisionRecovery.rollback(
-                        context, "shell", "android-shell-process-missing")
-                }
-            }
+            // A missing Shell process may be restarted using the SAME selected
+            // revision; never modify the user's Core/Shell selection or
+            // saved Recovery backup because a process disappeared.
             // Core remains the owner of the live RAPP/focus session, whether
             // embedded or genuinely external. Never instantiate embedded Core
             // just because the graphical Shell process disappeared.

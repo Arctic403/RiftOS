@@ -9,9 +9,9 @@ import java.security.MessageDigest
 
 /**
  * APK-only recovery slot reader. Does not depend on Core, Shell, RAPP or MCP.
- * Recovery may restore only a previously device-accepted external revision or
- * the retained embedded fallback. It never executes selected Core or Shell.
- * Host installer alone records backups before switching to a new candidate.
+ * Only explicit Recovery UI clicks save or restore verified user-selected
+ * revisions. Neither startup nor installation overwrites the backup.
+ * The embedded fallback remains user-selectable without starting Core/Shell.
  */
 internal object RiftManualRecoveryStore {
     const val SCHEMA = "riftos.host.manual-recovery/1"
@@ -19,6 +19,14 @@ internal object RiftManualRecoveryStore {
     private const val MAX_RECORD = 4096
     private const val MAX_DEX = 32L * 1024L * 1024L
     private val SHA = Regex("^[0-9a-f]{64}$")
+
+    private fun requireManualRecoveryProcess(context: Context) {
+        require(android.os.Build.VERSION.SDK_INT >= 28 &&
+            android.app.Application.getProcessName() ==
+                context.packageName + ":riftRecovery") {
+            "Only independent Recovery UI may save or restore selected components"
+        }
+    }
 
     private fun readBackup(context: Context, component: String): JSONObject? {
         val root = RiftBootstrapComponentStore.root(context)
@@ -84,20 +92,23 @@ internal object RiftManualRecoveryStore {
     }
 
     /**
-     * Called only by the APK's trusted installer BEFORE selecting an update.
-     * An unaccepted or unknown external Core can never replace the known-good
-     * backup. Embedded migration fallback is always present without a DEX file.
+     * Explicit user's Save Backup action from the independent Recovery process.
+     * No install, boot, crash, health test or automatic updater may overwrite it.
+     * We verify the sealed SHA and structural receipt, NOT feature quality.
      */
     @Synchronized
-    fun preserveAcceptedBeforeUpdate(context: Context, component: String): String {
-        val active = RiftBootstrapComponentStore.active(context, component)
-            ?: return "embedded"
-        val sha = verifyExternal(context, component, active)
-        require(RiftComponentReleaseLedger.isAccepted(context, component, sha)) {
-            "Current external revision was never accepted on device"
-        }
-        writeBackup(context, component, active)
-        return sha
+    fun saveSelectedBackup(context: Context, component: String): JSONObject {
+        requireManualRecoveryProcess(context)
+        require(component == "core" || component == "shell")
+        val selected = RiftBootstrapComponentStore.active(context, component)
+            ?: error("Embedded fallback is built into the APK; no external DEX to save")
+        val sha = verifyExternal(context, component, selected)
+        writeBackup(context, component, selected)
+        return JSONObject().put("schema", SCHEMA)
+            .put("component", component)
+            .put("backupSaved", true)
+            .put("sha256", sha)
+            .put("selectedUnchanged", true)
     }
 
     /**
@@ -106,6 +117,7 @@ internal object RiftManualRecoveryStore {
      */
     @Synchronized
     fun restore(context: Context, component: String, selection: String): JSONObject {
+        requireManualRecoveryProcess(context)
         require(component == "core" || component == "shell") {
             "Unknown protected recovery component"
         }
@@ -119,30 +131,15 @@ internal object RiftManualRecoveryStore {
         }.getOrNull()
         val sha = if (selection == "working-backup") {
             val backup = readBackup(context, component)
-                ?: error("No accepted backup has been saved")
+                ?: error("No manually saved backup is available")
             val targetSha = verifyExternal(context, component, backup)
             require(targetSha != active?.optString("sha256")) {
                 "Backup is already selected"
             }
-            // Prevent an invented receipt from promoting an unaccepted DEX.
-            RiftComponentReleaseLedger.checkManualRestoreTarget(context, component, targetSha)
-            try {
-                RiftBootstrapComponentStore.writeProtectedPointer(context, component, backup)
-                RiftBootstrapComponentStore.clearProtectedStartupMarker(context, component)
-                RiftComponentReleaseLedger.manualRestored(context, component, backup)
-            } catch (failure: Throwable) {
-                // Avoid leaving a partially restored external selector after
-                // a journal error. The signed embedded fallback is always safe.
-                runCatching {
-                    if (component == "core") {
-                        RiftBootstrapComponentStore.resetCoreToEmbedded(context)
-                    } else {
-                        RiftBootstrapComponentStore.resetShellToEmbedded(context)
-                    }
-                    RiftComponentReleaseLedger.manualRestored(context, component, null)
-                }.onFailure { failure.addSuppressed(it) }
-                throw failure
-            }
+            // Recovery changes the NEXT boot pointer only on this explicit
+            // Restore click. Never infer health from crashes or revision ledger.
+            RiftBootstrapComponentStore.writeProtectedPointer(context, component, backup)
+            RiftBootstrapComponentStore.clearProtectedStartupMarker(context, component)
             targetSha
         } else {
             // This signed APK still contains the device-proven migration Core.
@@ -151,7 +148,6 @@ internal object RiftManualRecoveryStore {
             } else {
                 RiftBootstrapComponentStore.resetShellToEmbedded(context)
             }
-            RiftComponentReleaseLedger.manualRestored(context, component, null)
             null
         }
         return JSONObject().put("schema", SCHEMA)
@@ -221,9 +217,7 @@ internal object RiftManualRecoveryStore {
 
         val backup = runCatching {
             readBackup(context, component)?.let {
-                val sha = verifyExternal(context, component, it)
-                RiftComponentReleaseLedger.checkManualRestoreTarget(context, component, sha)
-                sha
+                verifyExternal(context, component, it)
             }
         }
         backup.fold(onSuccess = { sha ->
@@ -243,6 +237,7 @@ internal object RiftManualRecoveryStore {
             slot.optString("backup") == "verified-external" &&
                 slot.optString("activeSha256") != slot.optString("backupSha256")
         slot.put("startupMarkerPresent", startupMarkerPresent)
+            .put("saveBackupEnabled", slot.optString("active") == "external")
             .put("restoreEmbeddedEnabled", restoreEmbeddedEnabled)
             .put("restoreWorkingBackupEnabled", restoreWorkingBackupEnabled)
             .put("restoreEnabled", restoreEmbeddedEnabled || restoreWorkingBackupEnabled)

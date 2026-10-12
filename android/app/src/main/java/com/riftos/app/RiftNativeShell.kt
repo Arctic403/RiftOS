@@ -512,9 +512,9 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                         "status" -> RiftHostCoreComponents.executionView()
                             .coreStatus(appContext)
                             .put("hostCoreSelector", RiftHostCoreComponents.status())
-                            .put("hostCoreRelease",
-                                RiftComponentReleaseLedger.status(appContext, "core"))
-                            .put("hostCoreStartupMarkerPresent",
+                            .put("manualRecovery",
+                                RiftManualRecoveryStore.status(appContext))
+                            .put("legacyCoreBootMarkerPresent",
                                 File(RiftBootstrapComponentStore.root(appContext),
                                     "core.booting").exists())
                         "sessions" -> RiftHostCoreComponents.executionView().sessionsView(appContext)

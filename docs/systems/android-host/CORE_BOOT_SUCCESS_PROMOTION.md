@@ -1,4 +1,7 @@
-# Core boot success = Core known-good (2026-10-11 source change)
+# HISTORICAL, SUPERSEDED — Core boot success = Core known-good (2026-10-11)
+
+**DO NOT IMPLEMENT OR TEST THIS PLAN.** The user replaced it with [manual-only Core/Shell Recovery](MANUAL_RECOVERY_ONLY.md) later the same day. No automatic boot-good/bad evaluation, automatic promotion or rollback; only a user-confirmed Save Backup and Restore may designate or change the recovery snapshot and selected revision. This file is retained as past design context, not operative instructions.
+
 
 ## Ownership and scope
 

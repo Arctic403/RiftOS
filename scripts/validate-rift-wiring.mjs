@@ -292,12 +292,10 @@ for (const marker of [
 for (const marker of [
   'internal object RiftShellCandidateSwitch',
   'RiftBootstrapComponentStore.active(application, "shell")',
-  'RiftProtectedRevisionRecovery.rollback(',
   'RiftProtectedRevisionRecovery.verifiedReceipt(',
   'Shell candidate class shadows host APK',
   'Shell candidate does not implement native graphical V1 contract',
-  'unaccepted-shell-startup',
-  'automaticPromotionEnabled", false',
+  'selection = "external-selected"',
 ]) if (!shellCandidateSwitch.includes(marker)) {
   fail(`S guarded external graphical Shell selector missing: ${marker}`);
 }
@@ -309,7 +307,7 @@ for (const marker of [
   'externalShell?.let { it.onResume(); return }',
   'externalShell?.onPause()',
   'externalShell?.onDestroy()',
-  'RiftShellCandidateSwitch.fallback(application, "external-shell-attach-exception")',
+  'throw failure',
 ]) if (!shellActivityForSwitch.includes(marker)) {
   fail(`S external graphical Shell lifecycle path not reachable: ${marker}`);
 }
@@ -341,7 +339,8 @@ for (const [owner, markers] of [
     'fun stage(context: Context, manifestBytes: ByteArray,',
     'RiftProtectedDexVerifier.inspect(', 'fun activate(context: Context, component: String, sha: String)',
     'fun acceptProven(context: Context, component: String, sha: String,',
-    'RiftComponentReleaseLedger.recordPrepared(', 'RiftComponentReleaseLedger.acceptProven(',
+    'RiftBootstrapComponentStore.writeProtectedPointer(context, component, pointer)',
+    'RiftComponentReleaseLedger.acceptProven(',
     'RiftProtectedRevisionRecovery.verifiedReceipt(']],
   [protectedRecovery, ['riftos.host.protected-recovery/1',
     'fun verifiedReceipt(context: Context, component: String, candidate: JSONObject)',
@@ -377,7 +376,7 @@ for (const marker of ['pickProtectedComponent()', 'stageProtectedComponent()',
 }
 if (!coreRuntime.includes('.put("protectedComponentOperations", RiftProtectedComponentInstaller.status(context))') ||
     !e0HostComponent.includes('RiftCoreRecoveryDiagnostics.recordSelected(application, sha)') ||
-    !coreRecoveryDiagnostics.includes('RiftProtectedRevisionRecovery.rollback(') ||
+    coreRecoveryDiagnostics.includes('RiftProtectedRevisionRecovery.rollback(') ||
     !componentReleaseLedger.includes('fun confirmRollback(context: Context, id: String, sha: String)') ||
     !bootstrapStore.includes('fun writeProtectedPointer(context: Context, component: String, candidate: JSONObject)')) {
   fail('Protected exact-identity Core/Shell selection and crash N-1 recovery not wired');
@@ -418,7 +417,7 @@ if (!gradle.includes('"src/main/java/com/riftos/app/RiftComponentReleaseLedger.k
     !coreRuntime.includes('.put("coreRecoverySupervisor", RiftCoreRecoverySupervisorService.status(context))') ||
     !coreRuntime.includes('.put("externalCoreRevisions", RiftComponentReleaseLedger.status(context, "core"))') ||
     !coreRuntime.includes('.put("externalShellRevisions", RiftComponentReleaseLedger.status(context, "shell"))') ||
-    !e1CoreSwitch.includes('RiftProtectedRevisionRecovery.rollback(')) {
+    e1CoreSwitch.includes('RiftProtectedRevisionRecovery.rollback(')) {
   fail('H external revision ledger/observer not fully included in manifest, Android Kotlin and Core startup/status');
 }
 
@@ -446,7 +445,6 @@ if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreRecoveryDiagnostics.
 for (const marker of [
   'internal object RiftCoreCandidateSwitch',
   'RiftBootstrapComponentStore.active(application, "core")',
-  'RiftProtectedRevisionRecovery.rollback(', 
   'fun selectAtBoot(application: Application): RiftCoreComponentV1?',
   'RiftProtectedRevisionRecovery.verifiedReceipt(',
   'Core candidate contains an unexpected package',
@@ -454,40 +452,39 @@ for (const marker of [
   'Core candidate entrypoint missing',
   'Core candidate did not implement APK-owned Core V1 ABI',
   'Core DEX SHA mismatch',
-  'unaccepted-core-startup',
-  'fun markAccepted(application: Application, sha: String)',
-  'automaticPromotionEnabled", true',
+  'lastSelection = "external-selected"',
+  'automaticPromotionEnabled", false',
+  'manualRecoveryOnly", true',
   'inProcessHotSwapEnabled", false',
 ]) if (!e1CoreSwitch.includes(marker)) {
-  fail(`E1 fail-safe Core selection verification missing: ${marker}`);
+  fail(`E1 manual Core selection / immutable-verifier missing: ${marker}`);
 }
 for (const marker of ['fun resetCoreToEmbedded(context: Context)',
   'AtomicFile(pointer).delete()', 'core.booting']) {
-  if (!bootstrapStore.includes(marker)) fail(`E1 embedded Core rollback missing: ${marker}`);
+  if (!bootstrapStore.includes(marker)) fail(`APK manual embedded Recovery missing: ${marker}`);
 }
 if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreCandidateSwitch.kt"')) {
-  fail('E1 guarded Core candidate selector missing from exact Gradle Kotlin sources');
+  fail('E1 verified Core selector missing from Gradle Kotlin sources');
 }
 for (const [source, marker] of [
-  [bootstrapHost, 'RiftHostCoreComponents.acceptSuccessfulBoot(application)'],
-  [e0HostComponent, 'fun acceptSuccessfulBoot(application: android.app.Application)'],
-  [e0HostComponent, 'executionView().coreStatus(application).optString("schema").isNotBlank()'],
-  [protectedInstaller, 'fun acceptBootedCore(context: Context, sha: String): JSONObject'],
-  [protectedInstaller, 'RiftComponentReleaseLedger.acceptProven(context, "core", sha)'],
-  [protectedInstaller, 'RiftBootstrapComponentStore.clearProtectedStartupMarker(context, "core")'],
-  [e1CoreSwitch, 'fun markAccepted(application: Application, sha: String)'],
-  [e1CoreSwitch, 'RiftComponentReleaseLedger.isAccepted(application, "core", sha)'],
+  [e0HostComponent, 'selectedKind = "external-selected"'],
+  [bootstrapHost, 'RiftHostCoreComponents.initializeAtBoot(application)'],
+  [protectedInstaller, 'RiftBootstrapComponentStore.writeProtectedPointer(context, component, pointer)'],
+  [read(`${kotlinDir}/RiftManualRecoveryStore.kt`), 'fun saveSelectedBackup(context: Context, component: String): JSONObject'],
+  [read(`${kotlinDir}/RiftManualRecoveryActivity.kt`), 'Save selected Core as recovery backup'],
+  [read(`${kotlinDir}/RiftManualRecoveryActivity.kt`), 'Restore saved Core backup'],
 ]) if (!source.includes(marker)) {
-  fail('Core boot-success known-good promotion integration missing: ' + marker);
+  fail('Manual-only Core/Shell Recovery path incomplete: ' + marker);
 }
-if (coreRecoveryDiagnostics.includes('RiftProtectedRevisionRecovery.rollback(')) {
-  fail('Post-boot Core diagnostics must not demote a successfully booted revision');
-}
-if (bootstrapHost.indexOf('RiftHostCoreComponents.acceptSuccessfulBoot(application)') <
-    bootstrapHost.indexOf('RiftCoreShellRecovery.initialize(application)') ||
-    bootstrapHost.indexOf('RiftHostCoreComponents.acceptSuccessfulBoot(application)') >
-    bootstrapHost.indexOf('RiftMcpRuntime.relayClient(application).start()')) {
-  fail('Core auto-promotion must follow host boot init, before optional relay work');
+for (const [source, forbidden] of [
+  [bootstrapHost, 'RiftHostCoreComponents.acceptSuccessfulBoot(application)'],
+  [e0HostComponent, 'fun acceptSuccessfulBoot(application:'],
+  [e1CoreSwitch, 'RiftProtectedRevisionRecovery.rollback('],
+  [shellCandidateSwitch, 'RiftProtectedRevisionRecovery.rollback('],
+  [read(`${kotlinDir}/RiftCoreShellRecovery.kt`), 'RiftProtectedRevisionRecovery.rollback('],
+  [protectedInstaller, 'RiftManualRecoveryStore.preserveAcceptedBeforeUpdate('],
+]) if (source.includes(forbidden)) {
+  fail('Unexpected automatic Core/Shell recovery/promotion path: ' + forbidden);
 }
 
 for (const marker of ['interface RiftCoreComponentV1',

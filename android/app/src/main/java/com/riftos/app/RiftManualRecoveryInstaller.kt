@@ -9,7 +9,8 @@ import java.io.InputStream
 /**
  * APK-owned user-initiated install bridge. Works in Recovery without Core.
  * It reuses the EXISTING protected component parser, sealed staging and DEX
- * verifier. Staging never selects a component; install changes next boot only.
+ * verifier. Staging never selects a component; user-confirmed install changes
+ * next boot only and never creates/overwrites the Recovery backup.
  * No exported service, shell command or RAPP entry point is added.
  */
 internal object RiftManualRecoveryInstaller {
@@ -96,7 +97,8 @@ internal object RiftManualRecoveryInstaller {
             "Only verified external Core and Shell can be selected"
         }
         // Existing protected installer also verifies this SHA, its manifest,
-        // class closure, startup marker and accepted prior backup before select.
+        // class closure and exact verified component pointer; it does not
+        // judge boot health, rotate backups or select recovery automatically.
         return RiftProtectedComponentInstaller.activate(context, component, sha256)
     }
 }

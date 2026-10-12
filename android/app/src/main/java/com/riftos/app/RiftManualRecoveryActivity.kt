@@ -23,6 +23,8 @@ class RiftManualRecoveryActivity : Activity() {
     private lateinit var statusText: TextView
     private lateinit var coreBackup: Button
     private lateinit var shellBackup: Button
+    private lateinit var saveCoreBackup: Button
+    private lateinit var saveShellBackup: Button
     private lateinit var coreEmbedded: Button
     private lateinit var shellEmbedded: Button
     private var lastResult: String = ""
@@ -54,7 +56,7 @@ class RiftManualRecoveryActivity : Activity() {
         })
         screen.addView(TextView(this).apply {
             text = "This recovery screen runs in the Android APK independently of " +
-                "RiftOS Core and RiftShell. It restores only a previously proven " +
+                "RiftOS Core and RiftShell. It restores only your manually saved " +
                 "backup or the built-in migration fallback. Changes apply on " +
                 "the NEXT Core/Shell start, not to processes already running."
             textSize = 15f
@@ -68,8 +70,10 @@ class RiftManualRecoveryActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
         ))
-        coreBackup = action(screen, "Restore working Core backup", "core", "working-backup")
-        shellBackup = action(screen, "Restore working RiftShell backup", "shell", "working-backup")
+        saveCoreBackup = saveAction(screen, "Save selected Core as recovery backup", "core")
+        saveShellBackup = saveAction(screen, "Save selected RiftShell as recovery backup", "shell")
+        coreBackup = action(screen, "Restore saved Core backup", "core", "working-backup")
+        shellBackup = action(screen, "Restore saved RiftShell backup", "shell", "working-backup")
         coreEmbedded = action(screen, "Restore embedded Core", "core", "embedded")
         shellEmbedded = action(screen, "Restore embedded RiftShell", "shell", "embedded")
         screen.addView(TextView(this).apply {
@@ -144,10 +148,9 @@ class RiftManualRecoveryActivity : Activity() {
                     .setTitle("Install $component update?")
                     .setMessage("Select verified component $sha for its NEXT startup? " +
                         "Existing sessions are not hot-swapped. " +
-                        "A first external Core is an UNACCEPTED manual device trial, " +
-                        "not a production-qualified update. " +
-                        "The APK preserves the last accepted working revision " +
-                        "and the embedded fallback.")
+                        "No boot-health approval is required. " +
+                        "Only a backup that you explicitly save is kept, " +
+                        "alongside the APK's embedded fallback.")
                     .setNegativeButton("Cancel", null)
                     .setPositiveButton("Install") { _, _ ->
                         val outcome = runCatching {
@@ -263,6 +266,31 @@ class RiftManualRecoveryActivity : Activity() {
         showStatus()
     }
 
+    private fun saveAction(parent: LinearLayout, title: String, component: String): Button =
+        Button(this).also { button ->
+            button.text = title
+            button.isEnabled = false
+            button.setOnClickListener {
+                AlertDialog.Builder(this)
+                    .setTitle(title)
+                    .setMessage("Save the currently selected verified $component revision as the ONLY recovery backup? This replaces your previously saved $component backup. It does not reboot, activate, or judge boot health.")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Save backup") { _, _ ->
+                        val saved = runCatching {
+                            RiftManualRecoveryStore.saveSelectedBackup(this, component)
+                        }
+                        lastResult = saved.fold(
+                            onSuccess = { "BACKUP SAVED: $component SHA " +
+                                it.optString("sha256") + ". Restore remains a separate manual choice." },
+                            onFailure = { "Backup NOT saved: " + it.javaClass.simpleName +
+                                ". " + (it.message ?: "").take(130) }
+                        )
+                        showStatus()
+                    }.show()
+            }
+            parent.addView(button)
+        }
+
     private fun action(parent: LinearLayout, title: String, component: String,
                        selection: String): Button = Button(this).also { button ->
         button.text = title
@@ -273,7 +301,7 @@ class RiftManualRecoveryActivity : Activity() {
                 .setMessage(
                     "Restore $component to " +
                         (if (selection == "embedded") "the APK's embedded fallback"
-                         else "the previously device-accepted backup") +
+                         else "your manually saved and SHA-verified backup") +
                         "? This updates the next-start selector only. " +
                         "Running Core/Shell processes will NOT be hot-swapped."
                 )
@@ -306,6 +334,8 @@ class RiftManualRecoveryActivity : Activity() {
             onSuccess = { view ->
                 val core = view.getJSONObject("core")
                 val shell = view.getJSONObject("shell")
+                saveCoreBackup.isEnabled = core.optBoolean("saveBackupEnabled")
+                saveShellBackup.isEnabled = shell.optBoolean("saveBackupEnabled")
                 coreBackup.isEnabled = core.optBoolean("restoreWorkingBackupEnabled")
                 shellBackup.isEnabled = shell.optBoolean("restoreWorkingBackupEnabled")
                 coreEmbedded.isEnabled = core.optBoolean("restoreEmbeddedEnabled")
@@ -321,6 +351,8 @@ class RiftManualRecoveryActivity : Activity() {
                 }
             },
             onFailure = { error ->
+                saveCoreBackup.isEnabled = false
+                saveShellBackup.isEnabled = false
                 coreBackup.isEnabled = false
                 shellBackup.isEnabled = false
                 coreEmbedded.isEnabled = false
