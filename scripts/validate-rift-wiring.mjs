@@ -312,6 +312,51 @@ if (!/if \(ownShell\) \{\s*require\(runCatching \{\s*application\.classLoader\.l
     !/require\(ownShell \|\| kotlinSupport\)/.test(shellCandidateSwitch)) {
   fail('S Shell candidate Kotlin support and host shadow guard disagree with verified DEX');
 }
+// S-v2: the independently compiled graphical Shell is a source-only
+// candidate, not an APK-owned renderer or a replacement for proven V1.
+const externalShellV2 = read('external-components/IndependentGraphicalShellV2.kt');
+const externalShellV2Recipe = JSON.parse(read('external-components/compile-shell-v2.json'));
+const externalShellProducer = read('external-components/runtime.js');
+if (externalShellV2Recipe.language !== 'kotlin' ||
+    externalShellV2Recipe.sources.join(',') !== 'HostAbiCompileOnly.kt,IndependentGraphicalShellV2.kt' ||
+    externalShellV2Recipe.outputDir !== 'build/riftbuild/shell-v2-classes' ||
+    !externalShellProducer.includes("shellV2:105") ||
+    !externalShellProducer.includes("k==='shell-v2'?'v2/'") ||
+    !externalShellProducer.includes("k==='shell-v2'?'0.2.0'") ||
+    !externalShellProducer.includes("'IndependentGraphicalShellV2.kt'")) {
+  fail('S-v2 independent Shell compiler identity or isolated V2 output missing');
+}
+for (const marker of [
+  'class IndependentGraphicalShellV2 : RiftShellGraphicalComponentV1',
+  'launcher.add("@sys:" + id to name)',
+  'openSystem(id.removePrefix("@sys:"), name)',
+  'require(!id.startsWith("@sys:"))',
+  'openWindow("system:" + id, title, 0L)',
+  'if (win.generation > 0L)',
+  'if (win.minimized || win.generation <= 0L) continue',
+  'services().installed()',
+  'services().open(id)',
+  'services().snapshot(win.id)',
+  'services().event(win.id, win.generation',
+  'services().execute(command, "/")',
+  '.put("native", true)',
+  '.put("riftShellForeground", resumed)',
+  'override fun onResume() {',
+  '"com.riftos.app.RiftMcpActivity"',
+]) if (!externalShellV2.includes(marker)) {
+  fail('S-v2 Core-backed graphical Shell lifecycle/identity boundary missing: ' + marker);
+}
+for (const forbidden of [
+  'RiftNativeDesktop(', 'RiftNativeWorkspaceApps(', 'RiftCoreRuntime.',
+  'RiftManualRecoveryStore.', 'RiftProtectedComponentInstaller.',
+  'services().respondConsent(', 'services().installRapp(', 'services().uninstallRapp('
+]) if (externalShellV2.includes(forbidden)) {
+  fail('S-v2 graphical Shell imported embedded execution or unsupported privileged UI: ' + forbidden);
+}
+if (!/if \(win\.generation > 0L\) \{\s*runCatching \{ services\(\)\.stop\(id, win\.generation\) \}/.test(externalShellV2) ||
+    !/if \(id\.startsWith\("@sys:"\)\) \{\s*openSystem\(id\.removePrefix\("@sys:"\), name\)/.test(externalShellV2)) {
+  fail('S-v2 system windows must not masquerade as Core-owned RAPPs');
+}
 for (const marker of [
   'RiftShellCandidateSwitch.selectAtBoot(application)',
   'candidate.attach(this, host,',

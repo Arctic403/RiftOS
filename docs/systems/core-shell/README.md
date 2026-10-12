@@ -1,5 +1,31 @@
 # RiftOS Core ↔ RiftShell — canonical architecture (C1 series)
 
+## 2026-10-12 — V2 parity inventory and Core IPC source audit (precompile)
+
+**User device baseline:** Signed #731 source `212565f7850b` booted independent graphical Shell V1 SHA `f29747a5828b66717d900519101cc08fc538fa47851fe8e657c69ac6ba1b4276` alongside independently running Core v0.6.1 SHA `2bbb861f5a7feda953c9fb49ea1ee207d942d0c2173d8d55c06d8050e6a1e4e7`. User proved window dragging, close/minimize, taskbar/Start and actual attached Core-owned RAPP windows/surfaces/input. Core and Shell both have manually saved **verified external** Recovery backups matching active SHAs. These backups and installed components must not be overwritten during v2 source preparation.
+
+| Existing embedded / APK capability | V2 external owner / status | Acceptance still needed |
+| --- | --- | --- |
+| Native graphical desktop, Start, taskbar, drag, minimize, close | **External Shell V1 device proven; V2 source retained** | V2 signed-DEX compilation, live launch, focus/z-order/rotation/resizing comparison |
+| RAPP packages, sessions, frames, events, focus | **Independent Core v0.6.1 and Shell V1 device proven** | V2 launch/input/close and NativeBuffer rendering investigation |
+| Built-in Terminal | **V2 native system window → `RiftShellPlatformServicesV1.execute`** | Real command/output, error, concurrency and input-device QA |
+| Task Manager / Core process view | **V2 system view, `ps` / `core status`** | Real native process/task controls and lifecycle behavior |
+| Files, Android Documents mount, Editor | **V2 read-only C:/D:/ `ls` / `head`** | Full Files/navigation, SAF, editing, save/rename/copy/delete and their approval paths |
+| Workspace Records / settings | **V2 status and roots via Core command transport** | Working desktop settings parity and complete workspace/file explorer UX |
+| MCP/relay and MCP Settings | **MCP service remains APK process; V2 opens existing `RiftMcpActivity`** | External Shell-native MCP management UI; avoid embedding service in Core |
+| Admin Approvals, one-use protected consent and independent Recovery | **Not migrated; read-only permissions view only** | Typed authenticated privileged UI, actual user-confirmed approvals; independent Recovery remains APK-owned |
+| Installed RAPP manager | **V2 read-only Core-installed catalogue and open** | Install/update/uninstall UI, consent, errors and authorization |
+| Built-in browser / editor / Dev Lab | **V2 visibly marks all three pending** | Feature-complete independent windows/RAPPs; no fake completion |
+| Insets, accessibility, soft keyboard, orientation, window sizing | **Incomplete v2 parity** | Physical Android landscape/portrait, IME, accessibility, drag/resize/restore testing |
+| Shell death, restart and window restoration | **Partial Core-owned RAPP-generation restoration only** | Verified crash/restart while Core remains alive, system-window restore and reattach |
+| NativeBuffer glitches | **Known issue reported on real V1 Shell** | Reproduce, distinguish old RAPP render data from Core frame/renderer defects |
+
+**Audit fixes, V2 source only:** Core's `RiftCoreShellWindowBridge.report` rejects reports unless `native=true`; v2 now emits `native=true`, foreground state `riftShellForeground=resumed`, logs rejected IPC reports and publishes immediately on `onResume`. The Start/launcher system-tool entries now carry a reserved `@sys:` presentation action key and dispatch to `openSystem`, while installed RAPP IDs remain Core-only and cannot use that key. Actual system windows still use `system:<id>` and generation 0; stop/snapshot/reattach/execute and focus of positive-generation RAPPs are guarded separately. V2 never calls `respondConsent` or component activation. The regression harness tests isolation and the registered producer's V2-only Kotlin recipe without compiling or installing anything.
+
+**Known Core Recovery gap:** `RiftCoreShellRecovery.claim` currently filters system windows against unprefixed native IDs, whereas V2 reports `system:<id>` and only reattaches generation-positive Core RAPP windows. Therefore **system-window restoration after Shell process death is NOT supported/proven** and requires a later explicitly scoped host/Recovery protocol gate before retiring embedded Shell. Also v2 launches `RiftMcpActivity` inside APK as an interim UI rather than owning full external graphical management; this is an explicit retirement blocker.
+
+**Release state:** v2 source candidate only. User must first repack/reinstall the independently installed component Builder RAPP, run the registered Kotlin + D8 pipeline with `compile-shell-v2.json`, verify isolated `/D:/Builds/Components/shell/v2` manifest and DEX/hash, then personally stage/select/restart using independent Recovery. User manually restores proven Shell V1 if failed. No source-only regression check constitutes a green Kotlin compile or physical v2 boot. Do not disable or purge embedded Core/Shell.
+
 ## 2026-10-12 — External Shell v0.1 device proof and independent v2 system window design
 
 Signed #731 physically booted the external graphical Shell v0.1 while independently loaded Core v0.6.1 continued to run. User-verified RAPP launch, drag, minimize/close, Start, taskbar, interaction, and published Core surfaces for two RAPPs; Core status independently returned attached executable sessions and real frame nodes. The user will save the proven v0.1 Shell as a manual Recovery backup before any v2 trial. **Neither embedded implementation may be disabled/purged** while the graphical system features remain incomplete.

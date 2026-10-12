@@ -177,8 +177,10 @@ class IndependentGraphicalShellV2 : RiftShellGraphicalComponentV1 {
         launcher.clear()
         icons.addView(text("System", 15f, true))
         for ((id, name) in systemEntries) {
-            launcher.add(id to name)
-            icons.addView(button("⚙  " + name) { launch(id, name) })
+            // Reserved UI-only marker: an external system tool must never
+            // masquerade as an executable Core-installed RAPP identifier.
+            launcher.add("@sys:" + id to name)
+            icons.addView(button("⚙  " + name) { openSystem(id, name) })
         }
         icons.addView(text("Installed RAPPs", 15f, true))
         val installed = services().installed()
@@ -186,7 +188,8 @@ class IndependentGraphicalShellV2 : RiftShellGraphicalComponentV1 {
             val app = installed.optJSONObject(i) ?: continue
             val id = app.optString("id")
             val name = app.optString("name", id)
-            if (id.isBlank() || id.length > 64) continue
+            if (id.isBlank() || id.length > 64 ||
+                id.startsWith("@sys:")) continue
             launcher.add(id to name)
             icons.addView(button("▦  " + name.take(36)) { launch(id, name) })
         }
@@ -212,7 +215,11 @@ class IndependentGraphicalShellV2 : RiftShellGraphicalComponentV1 {
         for ((id, name) in launcher) {
             items.addView(button("Open  ·  " + name.take(30)) {
                 menu.visibility = View.GONE
-                launch(id, name)
+                if (id.startsWith("@sys:")) {
+                    openSystem(id.removePrefix("@sys:"), name)
+                } else {
+                    launch(id, name)
+                }
             })
         }
         menu.addView(ScrollView(activity()).apply {
@@ -230,10 +237,9 @@ class IndependentGraphicalShellV2 : RiftShellGraphicalComponentV1 {
     }
 
     private fun launch(id: String, label: String) {
-        if (systemEntries.any { it.first == id }) {
-            openSystem(id, label)
-            return
-        }
+        // RAPP identity stays exclusively Core-owned. System launches use
+        // openSystem(), never the installed-RAPP execution pathway.
+        require(!id.startsWith("@sys:")) { "Reserved Shell system action" }
         runCatching {
             val state = services().open(id)
             val generation = state.optLong("attachmentGeneration", -1L)
@@ -603,10 +609,16 @@ class IndependentGraphicalShellV2 : RiftShellGraphicalComponentV1 {
                 .put("minimized", win.minimized)
                 .put("x", p?.leftMargin ?: 0).put("y", p?.topMargin ?: 0))
         }
+        // Core's authenticated desktop IPC requires native=true; without it
+        // the report is rejected and no restart snapshot/foreground lease exists.
         runCatching { services().reportDesktop(JSONObject()
             .put("schema", "riftos.shell.desktop-state/1")
+            .put("native", true)
+            .put("riftShellForeground", resumed)
             .put("windows", items)
             .put("focusedId", focusedId ?: JSONObject.NULL)) }
+            .onFailure { android.util.Log.w(
+                "ExternalRiftShellV2", "Core desktop report rejected", it) }
     }
 
     private fun showStatus(message: String) {
@@ -622,6 +634,9 @@ class IndependentGraphicalShellV2 : RiftShellGraphicalComponentV1 {
         resumed = true
         ticker.removeCallbacks(poll)
         ticker.post(poll)
+        // Publish foreground lease immediately after first real Activity
+        // resume; attach() intentionally runs before Activity is resumed.
+        report()
     }
     override fun onPause() {
         resumed = false

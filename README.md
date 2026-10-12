@@ -1,5 +1,13 @@
 # RiftOS
 
+## 2026-10-12 — v2 source parity audit; external Core and Shell V1 backups protected
+
+Signed #731 (`212565f7850b`) physically booted external Core v0.6.1 and graphical external Shell V1, with RAPP surface/input, window drag/minimize/close and Start/taskbar observed. Read-only Core status independently confirmed selected external Core SHA `2bbb861f5a7feda953c9fb49ea1ee207d942d0c2173d8d55c06d8050e6a1e4e7` and Shell SHA `f29747a5828b66717d900519101cc08fc538fa47851fe8e657c69ac6ba1b4276`, BOTH with exact, user-created `verified-external` working Recovery backups. Neither embedded Core nor Shell can be retired until required full feature parity and independent manual recovery proof.
+
+The separate `external-components/IndependentGraphicalShellV2.kt` source now passes an audited design review: preserve Core-owned RAPP execution; reserve `@sys:` launcher actions and generation-zero Shell-native system windows; correct `native=true`/foreground desktop reporting to authenticated Core IPC and make report failures observable. The source regression suite and validator now require the V2-only `compile-shell-v2.json` and registered component-builder RAPP compilation request, isolated from verified V1 DEX and its saved Recovery backup. Functional differences/gaps are tracked in `docs/systems/core-shell/README.md`: Terminal/Files/Tasks/Settings/Workspace basic Core-backed tools exist in source; full system Files/Editor/Browser/Dev Lab/Admin/MCP UI, NativeBuffer rendering, IME/accessibility and cross-process system-window recovery are still pending.
+
+**Source-only checkpoint:** no external V2 DEX exists or has been installed, and the user must first repack/install the revised component-builder RAPP to invoke its new V2 button. The next critical device step is compile a versioned V2 manifest/DEX through registered Kotlin + D8 in `/D:/Builds/Components/shell/v2`, verify SHA, then manually stage/install/restart using independent Recovery. External V1 backup is the recovery route. No assistant-initiated signed APK build or component promotion.
+
 ## 2026-10-12 — External Core/Shell device proof, Shell v2 system-app migration begins
 
 User's real signed #731 booted external graphical Shell v0.1 against independently executed external Core v0.6.1; interactive installed RAPP UI, Core session/surface ownership, Start/taskbar, drag, minimize and close were physically confirmed. The user will independently save a v0.1 working Shell Recovery backup before trialling new versions. Embedding retirement is on HOLD until ALL retained non-RAPP system apps, permissions/UI, Core dependencies, restart/recovery and device behavior are feature-complete.

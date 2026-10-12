@@ -184,6 +184,100 @@ for(const kind of ['core','shell']) {
  assert.match(manifest.sha256,/^[a-f0-9]{64}$/);
  assert.ok(manifest.entrypoint.startsWith('com.riftos.external.'+kind+'.'));
 }
+// Shell v2 remains a separately compiled component. System tools use Core's
+// authenticated command IPC, but never forge an installed RAPP session.
+const shellV2=read('IndependentGraphicalShellV2.kt');
+const v1Recipe=JSON.parse(read('compile-shell.json'));
+const v2Recipe=JSON.parse(read('compile-shell-v2.json'));
+assert.deepEqual(v2Recipe.sources,[
+ 'HostAbiCompileOnly.kt','IndependentGraphicalShellV2.kt'
+]);
+assert.ok(!v2Recipe.sources.includes('IndependentGraphicalShellV1.kt'));
+assert.notEqual(v2Recipe.outputDir,v1Recipe.outputDir);
+assert.match(v2Recipe.outputDir,/shell-v2-classes$/);
+assert.match(shellV2,/class IndependentGraphicalShellV2\s*:\s*RiftShellGraphicalComponentV1/);
+const v2HostImports=[...shellV2.matchAll(/^import com\.riftos\.app\.(\w+)$/gm)]
+ .map(x=>x[1]).sort();
+assert.deepEqual(v2HostImports,[
+ 'RiftShellGraphicalComponentV1','RiftShellPlatformServicesV1'
+]);
+for(const forbidden of [
+ 'RiftNativeDesktop','RiftNativeWorkspaceApps','RiftCoreRuntime',
+ 'RiftRappHost','RiftCoreCandidateSwitch','RiftShellCandidateSwitch'
+]) assert.ok(!shellV2.includes(forbidden+'.'), 'V2 must not execute embedded APK owner '+forbidden);
+for(const name of [
+ 'files','terminal','tasks','installed-apps','workspace-live',
+ 'settings','mcp','admin-permissions','browser','editor','devlab'
+]) assert.ok(shellV2.includes('"'+name+'" to '),'V2 system entry missing: '+name);
+for(const cmd of [
+ 'ls ','head ','ps','core status','workspace status','workspace ls',
+ 'permissions list','sysinfo'
+]) assert.ok(shellV2.includes('"'+cmd),'V2 Core command route missing: '+cmd);
+assert.match(shellV2,/services\(\)\.execute\(command, "\/"\)/);
+assert.match(shellV2,/Thread\(\{[\s\S]*?boundActivity\.runOnUiThread \{/);
+assert.match(shellV2,/result\.take\(14000\)/);
+assert.match(shellV2,/services\(\)\.installed\(\)/);
+assert.match(shellV2,/services\(\)\.open\(id\)/);
+assert.match(shellV2,/services\(\)\.snapshot\(win\.id\)/);
+assert.match(shellV2,/services\(\)\.reattach\(id, gen\)/);
+assert.match(shellV2,/services\(\)\.event\(win\.id, win\.generation/);
+assert.match(shellV2,/generation > 0L\) refreshWindow\(win\)/);
+assert.match(shellV2,/if \(win\.minimized \|\| win\.generation <= 0L\) continue/);
+assert.match(shellV2,/if \(win\.generation > 0L\) \{\s*runCatching \{ services\(\)\.stop\(id, win\.generation\) \}/);
+assert.match(shellV2,/id\.takeUnless \{ it\.startsWith\("system:"\) \}/);
+assert.match(shellV2,/openWindow\("system:" \+ id, title, 0L\)/);
+assert.match(shellV2,/launcher\.add\("@sys:" \+ id to name\)/);
+assert.match(shellV2,/if \(id\.startsWith\("@sys:"\)\) \{\s*openSystem\(id\.removePrefix\("@sys:"\), name\)/);
+assert.match(shellV2,/require\(!id\.startsWith\("@sys:"\)\)/);
+assert.match(shellV2,/id\.startsWith\("@sys:"\)\) continue/);
+assert.doesNotMatch(shellV2,/if \(systemEntries\.any \{ it\.first == id \}\)/);
+assert.match(shellV2,/services\(\)\.reportDesktop\(JSONObject\(\)/);
+assert.match(shellV2,/\.put\("native", true\)/);
+assert.match(shellV2,/\.put\("riftShellForeground", resumed\)/);
+assert.match(shellV2,/override fun onResume\(\) \{[\s\S]*?ticker\.post\(poll\)[\s\S]*?report\(\)/);
+assert.match(shellV2,/\.onFailure \{ android\.util\.Log\.w\(/);
+const bridge=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftCoreShellWindowBridge.kt',root),'utf8');
+assert.match(bridge,/require\(value\.optBoolean\("native", false\)\)/);
+const coreRecovery=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftCoreShellRecovery.kt',root),'utf8');
+assert.match(coreRecovery,/state\.optBoolean\("riftShellForeground", false\)/);
+assert.match(shellV2,/if \(id\.isBlank\(\) \|\| gen < 1L\) continue/);
+assert.match(shellV2,/if \(win\.generation > 0L\)/);
+assert.match(shellV2,/if \(id == "mcp"\)/);
+assert.match(shellV2,/"com\.riftos\.app\.RiftMcpActivity"/);
+assert.doesNotMatch(shellV2,/services\(\)\.respondConsent\(|services\(\)\.installRapp\(|services\(\)\.uninstallRapp\(/);
+assert.match(shellV2,/"browser" \|\| id == "editor" \|\| id == "devlab"/);
+// Recovery remains a separate pending parity gate: Core filters restored
+// system:* IDs, and v2 ignores generation-zero system-window restore.
+// Do NOT count external system-window resurrection as device-proven yet.
+assert.ok(!coreRecovery.includes('"system:files"'),
+ 'V2 system window restore is not a completed Core Recovery contract');
+const vm=await import('node:vm');
+const context={};
+vm.runInNewContext(producer,context,{timeout:1200});
+assert.equal(typeof context.riftRappMain,'function');
+const selected=JSON.parse(context.riftRappMain(JSON.stringify({
+ event:{kind:1,targetId:105}
+})));
+const selectedState=JSON.parse(Buffer.from(selected.stateBase64,'base64').toString('utf8'));
+assert.equal(selectedState.mode,'shell-v2');
+assert.equal(selected.effect.capability,'build.local');
+assert.equal(selected.effect.operation,'toolchainStatus');
+const compiled=JSON.parse(context.riftRappMain(JSON.stringify({
+ stateBase64:selected.stateBase64,
+ event:{kind:13,targetId:selected.effect.requestId,arg0:1,text:JSON.stringify({
+  schema:'riftbuild-kotlin-toolchain-status/2',ready:true,dexer:'D8',
+  androidJar:{path:'/tmp/android.jar'},kotlinStdlib:{path:'/tmp/kotlin-stdlib.jar'}
+ })}
+})));
+assert.equal(compiled.effect.operation,'compilerRun');
+const v2Request=JSON.parse(compiled.effect.text).request;
+assert.deepEqual(Array.from(v2Request.sources),v2Recipe.sources);
+assert.equal(v2Request.outputDir,v2Recipe.outputDir);
+assert.ok(!v2Request.sources.includes('IndependentGraphicalShellV1.kt'));
+assert.match(producer,/k==='shell-v2'\?'v2\/'/);
+assert.match(producer,/version:k==='core'\?'0\.6\.1':k==='shell-v2'\?'0\.2\.0'/);
+assert.match(producer,/entry:k==='core'\?'com\.riftos\.external\.core\.IndependentCoreV1':k==='shell-v2'\?'com\.riftos\.external\.shell\.IndependentGraphicalShellV2'/);
+assert.doesNotMatch(producer,/RiftProtectedComponentInstaller|RiftManualRecoveryStore|acceptProven\(/);
 const gradle=fs.readFileSync(new URL('android/app/build.gradle.kts',root),'utf8');
 assert.ok(!gradle.includes('external-components/'));
-console.log('External Core manual-trial source contract PASS: dual runtime, async Core-owned grants and signed host capability bridges. Physical trial, native-buffer behavior and recovery not accepted.');
+console.log('External Core/V1 and isolated Shell V2 source contract PASS (Core IPC, system menu isolation, real desktop report, Core session boundaries, producer compiler recipe). Signed device V2 boot and system app parity not yet proven.');
