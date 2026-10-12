@@ -1,5 +1,9 @@
 # RiftOS Core ↔ RiftShell — canonical architecture (C1 series)
 
+## 2026-10-12 — C07 registered build.local toolchainStatus device PASS (not compiler run)
+
+On running external Core v0.7.0 (signed host #733, PID 23671), the user pressed **CHECK REGISTERED COMPILER** in the installed independent component Builder RAPP and saw `Status: idle · Registered compiler + D8 ready`, `Toolchain check: kotlin-android`. The RAPP's verified source wires that button to `build.local/toolchainStatus` and only renders the ready message from a positive effect receipt, establishing a real Core-mediated capability round-trip. MCP concurrently confirmed one attached graphical Builder session (generation 11, revision 6, 20-node surface) and zero pending events. No new compilation, consent/denial/revoke test, or typed `RiftCoreSystemServicesV1.systemRequest` device call occurred; complete Core qualification remains pending. See `external-components/BUILD_EVIDENCE.md`.
+
 ## 2026-10-12 — C07 real-device subset ACCEPTED; typed Shell service qualification still blocked
 
 Signed host #733 is installed; user selected independent external Core **v0.7.0**, DEX SHA `f34a2c8d0f369ab5c8134b50ff134434bd1029037c77e9290cd80214f96f79fa`, live Core PID `23671`, no Core fallback or boot marker. Exact verified-external Core **v0.6.1** user Recovery backup SHA `2bbb861f5a7feda953c9fb49ea1ee207d942d0c2173d8d55c06d8050e6a1e4e7` preserved. Shell currently selected **embedded**; external Shell **v0.1** verified saved backup SHA `f29747a5828b66717d900519101cc08fc538fa47851fe8e657c69ac6ba1b4276` preserved.
