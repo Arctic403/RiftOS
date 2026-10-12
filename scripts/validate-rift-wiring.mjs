@@ -437,7 +437,7 @@ if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreRecoveryDiagnostics.
     !bootstrapHost.includes('RiftCoreRecoveryDiagnostics.recoverHistoricalExit(application)') ||
     !coreRuntime.includes('.put("coreRecoveryDiagnostics", RiftCoreRecoveryDiagnostics.status(context))') ||
     !e0HostComponent.includes('RiftCoreRecoveryDiagnostics.installExternalCrashObserver(application)') ||
-    !e0HostComponent.includes('RiftCoreRecoveryDiagnostics.recordCandidateFailure(application, "initialize", failure)') ||
+    !/RiftCoreRecoveryDiagnostics\.recordCandidateFailure\(\s*application,\s*"initialize",\s*failure\s*\)/.test(e0HostComponent) ||
     !/RiftCoreRecoveryDiagnostics\.recordCandidateFailure\(\s*application,\s*"verification",\s*failure\s*\)/.test(e1CoreSwitch)) {
   fail('H Core diagnostic owner, signed Gradle source, startup and exception integration missing');
 }
