@@ -6,7 +6,7 @@ const PROJECT='/D:/Workspace/RiftOS-main/external-components';
 const OUT='/D:/Builds/Components';
 const SHA=/^[0-9a-f]{64}$/;
 const BASE64='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-const BTN={core:101,shell:102,tools:103,clear:104};
+const BTN={core:101,shell:102,tools:103,clear:104,shellV2:105};
 const ABI_CLASSES=[
  'RiftCoreComponentV1.class','RiftCoreExecutionViewV1.class','RiftHostQuickJsV1.class','RiftHostNativeBufferV1.class','RiftHostCapabilityUiV1.class','RiftHostBuildLocalV1.class',
  'RiftShellGraphicalComponentV1.class','RiftShellPlatformServicesV1.class'
@@ -19,14 +19,15 @@ function dec(t){if(!t)return [];if(t.length%4)throw Error('invalid base64 length
 function fresh(){return {schema:SCHEMA,phase:'idle',mode:'core',status:'Independent Core and Shell DEX source compiler',pending:null,req:1,stubIndex:0,sha:'',logs:['No critical component staging/activation authority is granted.']};}
 function load(input){const bytes=dec(input.stateBase64||'');if(!bytes.length)return fresh();const j=JSON.parse(utf(bytes));if(j.schema!==SCHEMA)throw Error('invalid builder state schema');j.logs=Array.isArray(j.logs)?j.logs.slice(-7):[];return j;}
 function log(s,t){s.logs.push(String(t).slice(0,205));if(s.logs.length>7)s.logs.shift();}
-function config(s){const k=s.mode;if(!['core','shell'].includes(k))throw Error('unknown component');const root='build/riftbuild/'+(k==='core'?'core-v061':k);return {kind:k,classes:root+'-classes',dex:root+'-dex',stubs:root+'-stubs',entry:k==='core'?'com.riftos.external.core.IndependentCoreV1':'com.riftos.external.shell.IndependentGraphicalShellV1',source:k==='core'?'IndependentCoreV1.kt':'IndependentGraphicalShellV1.kt',output:OUT+'/'+k+'/'+(k==='core'?'trial-v061/':'')+k+'.dex',manifest:OUT+'/'+k+'/'+(k==='core'?'trial-v061/':'')+'component.json'};}
+function config(s){const k=s.mode;if(!['core','shell','shell-v2'].includes(k))throw Error('unknown component');const kind=k==='core'?'core':'shell';const root='build/riftbuild/'+(k==='core'?'core-v061':k);const sub=k==='core'?'trial-v061/':k==='shell-v2'?'v2/':'';return {kind,classes:root+'-classes',dex:root+'-dex',stubs:root+'-stubs',entry:k==='core'?'com.riftos.external.core.IndependentCoreV1':k==='shell-v2'?'com.riftos.external.shell.IndependentGraphicalShellV2':'com.riftos.external.shell.IndependentGraphicalShellV1',source:k==='core'?'IndependentCoreV1.kt':k==='shell-v2'?'IndependentGraphicalShellV2.kt':'IndependentGraphicalShellV1.kt',version:k==='core'?'0.6.1':k==='shell-v2'?'0.2.0':'0.1.0',output:OUT+'/'+kind+'/'+sub+kind+'.dex',manifest:OUT+'/'+kind+'/'+sub+'component.json'};}
 function node(kind,id,text){return {kind,id,parentId:id===1?0:1,text:String(text||'')};}
 function render(s){const nodes=[
 node(1,1,''),node(3,2,'RiftOS EXTERNAL COMPONENT BUILDER · independent RAPP'),
 node(3,3,'Status: '+s.phase+' · '+s.status),
 node(3,4,'Registered Kotlin Android compiler → D8 → Core/Shell DEX'),
 node(5,BTN.core,'BUILD INDEPENDENT CORE DEX'),
-node(5,BTN.shell,'BUILD INDEPENDENT GRAPHICAL SHELL DEX'),
+node(5,BTN.shell,'BUILD PROVEN GRAPHICAL SHELL V1 DEX'),
+node(5,BTN.shellV2,'BUILD EXTERNAL SYSTEM SHELL V2 DEX'),
 node(5,BTN.tools,'CHECK REGISTERED COMPILER'),
 node(5,BTN.clear,'CLEAR STATUS'),
 node(3,5,s.sha?'Last independent '+s.mode+' SHA: '+s.sha:'No DEX built yet'),
@@ -41,7 +42,7 @@ function compile(s,status){if(status.schema!=='riftbuild-kotlin-toolchain-status
 function strip(s){const c=config(s);if(s.stubIndex>=ABI_CLASSES.length){s.phase='dexing';s.status='D8 converting ONLY external component classes';return issue(s,'build.local','jvmDex',JSON.stringify({project:PROJECT,classesDir:c.classes,outputDir:c.dex,minSdk:28}),'dexed');}const file=ABI_CLASSES[s.stubIndex++];s.phase='stripping';s.status='Removing compile-only APK ABI: '+file;return issue(s,'fs.write','move',JSON.stringify({from:PROJECT+'/'+c.classes+'/com/riftos/app/'+file,to:PROJECT+'/'+c.stubs+'/'+file,replace:true}),'stripped');}
 function afterDex(s,r){const c=config(s);if(r.schema!=='rift-jvm-dex/1'||r.state!=='dexed'||!Array.isArray(r.dexFiles)||r.dexFiles.length!==1)throw Error('Expected ONE indexed DEX from D8');const d=r.dexFiles[0];if(d.name!=='classes.dex'||!SHA.test(d.sha256||'')||!Number.isInteger(d.bytes)||d.bytes<112||d.bytes>32*1024*1024)throw Error('Compiled DEX SHA or bounds invalid');s.sha=d.sha256;s.phase='checking-header';s.status='Checking raw DEX magic and D8 SHA '+s.sha.slice(0,16);return issue(s,'fs.read','readBytes',JSON.stringify({path:PROJECT+'/'+c.dex+'/classes.dex',offset:0,length:8}),'header');}
 function afterHeader(s,evt){const b=dec(evt.bytesBase64||'');if(b.length!==8||b[0]!==100||b[1]!==101||b[2]!==120||b[3]!==10||b[7]!==0)throw Error('D8 output has invalid Android DEX header');const c=config(s);s.phase='exporting';s.status='Exporting independently compiled '+s.mode+'.dex';return issue(s,'fs.write','move',JSON.stringify({from:PROJECT+'/'+c.dex+'/classes.dex',to:c.output,replace:true}),'exported');}
-function afterExport(s){const c=config(s);const manifest={schema:'riftos.protected-component/1',component:c.kind,version:c.kind==='core'?'0.6.1':'0.1.0',entrypoint:c.entry,sha256:s.sha,buildSha256:s.sha,payload:c.kind+'.dex',abi:1,minSdk:28,maxSdk:1000};s.phase='manifest';s.status='Writing strict protected component manifest; activation DISABLED';return issue(s,'fs.write','writeText',c.manifest,'manifest-written',enc(utfBytes(JSON.stringify(manifest))));}
+function afterExport(s){const c=config(s);const manifest={schema:'riftos.protected-component/1',component:c.kind,version:c.version,entrypoint:c.entry,sha256:s.sha,buildSha256:s.sha,payload:c.kind+'.dex',abi:1,minSdk:28,maxSdk:1000};s.phase='manifest';s.status='Writing strict protected component manifest; activation DISABLED';return issue(s,'fs.write','writeText',c.manifest,'manifest-written',enc(utfBytes(JSON.stringify(manifest))));}
 function eventEffect(s,e){const p=s.pending;if(!p||e.targetId!==p.id)throw Error('stale or unexpected Core effect receipt');s.pending=null;if(e.arg0!==1)throw Error(e.text||'Registered Core build capability denied');switch(p.then){
 case 'toolchain-only': {const r=JSON.parse(e.text||'{}');s.phase='idle';s.status=(r.ready?'Registered compiler + D8 ready':'Registered compiler unavailable');log(s,'Toolchain check: '+r.defaultCompilerId);return response(s);}
 case 'compiler-status': {const r=JSON.parse(e.text||'{}');log(s,'Managed compiler authority '+r.compilerAuthority);return compile(s,r);}
@@ -55,6 +56,7 @@ default:throw Error('Unknown protected component build step');}}
 function run(input){const s=load(input),e=input.event||{};try{
 if(e.kind===1&&e.targetId===BTN.core){if(s.pending)throw Error('Critical build already running');s.mode='core';s.sha='';s.stubIndex=0;log(s,'Building EXTERNAL Core package/adapters/QuickJS candidate (NOT QUALIFIED)');return status(s,true);}
 if(e.kind===1&&e.targetId===BTN.shell){if(s.pending)throw Error('Critical build already running');s.mode='shell';s.sha='';s.stubIndex=0;log(s,'Building independent graphical Shell renderer');return status(s,true);}
+if(e.kind===1&&e.targetId===BTN.shellV2){if(s.pending)throw Error('Critical build already running');s.mode='shell-v2';s.sha='';s.stubIndex=0;log(s,'Building external Shell v0.2.0 in isolated v2 directory; no automatic activation');return status(s,true);}
 if(e.kind===1&&e.targetId===BTN.tools){if(s.pending)throw Error('Critical build already running');return status(s,false);}
 if(e.kind===1&&e.targetId===BTN.clear){if(s.pending)throw Error('Cannot reset running critical build');return response(fresh());}
 if(e.kind===13)return eventEffect(s,e);

@@ -1,5 +1,11 @@
 # RiftOS
 
+## 2026-10-12 — External Core/Shell device proof, Shell v2 system-app migration begins
+
+User's real signed #731 booted external graphical Shell v0.1 against independently executed external Core v0.6.1; interactive installed RAPP UI, Core session/surface ownership, Start/taskbar, drag, minimize and close were physically confirmed. The user will independently save a v0.1 working Shell Recovery backup before trialling new versions. Embedding retirement is on HOLD until ALL retained non-RAPP system apps, permissions/UI, Core dependencies, restart/recovery and device behavior are feature-complete.
+
+First source checkpoint for isolated `IndependentGraphicalShellV2.kt`: existing RAPP desktop and input path preserved, plus system launcher, Core-backed native Terminal, read-only Files, Tasks, installed RAPP catalogue/open, Workspace Records status, Settings/status and read-only permissions. MCP settings uses existing APK Activity as an explicitly marked interim Android-host interop path, **not** full external UI migration. Browser/Editor/Dev Lab, Admin Approvals, install/uninstall, full Files and IME/accessibility still pending. V2 uses existing signed Shell ABI, separated `compile-shell-v2.json` and a new Builder RAPP source button, output isolated to `/D:/Builds/Components/shell/v2/` with version 0.2.0. The installed Builder RAPP must be repacked from current source to expose this button, and actual V2 DEX compilation and device proof remain pending; no automatic critical component install, recovery, acceptance or backup operation.
+
 ## 2026-10-11 — #730 external Shell boot-class rejection fix (source only)
 
 Signed #730 captured Shell PID 19075 failing before desktop attach: `IllegalArgumentException: Shell candidate includes host or unsupported classes` at `RiftShellCandidateSwitch.load:96`. Stage-time `RiftProtectedDexVerifier` allows the external Shell namespace plus the pinned D8 bundled `kotlin/*` support classes, but the boot-time Shell loader rejected every non-Shell class. The loader now mirrors working external Core behavior by allowing `kotlin.*` support while retaining strict Shell-owned class scope, APK class shadow checks, exact SHA and entrypoint verification and class count bound. Node and Builder source tests enforce this parity.

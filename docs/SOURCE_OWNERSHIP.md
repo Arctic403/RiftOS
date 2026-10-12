@@ -38,6 +38,7 @@ As of the post-#715 APK legacy-language cleanup, Gradle packages **none** of `sr
 | `external-components/IndependentRappEffectsV1.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
 | `external-components/IndependentRappSigningV1.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
 | `external-components/IndependentGraphicalShellV1.kt` | `docs/systems/core-shell/README.md` |
+| `external-components/IndependentGraphicalShellV2.kt` | `docs/systems/core-shell/README.md` + `external-components/README.md` |
 | `external-components/runtime.js` | `docs/systems/build-validation/README.md` |
 | `external-components/riftapp.json` | `docs/systems/android-host/PROTECTED_COMPONENT_FORMAT.md` |
 | `external-components/riftbuild-hot.json` | `docs/systems/build-validation/README.md` |
@@ -228,6 +229,7 @@ As of the post-#715 APK legacy-language cleanup, Gradle packages **none** of `sr
 | `scripts/test-rift-app-import.mjs` | `docs/systems/build-validation/README.md` + apps |
 | `scripts/test-e1-core-closure.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |
 | `scripts/test-external-components.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/android-host/PROTECTED_COMPONENT_FORMAT.md` |
+| `scripts/test-external-shell-v2.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/core-shell/README.md` |
 | `scripts/test-simple-recovery.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/android-host/SIMPLE_BOOTSTRAP_RECOVERY_LOCK.md` |
 | `scripts/test-rift-dev-lab.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/dev-lab/README.md` |
 | `scripts/test-rift-raw-protocol.mjs` | `docs/systems/build-validation/README.md` + browser MCP compatibility |
