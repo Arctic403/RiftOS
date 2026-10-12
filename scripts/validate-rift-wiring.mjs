@@ -438,7 +438,7 @@ if (!gradle.includes('"src/main/java/com/riftos/app/RiftCoreRecoveryDiagnostics.
     !coreRuntime.includes('.put("coreRecoveryDiagnostics", RiftCoreRecoveryDiagnostics.status(context))') ||
     !e0HostComponent.includes('RiftCoreRecoveryDiagnostics.installExternalCrashObserver(application)') ||
     !e0HostComponent.includes('RiftCoreRecoveryDiagnostics.recordCandidateFailure(application, "initialize", failure)') ||
-    !e1CoreSwitch.includes('RiftCoreRecoveryDiagnostics.recordCandidateFailure(application, "verification", it)')) {
+    !/RiftCoreRecoveryDiagnostics\.recordCandidateFailure\(\s*application,\s*"verification",\s*failure\s*\)/.test(e1CoreSwitch)) {
   fail('H Core diagnostic owner, signed Gradle source, startup and exception integration missing');
 }
 
@@ -759,7 +759,7 @@ for (const f of ['RiftCoreApplication.kt', 'RiftCoreRuntime.kt']) {
 // Core status and app execution are routed through the selected Core component.
 if (nativeShell.includes('RiftCoreRuntime.buildPlatform(appContext)') ||
     !nativeShell.includes('"core" -> {') ||
-    !nativeShell.includes('RiftHostCoreComponents.executionView().coreStatus(appContext)') ||
+    !/RiftHostCoreComponents\.executionView\(\)\s*\.coreStatus\(appContext\)/.test(nativeShell) ||
     !nativeShell.includes('RiftHostCoreComponents.executionView().startApp(appContext, args[1])') ||
     !nativeShell.includes('RiftHostCoreComponents.executionView().stopApp(appContext, args[1])')) {
   fail('RiftShell must expose selected Core status and app lifecycle without legacy RiftBuild coupling');

@@ -41,8 +41,9 @@ for (const code of [activity, store, installer]) for (const unsafe of [
 
 for (const required of [
   'RiftManualRecoveryStore.status(this)', 'Refresh recovery status', 'Close Recovery',
-  'AlertDialog.Builder(', 'Restore working Core backup', 'Restore working RiftShell backup',
-  'Restore embedded Core', 'Restore embedded RiftShell', 'setNegativeButton("Cancel", null)',
+  'AlertDialog.Builder(', 'Restore saved Core backup', 'Restore saved RiftShell backup',
+  'Save selected Core as recovery backup', 'Save selected RiftShell as recovery backup',
+  'setPositiveButton("Save backup")', 'Restore embedded Core', 'Restore embedded RiftShell', 'setNegativeButton("Cancel", null)',
   'RiftManualRecoveryStore.restore(this, component, selection)',
   'Intent.ACTION_OPEN_DOCUMENT', 'Intent.CATEGORY_OPENABLE',
   'Choose component.json', 'Choose matching component DEX', 'Install verified staged update',
@@ -60,18 +61,26 @@ for (const required of [
   'AtomicFile(file).openRead()', 'file.isFile', '!file.canWrite()',
   'MessageDigest.getInstance("SHA-256")',
   'RiftProtectedRevisionRecovery.verifiedReceipt(context, component, candidate)',
-  'RiftComponentReleaseLedger.checkManualRestoreTarget(context, component, sha)',
   'readBackup(context, component)?.let', 'backupError', 'activeError',
   'startupMarkerPresent', 'restoreWorkingBackupEnabled', 'restoreEmbeddedEnabled',
-  'fun preserveAcceptedBeforeUpdate(context: Context, component: String)',
-  'RiftComponentReleaseLedger.isAccepted(context, component, sha)',
+  'saveBackupEnabled',
+  'fun saveSelectedBackup(context: Context, component: String): JSONObject',
+  'requireManualRecoveryProcess(context)',
+  'verifyExternal(context, component, selected)',
+  'writeBackup(context, component, selected)',
   'fun restore(context: Context, component: String, selection: String)',
   'RiftBootstrapComponentStore.writeProtectedPointer(context, component, backup)',
   'RiftBootstrapComponentStore.resetCoreToEmbedded(context)',
   'RiftBootstrapComponentStore.resetShellToEmbedded(context)',
+]) assert.ok(store.includes(required), 'User-owned Recovery backup/restore integrity missing: ' + required);
+for (const forbidden of [
+  'preserveAcceptedBeforeUpdate(',
+  'RiftComponentReleaseLedger.isAccepted(context, component, sha)',
+  'RiftComponentReleaseLedger.checkManualRestoreTarget(context, component, sha)',
   'RiftComponentReleaseLedger.manualRestored(context, component, backup)',
-  'RiftComponentReleaseLedger.manualRestored(context, component, null)'
-]) assert.ok(store.includes(required), 'Recovery slot integrity or restore path missing: ' + required);
+  'RiftComponentReleaseLedger.manualRestored(context, component, null)',
+]) assert.ok(!store.includes(forbidden),
+  'User-owned Recovery must not depend on legacy accepted SHA journal: ' + forbidden);
 
 for (const required of [
   'Application.getProcessName() == context.packageName + ":riftRecovery"',
@@ -85,7 +94,15 @@ for (const required of [
   'java.nio.file.Files.isSymbolicLink(candidate.toPath())',
   'dex.inputStream().use { stage(context, manifestBytes, it) }'
 ]) assert.ok(installer.includes(required), 'Independent APK installer bridge missing: ' + required);
-assert.match(protectedInstaller, /RiftManualRecoveryStore\.preserveAcceptedBeforeUpdate\(context, component\)[\s\S]*?RiftComponentReleaseLedger\.recordPrepared/);
+assert.ok(protectedInstaller.includes(
+  'RiftBootstrapComponentStore.writeProtectedPointer(context, component, pointer)'),
+  'User-confirmed install must select only the protected next-boot pointer');
+for (const forbidden of [
+  'RiftManualRecoveryStore.preserveAcceptedBeforeUpdate(',
+  'RiftComponentReleaseLedger.recordPrepared(',
+  'RiftProtectedRevisionRecovery.rollback(',
+]) assert.ok(!protectedInstaller.includes(forbidden),
+  'Installer must not automatically replace backup, approve or roll back a selected version: ' + forbidden);
 for (const required of [
   'fun checkManualRestoreTarget(context: Context, id: String, sha: String)',
   'state.optJSONObject("lastKnownGood")',
@@ -99,4 +116,4 @@ for (const required of [
 
 assert.match(bootstrap, /fun resetCoreToEmbedded\(context: Context\)/);
 for (const step of ['Patch A', 'Patch B', 'Patch C']) assert.ok(roadmap.includes(step));
-console.log('Manual Recovery Patch B source contracts PASS: independent APK process, trusted stage/activate, accepted backup snapshot and explicit manual restore. Physical restore/device acceptance NOT PROVEN.');
+console.log('Manual Recovery source contracts PASS: independent APK process, SHA-verified user-saved backup, protected install and explicit restore; no automatic version changes. Physical Recovery/device behavior NOT YET PROVEN.');

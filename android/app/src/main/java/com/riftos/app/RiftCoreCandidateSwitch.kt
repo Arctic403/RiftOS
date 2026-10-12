@@ -159,7 +159,19 @@ internal object RiftCoreCandidateSwitch {
         lastSelectedSha = null
         val record = RiftBootstrapComponentStore.active(application, "core")
             ?: return null
-        val candidate = load(application, record)
+        val candidate = try {
+            load(application, record)
+        } catch (failure: Throwable) {
+            // Record verification evidence without changing the user's
+            // selected revision, choosing embedded, or touching backups.
+            runCatching {
+                RiftCoreRecoveryDiagnostics.recordCandidateFailure(
+                    application, "verification", failure)
+            }.onFailure {
+                Log.w(TAG, "Core verification diagnostic unavailable", it)
+            }
+            throw failure
+        }
         lastSelection = "external-selected"
         lastSelectedSha = record.getString("sha256")
         return candidate
