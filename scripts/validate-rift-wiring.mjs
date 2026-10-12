@@ -330,6 +330,8 @@ for (const marker of [
   'Thread.setDefaultUncaughtExceptionHandler',
   'previous.uncaughtException(thread, error)',
   'lastCapturedFailure !== error',
+  'Thread.getDefaultUncaughtExceptionHandler() ?: return',
+  'traceReachedEof = true',
   'getHistoricalProcessExitReasons(',
   'it.processName == context.packageName + ":riftShell"',
   'AtomicFile(path)',

@@ -111,8 +111,9 @@ internal object RiftShellCrashDiagnostics {
             "Shell crash observer must run only in the graphical Shell process"
         }
         if (installed) return
-        val previous = Thread.getDefaultUncaughtExceptionHandler()
-            ?: error("Android original fatal handler unavailable")
+        // Do not make Shell bootstrap fail solely because an Android build
+        // supplies no default handler; never install a swallowing observer.
+        val previous = Thread.getDefaultUncaughtExceptionHandler() ?: return
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             // Preserve the precise startup stage for the SAME Throwable,
             // but always capture a distinct failure, even in the same PID.
@@ -178,11 +179,21 @@ internal object RiftShellCrashDiagnostics {
                 if (existing?.optLong("exitTimestamp", -1L) == entry.timestamp &&
                     existing.optInt("pid", -1) == entry.pid) return@synchronized
 
+                var traceReachedEof = false
                 val trace = runCatching {
                     entry.traceInputStream?.use { input ->
                         val bytes = ByteArray(MAX_TRACE + 1)
-                        val n = input.read(bytes)
-                        if (n > 0) bytes.copyOf(minOf(n, MAX_TRACE)) else null
+                        var filled = 0
+                        while (filled < bytes.size) {
+                            val n = input.read(bytes, filled, bytes.size - filled)
+                            if (n < 0) {
+                                traceReachedEof = true
+                                break
+                            }
+                            if (n == 0) break
+                            filled += n
+                        }
+                        if (filled > 0) bytes.copyOf(minOf(filled, MAX_TRACE)) else null
                     }
                 }.getOrNull()
                 val record = JSONObject()
@@ -199,7 +210,7 @@ internal object RiftShellCrashDiagnostics {
                     .put("traceExcerpt", trace?.let {
                         String(it, Charsets.UTF_8).take(6_000)
                     } ?: JSONObject.NULL)
-                    .put("traceTruncatedOrUnknown", trace == null || trace.size == MAX_TRACE)
+                    .put("traceTruncatedOrUnknown", trace == null || !traceReachedEof)
                     .put("fullNativeTombstone", false)
                     .put("recordedAt", System.currentTimeMillis())
                 write(context, "last-exit.json", record)

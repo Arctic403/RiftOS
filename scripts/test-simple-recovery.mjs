@@ -31,6 +31,8 @@ for (const required of [
   'Thread.setDefaultUncaughtExceptionHandler',
   'previous.uncaughtException(thread, error)',
   'lastCapturedFailure !== error',
+  'Thread.getDefaultUncaughtExceptionHandler() ?: return',
+  'traceReachedEof = true',
   'getHistoricalProcessExitReasons(',
   'it.processName == context.packageName + ":riftShell"',
   'fullNativeTombstoneGuaranteed", false',
