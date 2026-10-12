@@ -26,6 +26,9 @@ As of the post-#715 APK legacy-language cleanup, Gradle packages **none** of `sr
 | --- | --- |
 | `external-components/HostAbiCompileOnly.kt` | `docs/systems/android-host/PROTECTED_COMPONENT_FORMAT.md` |
 | `external-components/IndependentCoreV1.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` |
+| `external-components/IndependentCoreV07.kt` | `docs/systems/core-shell/README.md` + `external-components/README.md` |
+| `external-components/IndependentCoreSystemServicesV07.kt` | `docs/systems/core-shell/README.md` + `external-components/README.md` |
+| `external-components/compile-core-v07.json` | `docs/systems/build-validation/README.md` |
 | `external-components/IndependentRappSessionsV1.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/core-shell/README.md` |
 | `external-components/ExternalRiftAppAbi.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
 | `external-components/ExternalRiftRappJsonAdapter.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |

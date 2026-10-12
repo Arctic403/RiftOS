@@ -97,6 +97,7 @@ internal object RiftProtectedDexVerifier {
         val stable = setOf(
             "Lcom/riftos/app/RiftCoreComponentV1;",
             "Lcom/riftos/app/RiftCoreExecutionViewV1;",
+            "Lcom/riftos/app/RiftCoreSystemServicesV1;",
             "Lcom/riftos/app/RiftHostQuickJsV1;",
             "Lcom/riftos/app/RiftHostNativeBufferV1;",
             "Lcom/riftos/app/RiftHostCapabilityUiV1;",
@@ -159,6 +160,8 @@ internal object RiftProtectedDexVerifier {
             expected.isAssignableFrom(type) &&
             (manifest.component != "core" ||
                 RiftCoreExecutionViewV1::class.java.isAssignableFrom(type)) &&
+            (manifest.entrypoint != "com.riftos.external.core.IndependentCoreV07" ||
+                RiftCoreSystemServicesV1::class.java.isAssignableFrom(type)) &&
             type.getDeclaredConstructor() != null) {
             "Critical DEX entrypoint does not implement protected host ABI"
         }

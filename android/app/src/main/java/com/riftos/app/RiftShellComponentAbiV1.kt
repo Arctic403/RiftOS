@@ -37,6 +37,8 @@ interface RiftShellPlatformServicesV1 {
     fun uninstallRapp(id: String): JSONObject
     fun pollUi(): JSONObject
     fun respondConsent(ticket: Long, approved: Boolean): Boolean
+    /** Additive C07 Core system services; legacy Shell V1 need not call it. */
+    fun systemRequest(request: JSONObject): JSONObject
     fun execute(command: String, cwd: String?): JSONObject
     fun reportDesktop(snapshot: JSONObject): JSONObject
     fun claimRecovery(): JSONObject
@@ -87,6 +89,8 @@ internal class RiftShellPlatformServicesAdapter(
     override fun pollUi(): JSONObject = client.pollUi()
     override fun respondConsent(ticket: Long, approved: Boolean): Boolean =
         client.respondConsent(ticket, approved)
+    override fun systemRequest(request: JSONObject): JSONObject =
+        client.systemRequest(request)
     override fun execute(command: String, cwd: String?): JSONObject =
         client.execute(command, cwd)
     override fun reportDesktop(snapshot: JSONObject): JSONObject =

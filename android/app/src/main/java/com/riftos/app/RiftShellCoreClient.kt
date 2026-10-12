@@ -190,6 +190,16 @@ class RiftShellCoreClient(context: Context) {
             }).getBoolean("accepted")
     }
 
+    /** Typed independent Core system services, never an MCP/relay executor. */
+    fun systemRequest(request: JSONObject): JSONObject {
+        require(request.toString().toByteArray(Charsets.UTF_8).size in 1..(70 * 1024)) {
+            "Core system request exceeds Shell IPC bound"
+        }
+        return call(RiftCoreSurfaceIpcProvider.METHOD_SHELL_SYSTEM,
+            extras = Bundle().apply { putString("systemRequest", request.toString()) })
+            .getJSONObject("systemResult")
+    }
+
     fun execute(command: String, cwd: String?): JSONObject {
         require(command.isNotBlank() && command.toByteArray(Charsets.UTF_8).size <= 1024) {
             "Shell command size invalid"

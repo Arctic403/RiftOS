@@ -22,7 +22,9 @@ import java.security.MessageDigest
  * broker, install/uninstall parity and on-device Core replacement/recovery
  * proof are complete. Runtime compilation is not promotion evidence.
  */
-class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
+// V07 inherits this single proven execution engine in a distinct DEX;
+// existing installed v0.6.1 binaries and their Recovery backup remain unchanged.
+open class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
     companion object {
         private const val SCHEMA = "riftos.external.core/1"
         // Independently recompiled trial revision; never implies device acceptance.
@@ -254,7 +256,12 @@ class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1 {
     override fun discoverRuntimeCandidates(context: Context): JSONObject =
         independentRegistry(context).state()
 
-    override fun coreStatus(context: Context): JSONObject {
+    /** V0.7 adds services without duplicating the proven Core RAPP engine. */
+    internal fun withLiveGrantChange(context: Context, id: String,
+                                     change: () -> Unit): Boolean =
+        packageManager(context).withLivePackage(id, { true }, change)
+
+    open override fun coreStatus(context: Context): JSONObject {
         val application = context(context)
         return JSONObject().put("schema", SCHEMA)
             .put("owner", "independent-external-dex")

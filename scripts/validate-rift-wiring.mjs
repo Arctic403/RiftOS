@@ -312,6 +312,57 @@ if (!/if \(ownShell\) \{\s*require\(runCatching \{\s*application\.classLoader\.l
     !/require\(ownShell \|\| kotlinSupport\)/.test(shellCandidateSwitch)) {
   fail('S Shell candidate Kotlin support and host shadow guard disagree with verified DEX');
 }
+// C07 independent private-device Core service contract. The existing V061
+// Core RAPP engine, MCP/relay and selected manual Recovery backups are not
+// candidates for modification by this additive source validation gate.
+const core07Entry = read('external-components/IndependentCoreV07.kt');
+const core07System = read('external-components/IndependentCoreSystemServicesV07.kt');
+const core07Recipe = JSON.parse(read('external-components/compile-core-v07.json'));
+const core061Recipe = JSON.parse(read('external-components/compile-core-v061.json'));
+const core07Producer = read('external-components/runtime.js');
+const hostCoreAbi = read('android/app/src/main/java/com/riftos/app/RiftHostComponentAbiV1.kt');
+const stubCoreAbi = read('external-components/HostAbiCompileOnly.kt');
+const core07Provider = read('android/app/src/main/java/com/riftos/app/RiftCoreSurfaceIpcProvider.kt');
+const core07Client = read('android/app/src/main/java/com/riftos/app/RiftShellCoreClient.kt');
+const core07Verifier = read('android/app/src/main/java/com/riftos/app/RiftProtectedDexVerifier.kt');
+if (JSON.stringify(core07Recipe.sources) !== JSON.stringify([
+ ...core061Recipe.sources,
+ 'IndependentCoreSystemServicesV07.kt','IndependentCoreV07.kt'
+]) ||
+ core07Recipe.outputDir !== 'build/riftbuild/core-v07-classes' ||
+ core07Recipe.outputDir === core061Recipe.outputDir ||
+ !core07Producer.includes('coreV07:106') ||
+ !core07Producer.includes("k==='core-v07'?'v07/'") ||
+ !core07Producer.includes("k==='core-v07'?'0.7.0'") ||
+ !core07Producer.includes("'RiftCoreSystemServicesV1.class'")) {
+  fail('C07 source compiler recipe/manifest output must remain independently isolated from Core V061');
+}
+for (const [source, marker] of [
+ [hostCoreAbi,'interface RiftCoreSystemServicesV1'],
+ [stubCoreAbi,'interface RiftCoreSystemServicesV1'],
+ [hostCoreAbi,'fun systemServices(): RiftCoreSystemServicesV1'],
+ [core07Entry,'class IndependentCoreV07 : IndependentCoreV1(), RiftCoreSystemServicesV1'],
+ [core07Entry,'private const val VERSION = "0.7.0"'],
+ [core07System,'RiftVolumePaths.resolveRelative'],
+ [core07System,'Files.isSymbolicLink'],
+ [core07System,'AtomicFile'],
+ [core07System,'File(root, "documents/builds/Components").canonicalFile'],
+ [core07System,'core.withLiveGrantChange(app, id)'],
+ [core07System,'System volume is read-only'],
+ [core07Provider,'const val METHOD_SHELL_SYSTEM = "shell.system"'],
+ [core07Provider,'RiftHostCoreComponents.systemServices()'],
+ [core07Client,'fun systemRequest(request: JSONObject): JSONObject'],
+ [core07Verifier,'RiftCoreSystemServicesV1::class.java.isAssignableFrom(type)'],
+]) if(!source.includes(marker)) {
+  fail('C07 additive Core system service owner/IPC boundary missing: '+marker);
+}
+for (const forbidden of [
+ 'RiftMcpRuntime','RiftMcpRelayClient','RiftMcpServer',
+ 'RiftCoreAdminConsent','RiftManualRecoveryStore',
+ 'RiftProtectedComponentInstaller','RiftCoreRuntime'
+]) if(core07Entry.includes(forbidden) || core07System.includes(forbidden)) {
+  fail('C07 external Core system service must not import old APK/MCP/admin ownership: '+forbidden);
+}
 // S-v2: the independently compiled graphical Shell is a source-only
 // candidate, not an APK-owned renderer or a replacement for proven V1.
 const externalShellV2 = read('external-components/IndependentGraphicalShellV2.kt');

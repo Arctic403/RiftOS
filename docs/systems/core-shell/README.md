@@ -1,5 +1,25 @@
 # RiftOS Core ↔ RiftShell — canonical architecture (C1 series)
 
+## 2026-10-12 — C07 Core system service source and simplified private-OS ownership
+
+**Core first, Shell second.** Source-only external Core v0.7 (`IndependentCoreV07`) reuses `IndependentCoreV1`'s real RAPP sessions/packages/grants and adds typed `RiftCoreSystemServicesV1.systemRequest`. No duplicated Core engine, new enterprise admin-ticket chain, or automatic recovery. The new signed APK `shell.system` IPC entry still uses the production `:riftShell` Binder UID/PID/process registry authenticator, dispatches only to the *selected* external Core's additive ABI, and fails closed against v0.6.1/embedded Cores that do not implement it. `RiftShellPlatformServicesV1` gains the additive method; V1 Shell continues its existing RAPP window calls unchanged. Legacy command `shell.execute` remains available only for backward compatibility while V2's graphical system screens are upgraded.
+
+**Service/API inventory:**
+
+| Category | V07 Core ownership | Deliberately NOT part of V07 |
+| --- | --- | --- |
+| C:/D:/ volumes and filesystem | `volumes`; `fs.list/stat/read/write/mkdir/delete/copy/move` with traversal/symlink checks, bounded files, no system-volume writes, no protected component artifact mutation | Android SAF picker and Android mount permissions stay in APK host |
+| Task manager | `tasks.list` real Core-owned attached RAPP sessions/surfaces, `tasks.close` installed RAPP only | Not a system process killer or Shell window manager |
+| OS user settings | `settings.get/set` limited theme/show-hidden/show-clock in independent settings store | Android Settings, GitHub credential vault, RiftLLM pairing and provider auth remain APK/platform-owned |
+| Installed RAPP permissions | `permissions.list/revoke` under Core package manager lock, persistent revocation | No admin roles, group policy, remote account directory or automatic grant |
+| App management | Existing V061 `install/uninstall/installed/open/stop` unchanged | No duplicate APK interpreter or RAPP engine |
+| MCP and relay | No Core MCP implementation; the Core services may be consumed by APK-hosted MCP tools where authorized | MCP server, Cloudflare relay, tool host, native Git and persistent operation journal remain APK-owned |
+| DEX/component/recovery | Core does NOT manage critical component approval/activation/recovery | Protected DEX hash/ABI verifier, user-selected manual Recovery, backup save/restore remain APK-hosted |
+
+**Lightweight administration decision:** For a private device, normal system UI commands use one authenticated Shell→Core service route, not layers of one-use approval tokens. RAPP boundaries still require declared grants; Critical Core/Shell replacement still requires explicit protected manual Recovery. The legacy APK `RiftCoreAdminConsent`, registry/probe proof modules and related embedded-migration code are NOT removed in this source gate; removal needs a separate dependency audit after external parity. Avoid equating this simple policy with insecure arbitrary file or process access.
+
+**Existing source constraints and qualification blockers:** Core v0.7's source/typed IPC is now wired in host but **the current signed APK #731 lacks the ABI**; user's manual signed host build is required. The new standalone component-builder RAPP must be repacked and installed to expose Core V07 button. The Core V07 DEX has not been compiled, staged, signed as APK, installed or run; neither Core V061 nor Shell V1 selected DEX/Recovery backups were modified. Test V07 manually with proven external Shell V1, then implement V2 system-window conversion to typed Core service requests. V2 full Files, browser/editor/Dev Lab, admin approvals, MCP-native UI, NativeBuffer, IME and Shell process-death system-window restoration remain later parity work.
+
 ## 2026-10-12 — V2 parity inventory and Core IPC source audit (precompile)
 
 **User device baseline:** Signed #731 source `212565f7850b` booted independent graphical Shell V1 SHA `f29747a5828b66717d900519101cc08fc538fa47851fe8e657c69ac6ba1b4276` alongside independently running Core v0.6.1 SHA `2bbb861f5a7feda953c9fb49ea1ee207d942d0c2173d8d55c06d8050e6a1e4e7`. User proved window dragging, close/minimize, taskbar/Start and actual attached Core-owned RAPP windows/surfaces/input. Core and Shell both have manually saved **verified external** Recovery backups matching active SHAs. These backups and installed components must not be overwritten during v2 source preparation.
