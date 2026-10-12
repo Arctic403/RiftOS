@@ -74,7 +74,11 @@ internal class IndependentRappSessions(
         private const val MAX_FRAME_TEXT = 16 * 1024
         private const val MAX_OUTPUT = 512 * 1024
         private const val MAX_INPUT = 512 * 1024
-        private const val MAX_DEPTH = 16
+        // A build is one asynchronous effect chain: 256 KiB read/write chunks
+        // and APK staging/signing can legitimately require hundreds of effects.
+        // This is a loop-abuse ceiling, not a call-stack depth limit; each
+        // continuation is queued through the serial executor, not recursed.
+        private const val MAX_DEPTH = 4096
         private const val EVAL_TIMEOUT_MS = 6500L
         private const val EVENT_SCHEMA = "riftos-app-event-json/1"
         private const val OUTPUT_SCHEMA = "riftos-app-output-json/1"

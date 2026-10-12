@@ -49,6 +49,7 @@ object RiftAppAbi {
         const val SHARE = "share"
         const val BUILD_LOCAL = "build.local"
         const val SIGNING_IDENTITY = "signing.identity"
+        const val APK_INSTALL = "apk.install"
         const val WINDOW_TITLE = "window.title"
 
         val DECLARABLE: Set<String> =
@@ -61,6 +62,7 @@ object RiftAppAbi {
                 SHARE,
                 BUILD_LOCAL,
                 SIGNING_IDENTITY,
+                APK_INSTALL,
                 WINDOW_TITLE
             )
     }

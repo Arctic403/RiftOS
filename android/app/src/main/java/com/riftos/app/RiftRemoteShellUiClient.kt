@@ -6,6 +6,9 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import androidx.core.content.FileProvider
+import java.io.File
+import java.nio.file.Files
 import org.json.JSONObject
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -119,6 +122,51 @@ class RiftRemoteShellUiClient(
             .show()
     }
 
+    /**
+     * A RAPP only requests the installer: Core first checks the declared
+     * apk.install capability + explicit user grant. Android remains the final
+     * package-signature verifier and user-confirmed installation authority.
+     *
+     * FileProvider exposes only RiftFS D:/Builds via a temporary URI grant.
+     */
+    private fun openAndroidApkInstaller(raw: String) {
+        require(raw.toByteArray(Charsets.UTF_8).size in 1..2048) {
+            "APK installer path invalid"
+        }
+        val display = RiftVolumePaths.normalizeDisplay(raw)
+        require(display.startsWith("/D:/Builds/") &&
+            display.endsWith(".apk", ignoreCase = true)) {
+            "APK installation is limited to D:/Builds artifacts"
+        }
+        val riftfs = File(activity.filesDir, "riftfs").canonicalFile
+        val buildRoot = File(riftfs, "documents/builds").canonicalFile
+        val file = File(riftfs, RiftVolumePaths.resolveRelative(display)).canonicalFile
+        require(file.path.startsWith(buildRoot.path + File.separator) &&
+            file.isFile && file.length() in 1L..(256L * 1024 * 1024)) {
+            "APK artifact missing, unsafe, or too large"
+        }
+        var entry: File? = file
+        while (entry != null && entry != riftfs) {
+            require(!Files.isSymbolicLink(entry.toPath())) {
+                "APK artifact contains a symbolic-link path"
+            }
+            entry = entry.parentFile
+        }
+        val parsed = activity.packageManager.getPackageArchiveInfo(file.path, 0)
+        require(!parsed?.packageName.isNullOrBlank() &&
+            parsed?.packageName != activity.packageName) {
+            "APK package identity invalid or attempts to replace RiftOS"
+        }
+        val uri = FileProvider.getUriForFile(
+            activity, activity.packageName + ".buildapks", file)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            clipData = ClipData.newUri(activity.contentResolver, "Verified APK", uri)
+        }
+        activity.startActivity(intent)
+    }
+
     private fun executeUiEffect(request: JSONObject) {
         val ticket = request.getLong("ticket")
         val token = request.optInt("token")
@@ -139,6 +187,13 @@ class RiftRemoteShellUiClient(
                     require(value.length <= 32 * 1024) { "Clipboard exceeds IPC bound" }
                     clipboard.setPrimaryClip(ClipData.newPlainText("RiftOS program", value))
                     RiftRappCapabilityBroker.Result(ok = true, token = token)
+                }
+                RiftAppAbi.Capability.APK_INSTALL to "open" -> {
+                    openAndroidApkInstaller(value)
+                    RiftRappCapabilityBroker.Result(
+                        ok = true, token = token,
+                        text = "Android installer opened; installation requires user confirmation"
+                    )
                 }
                 RiftAppAbi.Capability.SHARE to "text" -> {
                     require(value.length <= 32 * 1024) { "Share exceeds IPC bound" }

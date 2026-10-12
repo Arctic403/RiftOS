@@ -30,6 +30,14 @@ assert.match(engine,/RiftHostNativeBufferV1\.execute\(context, runtime, input, o
 assert.match(engine,/s\.vm\.execute\(s\.adapter\.executorKind, s\.runtime, envelope, MAX_OUTPUT\)/);
 assert.doesNotMatch(engine,/DexClassLoader|APPROVED_VM_SHA|IndependentJavascriptVmV1/);
 assert.match(engine,/class IndependentRappSessions/);
+// Hosted APK composition chains hundreds of read/write host effects;
+// 16 continuations was an accidental usability limit, not a stack bound.
+// Keep a large *finite* async chain budget while preserving single-effect
+// ordering, bounded queue, and monotonically increasing effect tickets.
+assert.match(engine,/private const val MAX_DEPTH = 4096/);
+assert.match(engine,/require\(ticket\.depth < MAX_DEPTH\)/);
+assert.match(engine,/ticket\.depth \+ 1/);
+assert.match(engine,/serial\.execute \{ drain\(s\) \}/);
 assert.match(engine,/fun offer\(id: String, generation: Long, payload: JSONObject\)/);
 assert.match(engine,/private fun dispatch\(s: Session, ticket: Ticket\)/);
 assert.match(engine,/private fun validateFrame\(frame: JSONObject\)/);
@@ -186,6 +194,47 @@ for(const kind of ['core','shell']) {
 }
 // Core v0.7 is a distinct, additive DEX; the proven Core v0.6.1 binary,
  // manually saved Core backup and APK-owned MCP/relay never change.
+const coreV062=read('IndependentCoreV062.kt');
+const recipeV062=JSON.parse(read('compile-core-v062.json'));
+assert.deepEqual(recipeV062.sources,[...JSON.parse(read('compile-core-v061.json')).sources,'IndependentCoreV062.kt']);
+assert.equal(recipeV062.outputDir,'build/riftbuild/core-v062-classes');
+assert.match(coreV062,/class IndependentCoreV062 : IndependentCoreV1\(\)/);
+assert.match(coreV062,/"rappEffectContinuationLimit", 4096/);
+assert.ok(producer.includes("coreV062:107"));
+assert.ok(producer.includes("trial-v062/"));
+assert.ok(producer.includes("'0.6.2'"));
+assert.ok(producer.includes("core-v062"));
+// APK install is a separate, explicitly granted Core->Shell platform UI effect.
+// It may open Android's installer but cannot silently commit installation.
+const coreV063=read('IndependentCoreV063.kt');
+const recipeV063=JSON.parse(read('compile-core-v063.json'));
+const sessionEffects=read('IndependentRappEffectsV1.kt');
+const externalAbi=read('ExternalRiftAppAbi.kt');
+const hostRappAbi=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftAppAbi.kt',root),'utf8');
+const uiBridge=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftRemoteShellUiClient.kt',root),'utf8');
+const installPaths=fs.readFileSync(new URL('android/app/src/main/res/xml/rift_build_apk_paths.xml',root),'utf8');
+const manifest=fs.readFileSync(new URL('android/app/src/main/AndroidManifest.xml',root),'utf8');
+assert.deepEqual(recipeV063.sources,[...JSON.parse(read('compile-core-v061.json')).sources,'IndependentCoreV063.kt']);
+assert.equal(recipeV063.outputDir,'build/riftbuild/core-v063-classes');
+assert.match(coreV063,/"candidateRevision", "0\.6\.3"/);
+for(const abi of [externalAbi,hostRappAbi]) {
+ assert.match(abi,/const val APK_INSTALL = "apk\.install"/);
+ assert.match(abi,/SIGNING_IDENTITY,\s*APK_INSTALL,\s*WINDOW_TITLE/);
+}
+assert.match(sessionEffects,/effect\.capability == RiftAppAbi\.Capability\.APK_INSTALL/);
+assert.match(sessionEffects,/effect\.operation != "open"/);
+assert.match(sessionEffects,/apk\.startsWith\("\/D:\/Builds\/"/);
+assert.match(sessionEffects,/RiftAppAbi\.Capability\.APK_INSTALL,\s*RiftAppAbi\.Capability\.WINDOW_TITLE/);
+assert.match(host,/"share", "apk\.install", "window\.title"/);
+assert.match(uiBridge,/RiftAppAbi\.Capability\.APK_INSTALL to "open"/);
+assert.match(uiBridge,/FileProvider\.getUriForFile\(/);
+assert.match(uiBridge,/Intent\.FLAG_GRANT_READ_URI_PERMISSION/);
+assert.match(uiBridge,/APK package identity invalid or attempts to replace RiftOS/);
+assert.match(installPaths,/path="riftfs\/documents\/builds\/"/);
+assert.match(manifest,/android:name="androidx\.core\.content\.FileProvider"/);
+assert.match(manifest,/@xml\/rift_build_apk_paths/);
+assert.match(producer,/coreV063:108/);
+assert.match(producer,/trial-v063\//);
 const coreV07=read('IndependentCoreV07.kt');
 const systemV07=read('IndependentCoreSystemServicesV07.kt');
 const recipeV07=JSON.parse(read('compile-core-v07.json'));

@@ -83,6 +83,16 @@
                 <data android:scheme="riftos" android:host="mcp" />
             </intent-filter>
         </activity>
+        <!-- Read-only, URI-granted APK artifacts for Android PackageInstaller. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.riftos.app.buildapks"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/rift_build_apk_paths" />
+        </provider>
         <provider
             android:name=".RiftCoreSurfaceIpcProvider"
             android:authorities="com.riftos.app.core-surface-ipc"

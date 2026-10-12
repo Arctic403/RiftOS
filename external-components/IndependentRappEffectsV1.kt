@@ -149,10 +149,21 @@ internal class IndependentRappEffects(
                 finish(Result(false, token, error = "Stale RAPP effect request"))
                 return
             }
+            if (effect.capability == RiftAppAbi.Capability.APK_INSTALL) {
+                val apk = runCatching { RiftVolumePaths.normalizeDisplay(effect.text) }.getOrNull()
+                if (effect.operation != "open" || effect.bytes.isNotEmpty() ||
+                    apk == null || !apk.startsWith("/D:/Builds/") ||
+                    !apk.endsWith(".apk", ignoreCase = true) ||
+                    apk.toByteArray(Charsets.UTF_8).size > 2048) {
+                    finish(Result(false, token, error = "APK install requires an APK under D:/Builds"))
+                    return
+                }
+            }
             if (effect.capability in setOf(
                     RiftAppAbi.Capability.CLIPBOARD_READ,
                     RiftAppAbi.Capability.CLIPBOARD_WRITE,
                     RiftAppAbi.Capability.SHARE,
+                    RiftAppAbi.Capability.APK_INSTALL,
                     RiftAppAbi.Capability.WINDOW_TITLE)) {
                 runCatching {
                     RiftHostCapabilityUiV1.uiEffect(id, name,

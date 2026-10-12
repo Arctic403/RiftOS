@@ -144,7 +144,7 @@ object RiftHostCapabilityUiV1 {
             text.toByteArray(Charsets.UTF_8).size <= 32 * 1024 &&
             bytes.isEmpty()) { "Shell capability UI payload invalid" }
         require(capability in setOf("clipboard.read", "clipboard.write",
-            "share", "window.title")) { "Unsupported Shell UI transport" }
+            "share", "apk.install", "window.title")) { "Unsupported Shell UI transport" }
         RiftCoreShellRemoteUiBroker.ensureRegistered()
         RiftCoreShellCapabilityRequests.requestUiEffect(
             appId, appName, RiftAppAbi.HostEffect(

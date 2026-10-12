@@ -1,5 +1,11 @@
 # RiftOS independent Core and Shell components
 
+## 2026-10-12 — Core v0.6.3 `apk.install` capability candidate (SOURCE ONLY)
+
+The user explicitly authorized a minimal generic Android installer boundary, not an embedded RiftBuild compiler. `IndependentCoreV063.kt` retains the v0.6.2 RAPP engine and 4096-effect budget, and adds a dedicated `apk.install` RAPP permission to independent Core's declarable set. Existing installed identity, explicit consent/grant, single-use UI ticket, session-validity and grant revocation checks still apply. Only a short path under `/D:/Builds/` ending in `.apk`, operation `open` and **zero bytes** are permitted. It delegates user-facing launch to the updated Android host; Core does not install packages directly.
+
+The new external Core & Shell Builder action **BUILD CORE V0.6.3 · APK INSTALL** uses registered Kotlin Android + D8 (14-source v063 recipe) with isolated output at `/D:/Builds/Components/core/trial-v063/{core.dex,component.json}`. Neither the selected v0.6.2 Core nor the user-owned Recovery backup is overwritten or automatically activated. The generic Android host must be manually rebuilt/signed/installed *before* manually staging/activating the candidate DEX. After Core v0.6.3 boots, install the updated RiftBuild Hosted RAPP which explicitly declares `apk.install` and only shows the Install action after APK verification. Core/Shell/App live device qualification remains pending; no DEX or Android host APK has yet been compiled or activated for this feature.
+
 ## 2026-10-12 — External Core v0.7.0 private-device system services, SOURCE ONLY
 
 The current device selects the proven external Core v0.6.1 DEX (SHA `2bbb861f5a7feda953c9fb49ea1ee207d942d0c2173d8d55c06d8050e6a1e4e7`), with its matching **user-owned verified-external Recovery backup**. Shell selection is now **embedded**, while the previously device-proven external graphical Shell v0.1 DEX (SHA `f29747a5828b66717d900519101cc08fc538fa47851fe8e657c69ac6ba1b4276`) still has its matching verified external Recovery backup. The Core v0.7 source is NOT deployed; no Core, Shell, APK, recovery pointer or backup was modified by source changes.
