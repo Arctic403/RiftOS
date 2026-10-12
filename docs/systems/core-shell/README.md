@@ -1,5 +1,11 @@
 # RiftOS Core ↔ RiftShell — canonical architecture (C1 series)
 
+## 2026-10-11 — #730 external Shell DEX Kotlin namespace loader fix
+
+Actual Core-owned diagnostic evidence on signed host #730: selected external Shell v0.1 SHA `f29747a5828b66717d900519101cc08fc538fa47851fe8e657c69ac6ba1b4276`, process PID 19075, fatal `IllegalArgumentException: Shell candidate includes host or unsupported classes` at `RiftShellCandidateSwitch.load:96` before Shell attachment. This pinpoints a host boot-time filter mismatch, not a Core execution fault: `RiftProtectedDexVerifier` accepts component-owned definitions + `Lkotlin/` runtime definitions bundled by D8; `RiftShellCandidateSwitch` accepted only component-owned names. Fix the APK Shell boot loader using the identical allowlist model already device-proven for the independent external Core: only `com.riftos.external.shell.*` or `kotlin.*`, APK collision checks scoped to Shell-owned names; SHA-256, exact entrypoint, ownership, max class count, protected receipt checks remain intact. Foreign `com.riftos.app.*`, `com.riftos.external.core.*`, Android/Java and unrelated namespaces remain prohibited.
+
+Do not alter the verified external Shell DEX, the running Core v0.6.1, user backup, or the manual-only Recovery selection policy to solve this failure. After the user's next independently signed APK, explicitly retry the already verified external Shell and prove desktop attach, RAPP rendering and input on device; use `core shell-crash` if it still fails. This source fix is NOT itself proof of graphical Shell boot completion or permission to retire embedded migration components.
+
 ## 2026-10-11 — External Shell crash evidence split across two processes
 
 On signed RiftOS #729 the independent external Core v0.6.1 ran stably while an explicitly selected external graphical Shell v0.1 failed on actual device boot. User used independent Recovery to return Shell selection to embedded; Core v0.6.1 and its exact manually saved backup remained selected/verified. This is a **real Shell crash**, not external graphical parity acceptance. Do not remove embedded Shell or Core on that basis.

@@ -93,12 +93,24 @@ internal object RiftShellCandidateSwitch {
             while (entries.hasMoreElements()) {
                 val name = entries.nextElement()
                 count++
-                require(count <= MAX_CLASSES && name.startsWith(ENTRY_PREFIX)) {
+                require(count <= MAX_CLASSES) {
+                    "Shell candidate class bound exceeded"
+                }
+                // The registered D8 producer bundles pinned kotlin-stdlib.jar
+                // in the DEX. The protected install verifier permits exactly
+                // this namespace alongside external Shell-owned classes.
+                // Kotlin support resolves parent-first; only Shell-owned
+                // classes must be absent from the APK's class loader.
+                val ownShell = name.startsWith(ENTRY_PREFIX)
+                val kotlinSupport = name.startsWith("kotlin.")
+                require(ownShell || kotlinSupport) {
                     "Shell candidate includes host or unsupported classes"
                 }
-                require(runCatching {
-                    application.classLoader.loadClass(name)
-                }.isFailure) { "Shell candidate class shadows host APK" }
+                if (ownShell) {
+                    require(runCatching {
+                        application.classLoader.loadClass(name)
+                    }.isFailure) { "Shell candidate class shadows host APK" }
+                }
                 if (name == entrypoint) hasEntrypoint = true
             }
             require(count > 0 && hasEntrypoint) { "Shell candidate entrypoint not in DEX" }

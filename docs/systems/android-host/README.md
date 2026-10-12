@@ -1,5 +1,11 @@
 # Android Host
 
+## 2026-10-11 — External Shell bootstrap DEX class inventory parity
+
+On signed RiftOS #730, the new `core shell-crash` command captured a selected external Shell fatal Java exception at `RiftShellCandidateSwitch.load:96` (`Shell candidate includes host or unsupported classes`, external SHA `f29747a5...`). The installer was correct to stage its independent compiled DEX: `RiftProtectedDexVerifier` explicitly allows only the component's namespace and bundled `kotlin/*` classes, while old Shell `DexFile` boot-time enumeration rejected all non-Shell class names. The APK's Shell selector now mirrors external Core's loader: allows `kotlin.*` library support as well as Shell-owned classes; APK class shadow checks remain for Shell-owned classes only. Other namespace definitions fail closed. Integrity, ABI, class bounds, manually selected component and Recovery behavior are unchanged.
+
+The verified graphical Shell DEX is NOT repacked by this source patch; the **signed APK host loader** must be manually rebuilt. The next device test is a user-selected external Shell boot and real desktop/Core RAPP demonstration. On any failure, only the user can restore embedded Shell from independent Recovery; the crash recorder remains available through Core.
+
 ## 2026-10-11 — Independent graphical Shell crash evidence (source only)
 
 An external graphical `:riftShell` DEX may fail before it attaches or reports a heartbeat. The permanent APK now owns `RiftShellCrashDiagnostics`: its `Application.onCreate` installs a default Java uncaught-exception observer **before WebView or Shell DEX selection** and delegates to Android's original handler after bounded AtomicFile evidence. The real `RiftShellActivity` also records exact `selected-dex-load` and `external-shell-attach` errors before rethrow. The separate Core process asynchronously polls `ActivityManager.getHistoricalProcessExitReasons` even if the Shell never connects; native traces are best-effort, not guaranteed tombstones. No unattended component fallback, auto acceptance, quarantine, version replacement, or Recovery backup mutation.

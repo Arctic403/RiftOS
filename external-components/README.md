@@ -1,5 +1,9 @@
 # RiftOS independent Core and Shell components
 
+## 2026-10-11 — External Shell v0.1 DEX remains valid; #730 host boot loader mismatch
+
+The first live selected external graphical Shell v0.1 trial crashed before desktop attachment with `Shell candidate includes host or unsupported classes` at `RiftShellCandidateSwitch.load:96`. The `core shell-crash` report identified process PID 19075 and exact DEX SHA `f29747a5828b66717d900519101cc08fc538fa47851fe8e657c69ac6ba1b4276`. The host's boot-time `DexFile.entries()` check, not the protected installer, incorrectly rejected Kotlin stdlib classes that registered D8 bundles into independently compiled DEX. The corrected APK loader permits only Shell-owned and `kotlin.*` classes, with APK shadow rejection on Shell-owned definitions. Do **not** recompile or change the already staged `/D:/Builds/Components/shell/shell.dex` and `component.json` for this fix. Wait for user-signed fixed APK, then manually install/select the same external Shell revision in Recovery and verify desktop, RAPP rendering and input. Core and manually saved Recovery stay intact.
+
 ## 2026-10-11 — new Core v0.6.1 source candidate (compile/device proof PENDING)
 
 The first v0.6.0 DEX SHA `1f3c3850b0c0dc945944719cced77eec3091dc868a16d004413567d28ea1f3df` physically executed four installed RAPPs on signed #715, but was subsequently marked `interrupted-boot` when the host reverted to embedded Core. The protected journal intentionally quarantines that exact SHA, so Recovery refuses re-selecting it. **Do not erase quarantine, clear app data, or rename the rejected bytes.** Prepare and independently compile a distinct **v0.6.1** source revision instead; its `candidateRevision` appears in Core status while `deviceQualificationComplete=false` and `readyForPromotion=false` remain unchanged.

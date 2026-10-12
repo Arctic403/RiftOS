@@ -294,10 +294,23 @@ for (const marker of [
   'RiftBootstrapComponentStore.active(application, "shell")',
   'RiftProtectedRevisionRecovery.verifiedReceipt(',
   'Shell candidate class shadows host APK',
+  'val ownShell = name.startsWith(ENTRY_PREFIX)',
+  'val kotlinSupport = name.startsWith("kotlin.")',
+  'require(ownShell || kotlinSupport)',
+  'if (ownShell) {',
+  'require(count <= MAX_CLASSES)',
+  'Shell candidate includes host or unsupported classes',
   'Shell candidate does not implement native graphical V1 contract',
   'selection = "external-selected"',
 ]) if (!shellCandidateSwitch.includes(marker)) {
   fail(`S guarded external graphical Shell selector missing: ${marker}`);
+}
+// The protected staged DEX verifier permits pinned Kotlin stdlib definitions,
+// so the selected Shell boot verifier must not reject the same signed DEX.
+// APK class shadow rejection still applies to Shell-owned classes exclusively.
+if (!/if \(ownShell\) \{\s*require\(runCatching \{\s*application\.classLoader\.loadClass\(name\)/.test(shellCandidateSwitch) ||
+    !/require\(ownShell \|\| kotlinSupport\)/.test(shellCandidateSwitch)) {
+  fail('S Shell candidate Kotlin support and host shadow guard disagree with verified DEX');
 }
 for (const marker of [
   'RiftShellCandidateSwitch.selectAtBoot(application)',

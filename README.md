@@ -1,5 +1,11 @@
 # RiftOS
 
+## 2026-10-11 — #730 external Shell boot-class rejection fix (source only)
+
+Signed #730 captured Shell PID 19075 failing before desktop attach: `IllegalArgumentException: Shell candidate includes host or unsupported classes` at `RiftShellCandidateSwitch.load:96`. Stage-time `RiftProtectedDexVerifier` allows the external Shell namespace plus the pinned D8 bundled `kotlin/*` support classes, but the boot-time Shell loader rejected every non-Shell class. The loader now mirrors working external Core behavior by allowing `kotlin.*` support while retaining strict Shell-owned class scope, APK class shadow checks, exact SHA and entrypoint verification and class count bound. Node and Builder source tests enforce this parity.
+
+Only the Android APK host loader changes. The existing verified external Shell DEX v0.1 SHA `f29747a5828b66717d900519101cc08fc538fa47851fe8e657c69ac6ba1b4276` does NOT need repacking. User manually builds and signs updated host APK, then selects external Shell in independent Recovery and checks desktop/Core-attached RAPP, or reads `core shell-crash` on failure. Core v0.6.1 and manually saved Core recovery backup remain unchanged. Do not remove embedded recovery/fallback before actual device proof.
+
 ## 2026-10-11 — Shell crash dump instrumentation after #729 external Shell boot failure (source only)
 
 On user-manually signed/installed #729 (`626786743df39e`), actual external Core v0.6.1 continued to work while the separately selected graphical external Shell v0.1 failed to start. The user manually restored **embedded Shell**, preserved the exact external Core v0.6.1 SHA `2bbb861f5a7feda953c9fb49ea1ee207d942d0c2173d8d55c06d8050e6a1e4e7` and independently verified user-saved working Core backup. No external graphical Shell boot acceptance or embedded Core retirement follows from this test.

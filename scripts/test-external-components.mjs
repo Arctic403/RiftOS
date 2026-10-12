@@ -90,6 +90,34 @@ const coreLoader=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/a
 assert.match(coreLoader,/val ownCore = name\.startsWith\(PREFIX\)/);
 assert.match(coreLoader,/val kotlinSupport = name\.startsWith\("kotlin\."\)/);
 assert.match(coreLoader,/if \(ownCore\) \{[\s\S]*?application\.classLoader\.loadClass\(name\)/);
+
+// #730 device trace: staged graphical Shell DEX is valid, but the boot-time
+// Shell class scan rejected the kotlin-stdlib.jar classes bundled by D8.
+// Keep the executable Shell namespace strict and mirror the protected DEX
+// verifier and already-working external Core's Kotlin support allowance.
+const shellLoader=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftShellCandidateSwitch.kt',root),'utf8');
+assert.match(verifier,/val kotlinSupport = name\.startsWith\("Lkotlin\/"\)/);
+assert.match(shellLoader,/val ownShell = name\.startsWith\(ENTRY_PREFIX\)/);
+assert.match(shellLoader,/val kotlinSupport = name\.startsWith\("kotlin\."\)/);
+assert.match(shellLoader,/require\(ownShell \|\| kotlinSupport\)/);
+assert.match(shellLoader,/if \(ownShell\) \{\s*require\(runCatching \{\s*application\.classLoader\.loadClass\(name\)/);
+assert.match(shellLoader,/require\(count <= MAX_CLASSES\)/);
+assert.match(shellLoader,/require\(count > 0 && hasEntrypoint\)/);
+assert.match(shellLoader,/type\.classLoader === loader/);
+const shellAllowedClass = name =>
+ name.startsWith('com.riftos.external.shell.') || name.startsWith('kotlin.');
+for(const name of [
+ 'com.riftos.external.shell.IndependentGraphicalShellV1',
+ 'com.riftos.external.shell.IndependentGraphicalShellV1$Window',
+ 'kotlin.jvm.internal.Intrinsics',
+ 'kotlin.collections.CollectionsKt'
+]) assert.equal(shellAllowedClass(name),true,'valid Shell DEX class rejected: '+name);
+for(const name of [
+ 'com.riftos.app.RiftShellActivity',
+ 'com.riftos.external.core.IndependentCoreV1',
+ 'kotlinx.coroutines.Job', 'kotlinmalicious.Class',
+ 'java.lang.System', 'android.app.Activity'
+]) assert.equal(shellAllowedClass(name),false,'foreign Shell DEX class accepted: '+name);
 const recipe=JSON.parse(read('compile-core.json'));
 const externalFiles=[
  'ExternalRiftAppAbi.kt','ExternalRiftRappJsonAdapter.kt',
