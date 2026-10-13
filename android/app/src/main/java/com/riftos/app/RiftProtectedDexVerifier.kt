@@ -105,6 +105,7 @@ internal object RiftProtectedDexVerifier {
             "Lcom/riftos/app/RiftHostBuildLocalV1;",
             "Lcom/riftos/app/RiftShellGraphicalComponentV1;",
             "Lcom/riftos/app/RiftShellPlatformServicesV1;",
+            "Lcom/riftos/app/RiftShellPlatformServicesV2;",
             "Lcom/riftos/app/RiftAppAbi;"
         )
         val types = ArrayList<String>(typeCount)

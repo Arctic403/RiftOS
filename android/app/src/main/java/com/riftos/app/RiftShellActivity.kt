@@ -93,7 +93,7 @@ class RiftShellActivity : Activity() {
                 val restore = runCatching { externalCore.claimRecovery() }.getOrNull()
                 setContentView(host)
                 candidate.attach(this, host,
-                    RiftShellPlatformServicesAdapter(externalCore), restore)
+                    RiftShellPlatformServicesAdapter(externalCore, this), restore)
                 RiftShellCandidateSwitch.reportAttached(application)
                 externalShell = candidate
                 return

@@ -43,12 +43,26 @@ interface RiftShellPlatformServicesV1 {
 }
 
 /**
+ * Optional extension for newly built external graphical Shells.
+ * Keeping V1 unchanged preserves already staged Shell v0.1/v0.2 DEXes.
+ * Android/Core perform caller authentication, authorization and effects.
+ */
+interface RiftShellPlatformServicesV2 : RiftShellPlatformServicesV1 {
+    fun externalAppRequest(request: JSONObject): JSONObject
+    /** Pure reply transport to Core's one-use, authenticated UI-effect ticket. */
+    fun respondEffect(ticket: Long, response: JSONObject): Boolean
+    /** Host-only Android URI/FileProvider transport; always user-confirmed. */
+    fun launchApkInstall(path: String): Boolean
+}
+
+/**
  * Host adapter routes external presentation to existing Core-side IPC;
  * no RiftCoreRuntime singleton is constructed in the Shell process.
  */
 internal class RiftShellPlatformServicesAdapter(
-    private val client: RiftShellCoreClient
-) : RiftShellPlatformServicesV1 {
+    private val client: RiftShellCoreClient,
+    private val activity: Activity
+) : RiftShellPlatformServicesV2 {
     override fun installed(): JSONArray = client.installed()
     override fun open(id: String): JSONObject = client.start(id)
     override fun reattach(id: String, generation: Long): JSONObject =
@@ -92,4 +106,76 @@ internal class RiftShellPlatformServicesAdapter(
     override fun reportDesktop(snapshot: JSONObject): JSONObject =
         client.reportDesktop(snapshot)
     override fun claimRecovery(): JSONObject = client.claimRecovery()
+
+    override fun launchApkInstall(path: String): Boolean {
+        require(path.toByteArray(Charsets.UTF_8).size in 1..2048) {
+            "APK artifact path invalid"
+        }
+        val display = RiftVolumePaths.normalizeDisplay(path)
+        require(display.startsWith("/D:/Builds/") &&
+            display.endsWith(".apk", ignoreCase = true)) {
+            "Android installer accepts only D:/Builds/*.apk artifacts"
+        }
+        val root = java.io.File(activity.filesDir, "riftfs").canonicalFile
+        val builds = java.io.File(root, "documents/builds").canonicalFile
+        val file = java.io.File(root, RiftVolumePaths.resolveRelative(display)).canonicalFile
+        require(file.path.startsWith(builds.path + java.io.File.separator) &&
+            file.isFile && file.length() in 1L..(256L * 1024 * 1024)) {
+            "APK artifact is missing, unsafe or oversized"
+        }
+        var node: java.io.File? = file
+        while (node != null && node != root) {
+            require(!java.nio.file.Files.isSymbolicLink(node.toPath())) {
+                "Symlink APK artifact rejected"
+            }
+            node = node.parentFile
+        }
+        val identity = activity.packageManager.getPackageArchiveInfo(file.path, 0)
+        require(!identity?.packageName.isNullOrBlank() &&
+            identity?.packageName != activity.packageName) {
+            "Invalid APK identity or attempted RiftOS host replacement"
+        }
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            activity, activity.packageName + ".buildapks", file)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            clipData = android.content.ClipData.newUri(
+                activity.contentResolver, "Verified APK", uri)
+        }
+        activity.startActivity(intent)
+        return true // Installer opened; user still decides whether to install.
+    }
+
+    override fun externalAppRequest(request: JSONObject): JSONObject =
+        client.externalAppRequest(request)
+
+    override fun respondEffect(ticket: Long, response: JSONObject): Boolean {
+        require(ticket > 0L) { "UI effect reply ticket invalid" }
+        require(response.toString().toByteArray(Charsets.UTF_8).size <= 48 * 1024 &&
+            response.optString("schema") == "riftos.shell.ui-effect-result/1") {
+            "Invalid bounded external Shell UI-effect reply"
+        }
+        val encoded = response.optString("bytesBase64", "")
+        require(encoded.length <= 44_000 &&
+            encoded.matches(Regex("^[A-Za-z0-9+/]*={0,2}$"))) {
+            "External Shell UI-effect bytes encoding invalid"
+        }
+        val bytes = if (encoded.isEmpty()) ByteArray(0) else
+            android.util.Base64.decode(encoded, android.util.Base64.NO_WRAP)
+        require(bytes.size <= 32 * 1024) { "External Shell UI-effect bytes exceed bound" }
+        val text = response.optString("text", "")
+        val error = response.optString("error", "")
+        require(text.toByteArray(Charsets.UTF_8).size <= 4096 &&
+            error.toByteArray(Charsets.UTF_8).size <= 2048) {
+            "External Shell UI-effect text exceeds Core IPC bound"
+        }
+        return client.respondEffect(ticket, RiftRappCapabilityBroker.Result(
+            ok = response.optBoolean("ok", false),
+            token = response.optInt("token"),
+            text = text,
+            bytes = bytes,
+            error = error.ifBlank { null }
+        ))
+    }
 }
