@@ -1,5 +1,9 @@
 # Build and Validation System
 
+## 2026-10-12 — Build failure e21da5d8: reconcile external Editor visibility
+
+Manual Builder run `38331033067` failed before Gradle at the old C0.2 manifest ban on `com.codynex.editor`, despite the new v0.6.4 Binder host requiring exactly that package visibility. The independently executed `scripts/validate-rift-wiring.mjs` contained the same obsolete blanket ban. Both now preserve the prohibition on retired Rift++ project-editor visibility, while explicitly allowing the **installed external Codynex Editor** solely for its optional Binder endpoint. This does not embed Codynex source, compiler or runtime in RiftOS. The standalone v0.6.4 DEX remains built but unselected; retain v0.6.3 and Recovery backup. This patch is source-level; only a new user-triggered manual APK build can prove the fix.
+
 ## 2026-10-12 — Optional Core v0.6.4 Android-host compatibility gate
 
 `compile-core-v064.json` compiles the unchanged v0.6.3 source inventory plus `IndependentCoreV064.kt`; output is isolated at `build/riftbuild/core-v064-classes`. The external component Builder RAPP button 109 produces `/D:/Builds/Components/core/trial-v064/{core.dex,component.json}` without activation. On device, the built DEX SHA matches its strict manifest. `validate-rift-wiring.mjs`, `test-external-components.mjs`, and the separate RiftOS Builder source contracts check the optional `RiftCoreExternalAppConnectionsV1` ABI, stripped compile-only Binder stub, descriptor handshake, IPC, visibility and native Shell wiring. Source checks are **not** evidence that the installed APK has the interface: install a matching manually signed Android APK before the new external Core. Preserve the v0.6.3 Core/Recovery installation during that step.

@@ -44,11 +44,16 @@ for (const required of [
   'android.permission.REQUEST_INSTALL_PACKAGES',
   'android:exported="false"',
 ]) if (!manifest.includes(required)) fail(`Android RiftBuild install contract is missing ${required}`);
-// C0.2: RiftOS no longer predeclares either project editor as a package dependency.
-for (const editorPackage of ["com.riftpp.editor", "com.codynex.editor"]) {
-  if (manifest.includes(`<package android:name="${editorPackage}" />`)) {
-    fail(`project editor package visibility resurfaced in RiftOS: ${editorPackage}`);
-  }
+// C0.2 still excludes retired project editor package dependencies. The
+// *external* Codynex Editor is deliberately visible for the optional 0.6.4
+// Binder service only; no editor source/runtime is packaged inside RiftOS.
+if (manifest.includes('<package android:name="com.riftpp.editor" />')) {
+  fail('retired Rift++ project editor package visibility resurfaced in RiftOS');
+}
+if (!manifest.includes('<package android:name="com.codynex.editor" />') ||
+    !read('android/app/src/main/java/com/riftos/app/RiftHostExternalAppBinderV1.kt')
+      .includes('object RiftHostExternalAppBinderV1')) {
+  fail('external Codynex Editor visibility requires optional signed-host Binder transport');
 }
 for (const forbidden of [
   '<package android:name="com.riftpp.editor.nativev1" />',
