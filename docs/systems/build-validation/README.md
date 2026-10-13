@@ -1,5 +1,9 @@
 # Build and Validation System
 
+## 2026-10-12 — Optional Core v0.6.4 Android-host compatibility gate
+
+`compile-core-v064.json` compiles the unchanged v0.6.3 source inventory plus `IndependentCoreV064.kt`; output is isolated at `build/riftbuild/core-v064-classes`. The external component Builder RAPP button 109 produces `/D:/Builds/Components/core/trial-v064/{core.dex,component.json}` without activation. On device, the built DEX SHA matches its strict manifest. `validate-rift-wiring.mjs`, `test-external-components.mjs`, and the separate RiftOS Builder source contracts check the optional `RiftCoreExternalAppConnectionsV1` ABI, stripped compile-only Binder stub, descriptor handshake, IPC, visibility and native Shell wiring. Source checks are **not** evidence that the installed APK has the interface: install a matching manually signed Android APK before the new external Core. Preserve the v0.6.3 Core/Recovery installation during that step.
+
 ## 2026-10-12 — Retired v0.7 source validation requirements
 
 The independent Core **v0.7** entrypoint, private system-services source, compile recipe, RAPP button, and V07-only source/host regression requirements were removed. The current external Core is **v0.6.3**, so the Android source gates retain the proven Core V1 execution/Recovery contract and `apk.install` bridge. Builder must **not** reject an APK because retired v0.7 files or its optional typed IPC are missing. Historical validation of v0.7 is archived in component build evidence; do not treat it as required for current builds.

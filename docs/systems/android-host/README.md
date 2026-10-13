@@ -1,5 +1,9 @@
 # Android Host
 
+## 2026-10-12 — Generic Android Binder transport for optional independent Core v0.6.4
+
+`RiftHostExternalAppBinderV1.kt` is an APK-owned, bounded Android package identity/Binder transport primitive; it is **not** an app registry, compiler, RAPP host or execution engine. `RiftCoreExternalAppConnectionsV1` is an additive interface cast on the selected Core, so the older selected v0.6.3 is still valid. The real production `:riftShell` IPC method `shell.external-app` is authenticated before dispatch. Android package visibility includes the installed `com.codynex.editor`; Codynex's Binder service class is `com.codynex.editorapp.CodynexEditorBridgeService`, a different Java package namespace from its Android application ID. The Binder descriptor is checked through `IBinder.INTERFACE_TRANSACTION` because Codynex's custom service implements this transaction without calling `attachInterface`. The selected Core owns attachment policy and SHA-verified user-file transfer. Build a new signed APK manually before selecting Core v0.6.4; no bridge installation or Core promotion occurs automatically.
+
 ## 2026-10-12 — Retire unused v0.7 typed Core system-service host bridge
 
 The unqualified Core v0.7 system-service interface and `shell.system` IPC route were removed from the Android host, Shell adapter and protected DEX special-case verifier. They were not invoked by the selected Core v0.6.3 or embedded graphical Shell. The stable V1 Core/Shell execution interfaces, authenticated IPC for RAPPs and Shell, MCP/relay, independent Recovery and `apk.install` host bridge stay unchanged. This source cleanup requires the user's usual **manual** signed APK Builder run before host bytecode changes take effect on device.

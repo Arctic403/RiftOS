@@ -47,6 +47,15 @@ interface RiftCoreExecutionViewV1 {
 }
 
 /**
+ * Optional independent Core app-connection interface. The selected v0.6.3
+ * retains its original V1 ABI and fails closed if it lacks this extension.
+ * This is NOT the retired v0.7 system-services interface.
+ */
+interface RiftCoreExternalAppConnectionsV1 {
+    fun appConnectionRequest(context: Context, request: JSONObject): JSONObject
+}
+
+/**
  * Stable APK-owned JavaScript execution primitive for independent Core DEXes.
  *
  * QUICKJS IS THE ONE EMBEDDED EXECUTION ENGINE EXCEPTION: this service owns
@@ -215,6 +224,10 @@ internal object RiftHostCoreComponents {
     fun executionView(): RiftCoreExecutionViewV1 =
         selected as? RiftCoreExecutionViewV1
             ?: error("Selected Core lacks independent RAPP execution/recovery ABI")
+
+    fun externalAppConnections(): RiftCoreExternalAppConnectionsV1 =
+        selected as? RiftCoreExternalAppConnectionsV1
+            ?: error("Selected Core does not support external app connections")
 
     /** Called only once after host-owned recoveries in the actual Core process. */
     @Synchronized

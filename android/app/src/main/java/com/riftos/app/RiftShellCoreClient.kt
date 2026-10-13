@@ -190,6 +190,20 @@ class RiftShellCoreClient(context: Context) {
             }).getBoolean("accepted")
     }
 
+    /** Selected Core's generic app connector; no direct Android package access here. */
+    fun externalAppRequest(request: JSONObject): JSONObject {
+        val raw = request.toString()
+        require(raw.toByteArray(Charsets.UTF_8).size in 1..(24 * 1024)) {
+            "External app request exceeds Shell IPC limit"
+        }
+        require(request.getString("schema") == "riftos.core.app-connection-request/1") {
+            "External app Shell request schema invalid"
+        }
+        return call(RiftCoreSurfaceIpcProvider.METHOD_SHELL_EXTERNAL_APP,
+            extras = Bundle().apply { putString("connectionRequest", raw) })
+            .getJSONObject("externalAppResult")
+    }
+
     fun execute(command: String, cwd: String?): JSONObject {
         require(command.isNotBlank() && command.toByteArray(Charsets.UTF_8).size <= 1024) {
             "Shell command size invalid"

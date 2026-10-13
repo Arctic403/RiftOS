@@ -8,6 +8,7 @@
     <queries>
         <package android:name="com.vortex3d.app" />
         <package android:name="com.riftllm.app" />
+        <package android:name="com.codynex.editor" />
         <package android:name="com.samsung.android.honeyboard" />
         <intent>
             <action android:name="com.riftos.runtime.EXECUTE_V1" />

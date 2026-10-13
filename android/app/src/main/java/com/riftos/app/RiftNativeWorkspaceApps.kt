@@ -31,7 +31,8 @@ import kotlin.math.roundToInt
 /** Android-owned Files, Editor and Settings surfaces. No WebView/DOM/JS bridge is used. */
 class RiftNativeWorkspaceApps(
     private val activity: Activity,
-    private val desktop: RiftNativeDesktop
+    private val desktop: RiftNativeDesktop,
+    private val core: RiftShellCoreClient
 ) {
     companion object {
         private const val MAX_EDITOR_BYTES = 1024 * 1024L
@@ -42,7 +43,7 @@ class RiftNativeWorkspaceApps(
         private const val SETTINGS_TASK_TIMEOUT_MS = 60_000L
         private const val EDITOR_IO_TIMEOUT_MS = 30_000L
         private const val FILES_IO_TIMEOUT_MS = 20_000L
-        private val NATIVE_IDS = setOf("files", "editor", "devlab", "workspace-live", "settings")
+        private val NATIVE_IDS = setOf("files", "editor", "devlab", "workspace-live", "settings", "connections")
         private const val BG = 0xff0b1118.toInt()
         private const val PANEL = 0xff111a23.toInt()
         private const val TEXT = 0xffe7eef5.toInt()
@@ -77,6 +78,8 @@ class RiftNativeWorkspaceApps(
     private var devLab: DevLabState? = null
     private var workspaceRecords: WorkspaceRecordsState? = null
     private var settings: View? = null
+    private var connections: View? = null
+    private var connectionOutput: TextView? = null
     private val riftRoot = File(activity.filesDir, "riftfs").apply { mkdirs() }.canonicalFile
     private val mountPrefs = activity.getSharedPreferences("rift-native", Context.MODE_PRIVATE)
     private val settingsExecutor = ThreadPoolExecutor(
@@ -113,6 +116,7 @@ class RiftNativeWorkspaceApps(
         "devlab" -> { devLab = null; true }
         "workspace-live" -> { workspaceRecords = null; true }
         "settings" -> { settings = null; true }
+        "connections" -> { connections = null; connectionOutput = null; true }
         else -> false
     }
 
@@ -148,6 +152,8 @@ class RiftNativeWorkspaceApps(
         devLab = null
         workspaceRecords = null
         settings = null
+        connections = null
+        connectionOutput = null
         settingsExecutor.shutdownNow()
         settingsWatchdog.shutdownNow()
     }
@@ -158,6 +164,7 @@ class RiftNativeWorkspaceApps(
         "devlab" -> openDevLab()
         "workspace-live" -> openWorkspaceRecords()
         "settings" -> openSettings()
+        "connections" -> openConnections()
         else -> throw IllegalArgumentException("Native workspace app is not migrated: $id")
     }
 
@@ -176,7 +183,8 @@ class RiftNativeWorkspaceApps(
         .put("editorOpen", editor != null)
         .put("devLabOpen", devLab != null)
         .put("workspaceRecordsOpen", workspaceRecords != null)
-        .put("settingsOpen", settings != null)
+.put("settingsOpen", settings != null)
+        .put("connectionsOpen", connections != null)
 
     private fun openFiles(rawPath: String): JSONObject {
         openWindow("files", "Files", "ANDROID NATIVE FILES")
@@ -202,6 +210,7 @@ class RiftNativeWorkspaceApps(
             files?.let { state -> state.displayPath = ANDROID_FILES_ROOT; refreshFiles(state) }
         }, LinearLayout.LayoutParams(dp(78), dp(42)))
         toolbar.addView(actionButton("Mount") { launchAndroidMountPicker() }, LinearLayout.LayoutParams(dp(70), dp(42)))
+        toolbar.addView(actionButton("Apps") { openConnections() }, LinearLayout.LayoutParams(dp(65), dp(42)))
         toolbar.addView(HorizontalScrollView(activity).apply {
             addView(path, ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }, LinearLayout.LayoutParams(0, dp(44), 1f))
@@ -258,6 +267,13 @@ class RiftNativeWorkspaceApps(
                         row.addView(TextView(activity).apply {
                             text = humanBytes(entry.size); setTextColor(MUTED); textSize = 10f; gravity = Gravity.CENTER_VERTICAL
                         }, LinearLayout.LayoutParams(dp(84), dp(40)))
+                    }
+                    if (!isDirectory && (display.startsWith("/D:/Workspace/") ||
+                        display.startsWith("/D:/Projects/") ||
+                        display.startsWith("/D:/Documents/"))) {
+                        row.addView(actionButton("Send") {
+                            sendFileToConnectedEditor(display)
+                        }, LinearLayout.LayoutParams(dp(65), dp(40)))
                     }
                     if (isAndroidMountRoot(display)) {
                         row.addView(actionButton("Unmount") {
@@ -685,6 +701,157 @@ class RiftNativeWorkspaceApps(
                 )
             }
         }
+    }
+
+    /**
+     * Native presentation of the independent Core's optional external-app
+     * connection API. No compile, file authority or Android Binder is owned here.
+     */
+    private fun connectionRequest(operation: String, extra: JSONObject = JSONObject()): JSONObject {
+        val request = JSONObject()
+            .put("schema", "riftos.core.app-connection-request/1")
+            .put("operation", operation)
+            .put("id", "codynex-editor")
+        for (key in extra.keys()) request.put(key, extra.get(key))
+        return request
+    }
+
+    private fun runConnectionTask(label: String, request: JSONObject) {
+        connectionOutput?.text = "$label…"
+        runNativeTask(
+            timeoutMs = 120_000L,
+            work = { core.externalAppRequest(request) },
+            complete = { outcome ->
+                val result = outcome.value
+                val message = if (result == null) {
+                    "$label failed: ${outcome.error?.message ?: "unknown"}"
+                } else {
+                    "$label complete\n" + result.optJSONObject("data").toString().take(9000)
+                }
+                connectionOutput?.text = message
+                if (result == null || connections == null) {
+                    Toast.makeText(activity, message.take(180), Toast.LENGTH_LONG).show()
+                }
+            }
+        )
+    }
+
+    private fun sendFileToConnectedEditor(display: String) {
+        val normalized = RiftVolumePaths.normalizeDisplay(display)
+        android.app.AlertDialog.Builder(activity)
+            .setTitle("Send file to Codynex Editor")
+            .setMessage("Transfer $normalized to the attached Codynex Editor workspace? " +
+                "A same-named file in the Editor may be replaced. Core verifies the remote SHA-256.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Send") { _, _ ->
+                runConnectionTask("Send ${normalized.substringAfterLast('/')}",
+                    connectionRequest("push", JSONObject().put("source", normalized)))
+            }
+            .show()
+    }
+
+    private fun openConnections(): JSONObject {
+        openWindow("connections", "App Connections", "CORE-OWNED APP BRIDGE")
+        connections?.let { desktop.attachContent("connections", it); return state() }
+        val root = column().apply { setPadding(dp(10), dp(8), dp(10), dp(8)) }
+        val content = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        content.addView(label("App Connections · External Core", TEXT, 16f, true))
+        content.addView(label("Attach once, then exchange files and commands directly. " +
+            "Codynex stays in its own Android APK. No clipboard or RAPP bridge.", MUTED))
+
+        val output = TextView(activity).apply {
+            setTextColor(ACCENT); textSize = 11f; typeface = Typeface.MONOSPACE
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setTextIsSelectable(true)
+            text = "Core v0.6.4 required. Tap Attach Codynex after manual Core activation."
+        }
+        connectionOutput = output
+        fun buttonRow(vararg actions: Pair<String, () -> Unit>) {
+            val row = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
+            for ((title, action) in actions) {
+                row.addView(actionButton(title, action),
+                    LinearLayout.LayoutParams(0, dp(46), 1f))
+            }
+            content.addView(row)
+        }
+
+        buttonRow(
+            "Attach Codynex" to {
+                android.app.AlertDialog.Builder(activity)
+                    .setTitle("Attach Codynex Editor?")
+                    .setMessage("Allow RiftOS Core to communicate with the installed " +
+                        "Codynex Editor service. The Core pins its Android signing identity. " +
+                        "Files and compiler operations remain inside Codynex; detach any time.")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Attach") { _, _ ->
+                        runConnectionTask("Attach Codynex", connectionRequest("attach",
+                            JSONObject().put("name", "Codynex Editor")
+                                .put("package", "com.codynex.editor")
+                                .put("service",
+                                    "com.codynex.editorapp.CodynexEditorBridgeService")
+                                .put("descriptor", "com.codynex.editor.bridge.v1")))
+                    }.show()
+            },
+            "Connections" to {
+                runConnectionTask("List connections", connectionRequest("list"))
+            }
+        )
+
+        val editorPath = EditText(activity).apply {
+            setTextColor(TEXT); setHintTextColor(MUTED)
+            textSize = 12f; setSingleLine(true); typeface = Typeface.MONOSPACE
+            hint = "Codynex workspace entry"; setText("main.cx")
+        }
+        content.addView(label("Editor-relative entry", TEXT))
+        content.addView(editorPath, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(42)))
+
+        fun remote(op: String): () -> Unit = {
+            val command = JSONObject().put("op", op)
+            if (op in setOf("compile", "preview", "build-apk")) {
+                command.put("entry", editorPath.text.toString().trim())
+            }
+            if (op == "stat") command.put("path", editorPath.text.toString().trim())
+            runConnectionTask(op.uppercase(), connectionRequest("execute",
+                JSONObject().put("command", command)))
+        }
+        buttonRow("Status" to remote("status"), "List Files" to remote("list"),
+            "Stat" to remote("stat"))
+        buttonRow("Compile" to remote("compile"), "Preview" to remote("preview"),
+            "Build APK" to remote("build-apk"))
+
+        val source = EditText(activity).apply {
+            setTextColor(TEXT); setHintTextColor(MUTED)
+            textSize = 12f; setSingleLine(true); typeface = Typeface.MONOSPACE
+            hint = "/D:/Workspace/project/main.cx"
+        }
+        content.addView(label("RiftFS file to transfer (up to 16 KiB UTF-8)", TEXT))
+        content.addView(source, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(42)))
+        buttonRow("Send File" to {
+            val path = source.text.toString().trim()
+            if (path.isBlank()) output.text = "Enter a RiftFS source file path."
+            else sendFileToConnectedEditor(path)
+        }, "Detach" to {
+            android.app.AlertDialog.Builder(activity)
+                .setTitle("Detach Codynex?")
+                .setMessage("Revoke the saved Core app connection? Files already transferred remain in Codynex.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Detach") { _, _ ->
+                    runConnectionTask("Detach Codynex", connectionRequest("detach"))
+                }.show()
+        })
+        content.addView(output)
+        root.addView(ScrollView(activity).apply {
+            addView(content, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT))
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        connections = root
+        desktop.attachContent("connections", root)
+        return state()
     }
 
     private fun openSettings(): JSONObject {

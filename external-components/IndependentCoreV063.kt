@@ -8,7 +8,7 @@ import org.json.JSONObject
  * explicitly-granted apk.install UI-effect forwarding to the Android Shell.
  * No automatic Core activation, backup mutation, or embedded build tools.
  */
-class IndependentCoreV063 : IndependentCoreV1() {
+open class IndependentCoreV063 : IndependentCoreV1() {
     override fun coreStatus(context: Context): JSONObject =
         super.coreStatus(context)
             .put("candidateRevision", "0.6.3")

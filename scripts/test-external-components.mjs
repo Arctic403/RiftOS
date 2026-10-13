@@ -207,6 +207,8 @@ assert.ok(producer.includes("core-v062"));
 // APK install is a separate, explicitly granted Core->Shell platform UI effect.
 // It may open Android's installer but cannot silently commit installation.
 const coreV063=read('IndependentCoreV063.kt');
+const coreV064=read('IndependentCoreV064.kt');
+const recipeV064=JSON.parse(read('compile-core-v064.json'));
 const recipeV063=JSON.parse(read('compile-core-v063.json'));
 const sessionEffects=read('IndependentRappEffectsV1.kt');
 const externalAbi=read('ExternalRiftAppAbi.kt');
@@ -235,11 +237,45 @@ assert.match(manifest,/android:name="androidx\.core\.content\.FileProvider"/);
 assert.match(manifest,/@xml\/rift_build_apk_paths/);
 assert.match(producer,/coreV063:108/);
 assert.match(producer,/trial-v063\//);
+assert.deepEqual(recipeV064.sources,[...recipeV063.sources,'IndependentCoreV064.kt']);
+assert.equal(recipeV064.outputDir,'build/riftbuild/core-v064-classes');
+assert.match(coreV063,/open class IndependentCoreV063 : IndependentCoreV1/);
+assert.match(coreV064,/class IndependentCoreV064 : IndependentCoreV063\(\), RiftCoreExternalAppConnectionsV1/);
+assert.match(coreV064,/"candidateRevision", "0\.6\.4"/);
+for(const marker of ['RiftHostExternalAppBinderV1.identity','RiftHostExternalAppBinderV1.execute',
+ 'signerSha256','Files.isSymbolicLink','External app transfer receipt did not match']) {
+ assert.ok(coreV064.includes(marker),'Missing external Core connection invariant: '+marker);
+}
+assert.match(producer,/coreV064:109/);
+assert.match(producer,/trial-v064\//);
+assert.match(producer,/'RiftHostExternalAppBinderV1\.class'/);
+assert.match(producer,/'RiftCoreExternalAppConnectionsV1\.class'/);
+const appBinder=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftHostExternalAppBinderV1.kt',root),'utf8');
+const workspaceUi=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftNativeWorkspaceApps.kt',root),'utf8');
+const shellActivity=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftShellActivity.kt',root),'utf8');
+const shellClient=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftShellCoreClient.kt',root),'utf8');
+for(const marker of ['fun identity(context: Context','fun execute(context: Context',
+ 'binder.transact(IBinder.FIRST_CALL_TRANSACTION',
+ 'binder.transact(IBinder.INTERFACE_TRANSACTION',
+ 'descriptorReply.readString() == descriptor',
+ 'context.unbindService(serviceConnection)']) assert.ok(appBinder.includes(marker),'Binder missing '+marker);
+assert.match(host,/interface RiftCoreExternalAppConnectionsV1/);
+assert.match(host,/fun externalAppConnections\(\): RiftCoreExternalAppConnectionsV1/);
+assert.match(stub,/interface RiftCoreExternalAppConnectionsV1/);
+assert.match(stub,/object RiftHostExternalAppBinderV1/);
+assert.match(verifier,/Lcom\/riftos\/app\/RiftHostExternalAppBinderV1;/);
+assert.match(shellClient,/fun externalAppRequest\(request: JSONObject\): JSONObject/);
+assert.match(workspaceUi,/fun openConnections\(\): JSONObject/);
+assert.match(workspaceUi,/sendFileToConnectedEditor\(display\)/);
+assert.match(shellActivity,/Triple\("connections", "App Connections"/);
+assert.match(manifest,/<package android:name="com\.codynex\.editor"/);
 // Preserve selected Core V1/0.6.3 and authenticated Shell IPC invariants.
 assert.match(core,/open class IndependentCoreV1 : RiftCoreComponentV1, RiftCoreExecutionViewV1/);
 assert.match(core,/withLiveGrantChange\(context: Context, id: String/);
 assert.match(shellLoader,/manualRecoveryOnly/);
 const coreIpc=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftCoreSurfaceIpcProvider.kt',root),'utf8');
+assert.match(coreIpc,/const val METHOD_SHELL_EXTERNAL_APP = "shell\.external-app"/);
+assert.match(coreIpc,/externalAppConnections\(\)\s*\.appConnectionRequest\(ctx, input\)/);
 assert.match(coreIpc,/if \(method != METHOD_SNAPSHOT\) requireProductionShellCaller\(\)/);
 assert.match(coreIpc,/RiftMcpRuntime\.nativeShell\(ctx\)\.execute\(command, cwd\)/);
 assert.doesNotMatch(producer,/core-v07|coreV07|IndependentCoreV07|RiftCoreSystemServicesV1/);
@@ -353,9 +389,25 @@ const coreRequest=JSON.parse(requestedCore.effect.text).request;
 assert.deepEqual(Array.from(coreRequest.sources),recipeV063.sources);
 assert.equal(coreRequest.outputDir,recipeV063.outputDir);
 assert.ok(!coreRequest.sources.includes('RiftMcpRuntime.kt'));
+// 0.6.4 Core candidate compilation must keep selected 0.6.3 untouched.
+const chosen064=JSON.parse(context.riftRappMain(JSON.stringify({event:{kind:1,targetId:109}})));
+const state064=JSON.parse(Buffer.from(chosen064.stateBase64,'base64').toString('utf8'));
+assert.equal(state064.mode,'core-v064');
+assert.equal(chosen064.effect.operation,'toolchainStatus');
+const compiled064=JSON.parse(context.riftRappMain(JSON.stringify({
+ stateBase64:chosen064.stateBase64,
+ event:{kind:13,targetId:chosen064.effect.requestId,arg0:1,text:JSON.stringify({
+  schema:'riftbuild-kotlin-toolchain-status/2',ready:true,dexer:'D8',
+  androidJar:{path:'/tmp/android.jar'},kotlinStdlib:{path:'/tmp/kotlin-stdlib.jar'}
+ })}
+})));
+assert.equal(compiled064.effect.operation,'compilerRun');
+const request064=JSON.parse(compiled064.effect.text).request;
+assert.deepEqual(Array.from(request064.sources),recipeV064.sources);
+assert.equal(request064.outputDir,recipeV064.outputDir);
 assert.match(producer,/k==='shell-v2'\?'v2\/'/);
-assert.match(producer,/version:k==='core'\?'0\.6\.1':k==='core-v062'\?'0\.6\.2':k==='core-v063'\?'0\.6\.3':k==='shell-v2'\?'0\.2\.0'/);
-assert.match(producer,/entry:k==='core'\?'com\.riftos\.external\.core\.IndependentCoreV1':k==='core-v062'\?'com\.riftos\.external\.core\.IndependentCoreV062':k==='core-v063'\?'com\.riftos\.external\.core\.IndependentCoreV063':k==='shell-v2'\?'com\.riftos\.external\.shell\.IndependentGraphicalShellV2'/);
+assert.match(producer,/version:k==='core'\?'0\.6\.1':k==='core-v062'\?'0\.6\.2':k==='core-v063'\?'0\.6\.3':k==='core-v064'\?'0\.6\.4':k==='shell-v2'\?'0\.2\.0'/);
+assert.match(producer,/entry:k==='core'\?'com\.riftos\.external\.core\.IndependentCoreV1':k==='core-v062'\?'com\.riftos\.external\.core\.IndependentCoreV062':k==='core-v063'\?'com\.riftos\.external\.core\.IndependentCoreV063':k==='core-v064'\?'com\.riftos\.external\.core\.IndependentCoreV064':k==='shell-v2'\?'com\.riftos\.external\.shell\.IndependentGraphicalShellV2'/);
 assert.doesNotMatch(producer,/RiftProtectedComponentInstaller|RiftManualRecoveryStore|acceptProven\(/);
 const gradle=fs.readFileSync(new URL('android/app/build.gradle.kts',root),'utf8');
 assert.ok(!gradle.includes('external-components/'));

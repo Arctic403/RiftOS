@@ -1,5 +1,9 @@
 # RiftOS
 
+## 2026-10-12 — Core v0.6.4 bridge candidate built; matching APK host not installed
+
+The separately compiled external Core v0.6.4 DEX was device-built at `/D:/Builds/Components/core/trial-v064/core.dex` (2,787,192 bytes); its actual SHA-256 and manifest both equal `cc067f4f2df037b83bd06beee5990fc7254260af55aaf503b56df135990020b5`. This validates the artifact's integrity, **not Core boot or Android Binder integration**. The installed RiftOS APK still reports source `ec4157ba8cd7ddeda37f261c79adfd7143b55398` and does **not** include the new `RiftHostExternalAppBinderV1`/`RiftCoreExternalAppConnectionsV1` host ABI. Core v0.6.3 remains selected; Recovery backup unchanged. Next: manually build/sign/install a matching Android APK from synchronized RiftOS+Builder sources, device-prove its v0.6.3 compatibility, and only then manually stage/select v0.6.4 in Recovery. The v0.6.4 candidate is a transitional bridge, not the planned minimal development Core.
+
 ## 2026-10-12 — Retired unqualified Core v0.7; selected Core v0.6.3 preserved
 
 The active independent Core is **v0.6.3** (selected SHA `fb1502338d61337afc55ad2e87f5029163654162a22bfed3d962c4b38c3dd4f7`), with the user-saved verified Recovery backup untouched. Core v0.7 was briefly selected and device-tested earlier, but its new typed system-service interface was **never fully qualified**; it is now retired at the user's direction. The v0.7 source, isolated build route, builder button, optional signed-host IPC, and prospective source validation gates have been removed. Historical device evidence remains under `external-components/BUILD_EVIDENCE.md`; it is not a current capability or future build requirement. No automatic Core activation, Recovery change, or Android APK build occurs from this source cleanup.

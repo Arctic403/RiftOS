@@ -318,6 +318,49 @@ const retainedCoreProducer = read('external-components/runtime.js');
 if (/core-v07|coreV07|IndependentCoreV07|RiftCoreSystemServicesV1/.test(retainedCoreProducer)) {
   fail('Retired Core v0.7 compile route resurfaced');
 }
+// Core v0.6.4 is an optional extension of the proven v0.6.3 DEX, not
+// an embedded runtime or a revival of Core v0.7 systemRequest services.
+const optional064Core = read('external-components/IndependentCoreV064.kt');
+const optional064Recipe = JSON.parse(read('external-components/compile-core-v064.json'));
+const optional063Recipe = JSON.parse(read('external-components/compile-core-v063.json'));
+const optional064Host = read('android/app/src/main/java/com/riftos/app/RiftHostComponentAbiV1.kt');
+const optional064Android = read('android/app/src/main/java/com/riftos/app/RiftHostExternalAppBinderV1.kt');
+const optional064Provider = read('android/app/src/main/java/com/riftos/app/RiftCoreSurfaceIpcProvider.kt');
+const optional064ShellClient = read('android/app/src/main/java/com/riftos/app/RiftShellCoreClient.kt');
+const optional064Stub = read('external-components/HostAbiCompileOnly.kt');
+const optional064Verifier = read('android/app/src/main/java/com/riftos/app/RiftProtectedDexVerifier.kt');
+const optional064Activity = read('android/app/src/main/java/com/riftos/app/RiftShellActivity.kt');
+const optional064WorkspaceUi = read('android/app/src/main/java/com/riftos/app/RiftNativeWorkspaceApps.kt');
+const optional064Manifest = read('android/app/src/main/AndroidManifest.xml');
+if (JSON.stringify(optional064Recipe.sources) !== JSON.stringify([
+  ...optional063Recipe.sources, 'IndependentCoreV064.kt'
+]) || optional064Recipe.outputDir !== 'build/riftbuild/core-v064-classes' ||
+    !retainedCoreProducer.includes('coreV064:109') ||
+    !retainedCoreProducer.includes("'RiftHostExternalAppBinderV1.class'") ||
+    !retainedCoreProducer.includes("'RiftCoreExternalAppConnectionsV1.class'") ||
+    !optional064Core.includes('class IndependentCoreV064 : IndependentCoreV063(), RiftCoreExternalAppConnectionsV1') ||
+    !read('external-components/IndependentCoreV063.kt').includes('open class IndependentCoreV063 : IndependentCoreV1()')) {
+  fail('Core 0.6.4 builder must compile only additive app-connection extension of 0.6.3');
+}
+for (const [code, marker] of [
+  [optional064Host, 'interface RiftCoreExternalAppConnectionsV1'],
+  [optional064Host, 'fun externalAppConnections(): RiftCoreExternalAppConnectionsV1'],
+  [optional064Stub, 'interface RiftCoreExternalAppConnectionsV1'],
+  [optional064Stub, 'object RiftHostExternalAppBinderV1'],
+  [optional064Android, 'binder.transact(IBinder.INTERFACE_TRANSACTION'],
+  [optional064Android, 'descriptorReply.readString() == descriptor'],
+  [optional064Android, 'binder.transact(IBinder.FIRST_CALL_TRANSACTION'],
+  [optional064Android, 'context.unbindService(serviceConnection)'],
+  [optional064Provider, 'const val METHOD_SHELL_EXTERNAL_APP = "shell.external-app"'],
+  [optional064Provider, 'RiftHostCoreComponents.externalAppConnections()'],
+  [optional064ShellClient, 'fun externalAppRequest(request: JSONObject): JSONObject'],
+  [optional064Verifier, 'Lcom/riftos/app/RiftHostExternalAppBinderV1;'],
+  [optional064Activity, 'Triple("connections", "App Connections"'],
+  [optional064WorkspaceUi, 'fun openConnections(): JSONObject'],
+  [optional064Manifest, '<package android:name="com.codynex.editor" />']
+]) if (!code.includes(marker)) {
+  fail('Core 0.6.4 Android/independent interface is not wired: ' + marker);
+}
 // S-v2: the independently compiled graphical Shell is a source-only
 // candidate, not an APK-owned renderer or a replacement for proven V1.
 const externalShellV2 = read('external-components/IndependentGraphicalShellV2.kt');

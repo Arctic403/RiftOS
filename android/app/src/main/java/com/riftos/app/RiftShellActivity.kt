@@ -135,7 +135,7 @@ class RiftShellActivity : Activity() {
         browserApps = RiftBrowserAppHost(this, desktop)
         systemApps = RiftNativeSystemApps(this, desktop,
             RiftRemoteShellExecutor(core), core)
-        workspaceApps = RiftNativeWorkspaceApps(this, desktop)
+        workspaceApps = RiftNativeWorkspaceApps(this, desktop, core)
         rapps = RiftShellRappHost(this, desktop, core, ::refreshLauncher)
         uiEffects = RiftRemoteShellUiClient(this, desktop, core,
             ::openDesktopApp, ::dispatchDesktopCommand)
@@ -162,6 +162,7 @@ class RiftShellActivity : Activity() {
             Triple("terminal", "RiftShell", ">_"),
             Triple("browser", "RiftBrowser", "◎"),
             Triple("editor", "Editor", "{}"),
+            Triple("connections", "App Connections", "⇄"),
             Triple("devlab", "Dev Lab", "◇"),
             Triple("tasks", "Tasks", "≡"),
             Triple("installed-apps", "Installed Apps", "▦"),

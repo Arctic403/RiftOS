@@ -1,5 +1,9 @@
 # RiftOS independent Core and Shell components
 
+## 2026-10-12 — Independently built Core v0.6.4 app-connection candidate (NOT ACTIVATED)
+
+`IndependentCoreV064.kt` extends open `IndependentCoreV063.kt` without copying its RAPP engine. Its optional Core app-connection ABI owns attach/detach, Android package-signature pinning, bounded dispatch, workspace-file transfer and SHA receipt checks. The signed Android host supplies Binder transport only; Codynex Editor supplies its own service, workspace, and compiler. The component-builder RAPP offers **BUILD CORE V0.6.4 · APP CONNECTIONS** (button 109), using `compile-core-v064.json` with 15 Kotlin sources and isolated `trial-v064/` output. The device-generated DEX is 2,787,192 bytes with verified SHA `cc067f4f2df037b83bd06beee5990fc7254260af55aaf503b56df135990020b5`. This is **build proof only**: selected Core remains v0.6.3, backup intact. Do not activate 0.6.4 before installing a signed host containing the optional Binder ABI and completing manual compatibility tests.
+
 ## 2026-10-12 — Core v0.6.3 `apk.install` capability candidate (SOURCE ONLY)
 
 The user explicitly authorized a minimal generic Android installer boundary, not an embedded RiftBuild compiler. `IndependentCoreV063.kt` retains the v0.6.2 RAPP engine and 4096-effect budget, and adds a dedicated `apk.install` RAPP permission to independent Core's declarable set. Existing installed identity, explicit consent/grant, single-use UI ticket, session-validity and grant revocation checks still apply. Only a short path under `/D:/Builds/` ending in `.apk`, operation `open` and **zero bytes** are permitted. It delegates user-facing launch to the updated Android host; Core does not install packages directly.

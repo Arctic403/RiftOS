@@ -10,7 +10,7 @@ import org.json.JSONObject
 /**
  * COMPILE-ONLY MIRROR of the installed RiftOS host ABI v1.
  * NEVER include any classes from this source in Core/Shell output DEX.
- * D8 producer removes all SIX compile-only host interface/service .class files first.
+ * D8 producer strips every compile-only host interface/service class first.
  *
  * Runtime interfaces come from the installed signed RiftOS APK parent loader.
  */
@@ -36,6 +36,23 @@ interface RiftCoreExecutionViewV1 {
     fun discoverRuntimeCandidates(context: Context): JSONObject
     fun startApp(context: Context, id: String): JSONObject
     fun stopApp(context: Context, id: String): JSONObject
+}
+
+/** Optional independent Core app connections; not the retired v0.7 ABI. */
+interface RiftCoreExternalAppConnectionsV1 {
+    fun appConnectionRequest(context: Context, request: JSONObject): JSONObject
+}
+
+/** Compile-only Android Binder transport. Never include in external Core DEX. */
+object RiftHostExternalAppBinderV1 {
+    fun abiVersion(): Int = 1
+    @JvmStatic
+    fun identity(context: Context, packageName: String, serviceClass: String): JSONObject =
+        error("compile-only Android package signer")
+    @JvmStatic
+    fun execute(context: Context, packageName: String, serviceClass: String,
+                descriptor: String, request: String): JSONObject =
+        error("compile-only external Android Binder transport")
 }
 
 /**

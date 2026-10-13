@@ -1,5 +1,9 @@
 # RiftOS Core ↔ RiftShell — canonical architecture (C1 series)
 
+## Current bridge checkpoint — optional Core v0.6.4, not yet booted
+
+The Android `:riftShell` native App Connections window calls authenticated `RiftCoreSurfaceIpcProvider.METHOD_SHELL_EXTERNAL_APP`; only the selected external Core implements `RiftCoreExternalAppConnectionsV1`, and v0.6.3 retains its unchanged V1 Core execution ABI. `RiftHostExternalAppBinderV1` handles Android app identity and Binder transaction transport while Core owns connection records and signer pins. Codynex-specific default attachment metadata lives in the Shell UI; external Editor compilation does not move into the APK. Core v0.6.4 DEX was independently compiled and SHA-verified, but selected Core remains v0.6.3. Manual Android host rebuild/install and Recovery selection are required before device testing. The older Codynex Bridge RAPP remains installed until the new direct path passes.
+
 ## Current selection — Core v0.6.3; v0.7 retired
 
 Core v0.6.3 is selected and running. The historical C07 sections below record temporary v0.7 device-selection/testing, **not** a current or fully qualified Core interface. v0.7 source, its optional system-service IPC and Builder compile route have been removed by request. Do not follow the old C07 stage/activate instructions. The existing signed host and saved manual Recovery backups remain unchanged pending user-manual APK rebuild.

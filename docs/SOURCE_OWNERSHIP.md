@@ -26,6 +26,10 @@ As of the post-#715 APK legacy-language cleanup, Gradle packages **none** of `sr
 | --- | --- |
 | `external-components/HostAbiCompileOnly.kt` | `docs/systems/android-host/PROTECTED_COMPONENT_FORMAT.md` |
 | `external-components/IndependentCoreV1.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` |
+| `external-components/IndependentCoreV063.kt` | `external-components/README.md` + `docs/systems/core-shell/README.md` |
+| `external-components/IndependentCoreV064.kt` | `external-components/README.md` + `docs/systems/core-shell/README.md` |
+| `external-components/compile-core-v063.json` | `docs/systems/build-validation/README.md` |
+| `external-components/compile-core-v064.json` | `docs/systems/build-validation/README.md` |
 | `external-components/IndependentRappSessionsV1.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/core-shell/README.md` |
 | `external-components/ExternalRiftAppAbi.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
 | `external-components/ExternalRiftRappJsonAdapter.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
@@ -106,6 +110,7 @@ As of the post-#715 APK legacy-language cleanup, Gradle packages **none** of `sr
 | `android/app/src/main/java/com/riftos/app/RiftManualRecoveryInstaller.kt` | `docs/systems/android-host/SIMPLE_BOOTSTRAP_RECOVERY_LOCK.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftBootstrapHost.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftHostComponentAbiV1.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` |
+| `android/app/src/main/java/com/riftos/app/RiftHostExternalAppBinderV1.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCoreCandidateSwitch.kt` | `docs/systems/android-host/README.md` + `docs/systems/android-host/E1_CORE_CANDIDATE.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftCoreRecoveryDiagnostics.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
 | `android/app/src/main/java/com/riftos/app/RiftShellCrashDiagnostics.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` |

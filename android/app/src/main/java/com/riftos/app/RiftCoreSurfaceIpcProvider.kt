@@ -36,6 +36,7 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
         const val METHOD_SHELL_FOCUS = "shell.focus"
         const val METHOD_SHELL_EVENT = "shell.event"
         const val METHOD_SHELL_EXECUTE = "shell.execute"
+        const val METHOD_SHELL_EXTERNAL_APP = "shell.external-app"
         const val METHOD_SHELL_INSTALL = "shell.install"
         const val METHOD_SHELL_UNINSTALL = "shell.uninstall"
         const val METHOD_SHELL_UI_POLL = "shell.ui.poll"
@@ -236,6 +237,31 @@ class RiftCoreSurfaceIpcProvider : ContentProvider() {
                     "status" -> RiftCoreAdminConsent.status(ctx)
                     else -> error("Core admin consent action not supported")
                 }.put("corePid", Process.myPid())
+            }
+            METHOD_SHELL_EXTERNAL_APP -> {
+                // Authenticated production :riftShell Binder/PID check applies.
+                // The selected independent Core owns the connection registry,
+                // pinned signer, path validation and every external operation.
+                require(id.isEmpty()) { "Core app connection forbids caller actor" }
+                val raw = extras?.getString("connectionRequest")
+                    ?: error("External app connection request missing")
+                require(raw.toByteArray(Charsets.UTF_8).size in 1..(24 * 1024)) {
+                    "Core external app connection request too large"
+                }
+                val input = JSONObject(raw)
+                require(input.getString("schema") ==
+                    "riftos.core.app-connection-request/1") {
+                    "Invalid Core external app connection request"
+                }
+                val result = RiftHostCoreComponents.externalAppConnections()
+                    .appConnectionRequest(ctx, input)
+                require(result.getString("schema") ==
+                    "riftos.core.app-connection-result/1") {
+                    "Selected Core returned wrong external app result"
+                }
+                JSONObject().put("schema", "riftos.core.shell-control/1")
+                    .put("corePid", Process.myPid())
+                    .put("externalAppResult", result)
             }
             METHOD_SHELL_EXECUTE -> {
                 val command = id
