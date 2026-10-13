@@ -1,5 +1,9 @@
 # Build and Validation System
 
+## 2026-10-12 — Kotlin compilation fix for 7bfadd3b worker run
+
+Manual worker run `38333252746` (RiftOS source `7bfadd3b0842`) passed source checks and Gradle source validation, but `:app:compileReleaseKotlin` failed at `MainActivity.kt:96:61`: `No value passed for parameter 'core'`. The optional 0.6.4 App Connections UI had added a mandatory `RiftShellCoreClient` to `RiftNativeWorkspaceApps`; the production `RiftShellActivity` passed it, while legacy `MainActivity` still used the two-argument constructor. The legacy call now supplies `RiftShellCoreClient(applicationContext)`, without changing the production caller or the selected Core. `scripts/test-external-components.mjs` explicitly guards both constructor call sites in the normal `npm run check:transport` source checks. This is a targeted source fix, not yet a green Gradle build or on-device proof.
+
 ## 2026-10-12 — Build failure e21da5d8: reconcile external Editor visibility
 
 Manual Builder run `38331033067` failed before Gradle at the old C0.2 manifest ban on `com.codynex.editor`, despite the new v0.6.4 Binder host requiring exactly that package visibility. The independently executed `scripts/validate-rift-wiring.mjs` contained the same obsolete blanket ban. Both now preserve the prohibition on retired Rift++ project-editor visibility, while explicitly allowing the **installed external Codynex Editor** solely for its optional Binder endpoint. This does not embed Codynex source, compiler or runtime in RiftOS. The standalone v0.6.4 DEX remains built but unselected; retain v0.6.3 and Recovery backup. This patch is source-level; only a new user-triggered manual APK build can prove the fix.

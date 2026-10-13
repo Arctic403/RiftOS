@@ -253,6 +253,7 @@ assert.match(producer,/'RiftCoreExternalAppConnectionsV1\.class'/);
 const appBinder=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftHostExternalAppBinderV1.kt',root),'utf8');
 const workspaceUi=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftNativeWorkspaceApps.kt',root),'utf8');
 const shellActivity=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftShellActivity.kt',root),'utf8');
+const mainActivity=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/MainActivity.kt',root),'utf8');
 const shellClient=fs.readFileSync(new URL('android/app/src/main/java/com/riftos/app/RiftShellCoreClient.kt',root),'utf8');
 for(const marker of ['fun identity(context: Context','fun execute(context: Context',
  'binder.transact(IBinder.FIRST_CALL_TRANSACTION',
@@ -267,6 +268,11 @@ assert.match(verifier,/Lcom\/riftos\/app\/RiftHostExternalAppBinderV1;/);
 assert.match(shellClient,/fun externalAppRequest\(request: JSONObject\): JSONObject/);
 assert.match(workspaceUi,/fun openConnections\(\): JSONObject/);
 assert.match(workspaceUi,/sendFileToConnectedEditor\(display\)/);
+// CI compileReleaseKotlin regression from manual run 38333252746:
+ // The optional Core connection UI changed this native workspace constructor
+ // from two to three arguments; both Activity callers must track it.
+assert.match(mainActivity,/RiftNativeWorkspaceApps\(\s*this, nativeDesktop, RiftShellCoreClient\(applicationContext\)\s*\)/);
+assert.match(shellActivity,/RiftNativeWorkspaceApps\(this, desktop, core\)/);
 assert.match(shellActivity,/Triple\("connections", "App Connections"/);
 assert.match(manifest,/<package android:name="com\.codynex\.editor"/);
 // Preserve selected Core V1/0.6.3 and authenticated Shell IPC invariants.

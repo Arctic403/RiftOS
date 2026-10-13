@@ -93,7 +93,9 @@ class MainActivity : Activity() {
         )
         browserAppHost = RiftBrowserAppHost(this, nativeDesktop)
         nativeSystemApps = RiftNativeSystemApps(this, nativeDesktop, RiftMcpRuntime.nativeShell(this))
-        nativeWorkspaceApps = RiftNativeWorkspaceApps(this, nativeDesktop)
+        nativeWorkspaceApps = RiftNativeWorkspaceApps(
+            this, nativeDesktop, RiftShellCoreClient(applicationContext)
+        )
         rappHost = RiftRappHost(this, nativeDesktop, ::populateNativeLauncher)
 
         populateNativeLauncher()
