@@ -1,276 +1,32 @@
-# RiftOS Source Documentation Ownership
+# Source ownership — Android host only
 
-This ledger assigns implementation/build/test/reference source files to the README responsible for documenting them. Ownership does **not** imply that a source is packaged, live, verified, trusted or device-proven. Runtime activation must be established from current build/source wiring.
+RiftOS-main is a platform implementation, not a monorepo for editor, language, AI, component, web, or build-provider projects.
 
-As of the post-#715 APK legacy-language cleanup, Gradle packages **none** of `src/riftpp-core.js`, `src/riftvm.js`, or `src/semnexis-bootstrap.js`; these remain reference and independent compiler test sources, not base APK assets. Other `src/` entries are retained reference/test/migration sources unless a later audit proves otherwise. `scripts/validate-rift-docs.mjs` checks that every maintained source has a documentation owner.
-
-## Root/build sources
-
-| Source | Owner |
+| System | Source owner |
 | --- | --- |
-| `index.html` | `docs/systems/boot/README.md` + `docs/systems/shell-ui/README.md` |
-| `styles.css` | `docs/systems/shell-ui/README.md` + `docs/systems/desktop/README.md` |
-| `package.json` | `docs/systems/build-validation/README.md` |
-| `android/build.gradle.kts` | `docs/systems/build-validation/README.md` |
-| `android/settings.gradle.kts` | `docs/systems/build-validation/README.md` |
-| `android/gradle.properties` | `docs/systems/build-validation/README.md` |
-| `android/app/build.gradle.kts` | `docs/systems/build-validation/README.md` + `docs/systems/engine/README.md` |
-| `android/app/src/main/AndroidManifest.xml` | `docs/systems/android-host/README.md` + `docs/systems/riftllm-bridge/README.md` + `docs/systems/engine/README.md` |
-| `android/app/src/main/res/values/styles.xml` | `docs/systems/android-host/README.md` + `docs/systems/shell-ui/README.md` |
-| `android/app/src/main/res/xml/vortex_agent_accessibility.xml` | `docs/systems/android-host/README.md` + `docs/systems/vortex-agent/README.md` |
-| `android/riftos-debug.keystore.b64` | `docs/systems/build-validation/README.md` (legacy signing input; policy-controlled) |
+| Android app host, IPC, binder transport, RiftFS, installer, desktop/embedded Shell, Recovery | `/D:/Workspace/RiftOS-main/android` |
+| External Core and optional graphical Shell source/recipes/component builder | `/D:/Workspace/RiftComponents` |
+| Cloudflare remote MCP relay | `/D:/Workspace/RiftMcpRelay` |
+| Legacy web prototype and historical Node contract tests | `/D:/Workspace/RiftOS-LegacyWeb` |
+| Hosted compile/pack/sign orchestrator | `/D:/Workspace/RiftBuild-Hosted` |
+| Rift++ language and editor tooling | `/D:/Workspace/rift++` |
+| Codynex editor/compiler/VM and Android bridge | `/D:/Workspace/Codynex`, `/D:/Workspace/Codynex-RiftOS-Bridge` |
+| RiftLLM application and specialist integrations | `/D:/Workspace/RiftLLM` |
+| Semnexis compiler, fixtures and proof programs | `/D:/Workspace/Semnexis` |
+| Vortex agent/tool documentation and engine | `/D:/Workspace/Vortex3d` |
 
-## Independently compiled external Core/Shell (NOT signed APK Gradle inputs)
+## Rules
 
-| Source | Owner |
-| --- | --- |
-| `external-components/HostAbiCompileOnly.kt` | `docs/systems/android-host/PROTECTED_COMPONENT_FORMAT.md` |
-| `external-components/IndependentCoreV1.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` |
-| `external-components/IndependentCoreV063.kt` | `external-components/README.md` + `docs/systems/core-shell/README.md` |
-| `external-components/IndependentCoreV064.kt` | `external-components/README.md` + `docs/systems/core-shell/README.md` |
-| `external-components/compile-core-v063.json` | `docs/systems/build-validation/README.md` |
-| `external-components/compile-core-v064.json` | `docs/systems/build-validation/README.md` |
-| `external-components/IndependentRappSessionsV1.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/core-shell/README.md` |
-| `external-components/ExternalRiftAppAbi.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
-| `external-components/ExternalRiftRappJsonAdapter.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
-| `external-components/ExternalRiftRappRiftppGenericAdapter.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
-| `external-components/ExternalRiftRappRiftppWs15Adapter.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
-| `external-components/ExternalRiftCorePackageEvents.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
-| `external-components/ExternalRiftCorePackageGrants.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
-| `external-components/ExternalRiftVolumePaths.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
-| `external-components/IndependentRappPackagesV1.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
-| `external-components/IndependentRappEffectsV1.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
-| `external-components/IndependentRappSigningV1.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `external-components/README.md` |
-| `external-components/IndependentGraphicalShellV1.kt` | `docs/systems/core-shell/README.md` |
-| `external-components/IndependentGraphicalShellV2.kt` | `docs/systems/core-shell/README.md` + `external-components/README.md` |
-| `external-components/runtime.js` | `docs/systems/build-validation/README.md` |
-| `external-components/riftapp.json` | `docs/systems/android-host/PROTECTED_COMPONENT_FORMAT.md` |
-| `external-components/riftbuild-hot.json` | `docs/systems/build-validation/README.md` |
+- **Only reusable host capabilities stay in RiftOS**. Component code belongs to an independently compiled project, not packaged in the host.
+- Independent component builder uses project `/D:/Workspace/RiftComponents` and publishes manually staged DEX candidates to `/D:/Builds/Components`. APK host does not automatically select them.
+- Cloudflare relay and older web prototype are separate and not part of the Android source set.
+- Generic host tests belong with Android; project-specific proof/tests belong to their project. Historical Node tests have been moved out and are not assumed to pass unchanged.
+- Existing Codynex App Connections UI, RiftLLM developer/training functions, Vortex agent/bridge client, and Rift++ interpreter/RAPP adapters still have **live project-specific Android implementations**. They cannot be deleted until generic transport/provider replacement and signed-APK regression testing preserve the installed workflows.
+- Previously proved Core v0.6.4 / Recovery v0.6.3 and the current embedded Shell must be preserved until replacement candidates are signed and device-proven.
+- No direct GitHub import or push for Codynex. Local RiftGit rules remain in force.
 
-## JavaScript source (`src/`; ownership is separate from APK packaging)
+## 2026-10-12 cleanup
 
-| Source | Owner |
-| --- | --- |
-| `src/riftandroid-entry.js` | `docs/systems/boot/README.md` |
-| `src/riftandroid-platform.js` | `docs/systems/android-host/README.md` |
-| `src/riftandroid-preload.js` | `docs/systems/boot/README.md` |
-| `src/riftapps-files.js` | `docs/systems/apps/README.md` |
-| `src/riftapps.js` | `docs/systems/apps/README.md` |
-| `src/riftcore.js` | `docs/systems/kernel/README.md` + `docs/systems/engine/README.md` + `docs/systems/riftfs/README.md` + `docs/systems/chat-handoff/README.md` + `docs/systems/dev-lab/README.md` |
-| `src/riftdesktop-android-compat.js` | `docs/systems/desktop/README.md` |
-| `src/riftdesktop-native-compat.js` | `docs/systems/desktop/README.md` |
-| `src/riftdesktop-android.css` | `docs/systems/desktop/README.md` |
-| `src/riftdesktop-android.js` | `docs/systems/desktop/README.md` |
-| `src/riftdesktop-window-host.js` | `docs/systems/desktop/README.md` |
-| `src/riftgit.js` | `docs/systems/git/README.md` |
-| `src/riftvault.js` | `docs/systems/riftvault/README.md` |
-| `src/riftrepo.js` | `docs/systems/riftrepo/README.md` |
-| `src/riftmemory-control.js` | `docs/systems/riftmemory/README.md` |
-| `src/riftbuild.js` | `docs/systems/riftbuild/README.md` |
-| `src/riftlocal-platform.js` | `docs/systems/riftrepo/README.md` + `docs/systems/riftvault/README.md` + `docs/systems/riftbuild/README.md` + `docs/systems/riftmemory/README.md` |
-| `src/riftllm-bridge.js` | `docs/systems/riftllm-bridge/README.md` |
-| `src/riftdevlab.js` | `docs/systems/dev-lab/README.md` + `docs/systems/workspace/README.md` |
-| `src/riftmcp-system.js` | `docs/systems/mcp/README.md` |
-| `src/riftos.js` | `docs/systems/shell-ui/README.md`, `docs/systems/boot/README.md`, `docs/systems/riftllm-bridge/README.md`, `docs/systems/files-app/README.md`, `docs/systems/settings/README.md`, `docs/systems/shell/README.md`, `docs/systems/browser/README.md`, `docs/systems/chat-handoff/README.md`, `docs/systems/dev-lab/README.md`, `docs/systems/vortex-agent/README.md`, `docs/systems/riftrepo/README.md`, `docs/systems/riftvault/README.md`, `docs/systems/riftbuild/README.md`, `docs/systems/riftmemory/README.md` |
-| `src/riftrt.js` | `docs/systems/riftrt/README.md` + `docs/systems/riftrt/engines/README.md` + engine-specific READMEs under `docs/systems/riftrt/engines/` |
-| `src/riftvm.js` | `docs/systems/riftrt/engines/rift-vm/README.md` + `docs/systems/engine/README.md` |
-| `src/riftpp-core.js` | `docs/systems/riftpp-core/README.md` + `docs/systems/engine/README.md` |
-| `src/semnexis-bootstrap.js` | `docs/systems/semnexis-bootstrap/README.md` + `docs/systems/engine/README.md` |
-| `src/riftruntime.js` | `docs/systems/runtime-capabilities/README.md` + `docs/systems/engine/README.md` |
-| `src/riftshell-batch.js` | `docs/systems/shell/README.md` + `docs/systems/chat-handoff/README.md` |
-| `src/riftworkspace-android-adapter.js` | `docs/systems/workspace/README.md` |
-| `src/riftworkspace-live-host.js` | `docs/systems/workspace/live/README.md` |
-| `src/riftworkspace-web.js` | `docs/systems/workspace/README.md` |
+Moved external components, MCP relay, JavaScript legacy source and tests, Rift++ samples, Semnexis test fixtures, and project-specific docs to their owner workspaces. Deleted bootstrap proof source/workflow, empty proofs/evidence/examples/apps folders, retired RiftCLI docs and superseded device-test proof files. The root README and roadmap now describe the live host rather than ancient proof history.
 
-## Android Kotlin
-
-| Source | Owner |
-| --- | --- |
-| `android/app/src/main/java/com/riftos/app/RiftBrowserAndroidWebViewEngine.kt` | `docs/systems/browser/engine/README.md` + `docs/systems/browser/engine/android-webview/README.md` |
-| `android/app/src/main/java/com/riftos/app/MainActivity.kt` | `docs/systems/android-host/README.md` + `docs/systems/engine/README.md` + `docs/systems/boot/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftBrowserEngine.kt` | `docs/systems/browser/engine/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftBrowserMcpAppBridge.kt` | `docs/systems/browser/mcp-compat/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftBrowserWindow.kt` | `docs/systems/browser/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftLocalBuildCapability.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftJvmDexService.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftBuildManagedToolchains.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftNativeBufferCompilerService.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftManagedJvmToolService.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftBuildPlatformTools.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` + `docs/systems/shell/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftAppDiagnosticBridge.kt` | `docs/systems/diagnostics/README.md` + `docs/systems/riftbuild/README.md` + `docs/systems/android-host/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftAppAbi.kt` | `docs/systems/riftbuild/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftRappRiftppWs15Adapter.kt` | `docs/systems/riftbuild/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftRappRiftppGenericAdapter.kt` | `docs/systems/riftbuild/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftRappJsonAdapter.kt` | `docs/systems/riftbuild/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftRappQuickJsExecutor.kt` | `docs/systems/riftbuild/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftExternalRuntimeProviders.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreApplication.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftManualRecoveryActivity.kt` | `docs/systems/android-host/SIMPLE_BOOTSTRAP_RECOVERY_LOCK.md` + `docs/systems/android-host/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftManualRecoveryStore.kt` | `docs/systems/android-host/SIMPLE_BOOTSTRAP_RECOVERY_LOCK.md` + `docs/systems/android-host/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftManualRecoveryInstaller.kt` | `docs/systems/android-host/SIMPLE_BOOTSTRAP_RECOVERY_LOCK.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftBootstrapHost.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftHostComponentAbiV1.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftHostExternalAppBinderV1.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreCandidateSwitch.kt` | `docs/systems/android-host/README.md` + `docs/systems/android-host/E1_CORE_CANDIDATE.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreRecoveryDiagnostics.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftShellCrashDiagnostics.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftComponentReleaseLedger.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftProtectedComponentManifest.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftProtectedDexVerifier.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftProtectedComponentInstaller.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/android-host/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftProtectedRevisionRecovery.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/core-shell/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreRecoverySupervisorService.kt` | `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftBootstrapComponentStore.kt` | `docs/systems/android-host/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |
-| `android/app/src/main/java/com/riftos/app/RiftBootstrapProbeService.kt` | `docs/systems/android-host/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreModuleManifest.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreModuleStore.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreModuleActivation.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftGenericModuleService.kt` | `docs/systems/android-host/README.md` + `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` |
-| `bootstrap/probe-proof/ProbeV1.java` | `bootstrap/probe-proof/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |
-| `bootstrap/probe-proof/build-probe.sh` | `bootstrap/probe-proof/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |
-| `.github/workflows/build-bootstrap-probe.yml` | `bootstrap/probe-proof/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreRuntime.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreAppSessions.kt` | `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreAppSurfaces.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreInputFocus.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreAppLifecycle.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftAlternateShellClient.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftAlternateGraphicalShellActivity.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreSurfaceIpcProvider.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftRemoteShellProbeActivity.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreShellLaunchQueue.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreShellRemoteUiBroker.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreShellWindowBridge.kt` | `docs/systems/core-shell/README.md` + `docs/systems/desktop/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreShellRecovery.kt` | `docs/systems/core-shell/README.md` + `docs/systems/desktop/README.md` + `docs/systems/android-host/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftRemoteShellExecutor.kt` | `docs/systems/core-shell/README.md` + `docs/systems/shell/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftRemoteShellUiClient.kt` | `docs/systems/core-shell/README.md` + `docs/systems/browser/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftShellActivity.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/README.md` + `docs/systems/desktop/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftShellComponentAbiV1.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftShellCandidateSwitch.kt` | `docs/systems/core-shell/README.md` + `docs/systems/android-host/EXTERNAL_CORE_SHELL_ROADMAP.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftShellCoreClient.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftShellRappHost.kt` | `docs/systems/core-shell/README.md` + `docs/systems/desktop/README.md` + `docs/systems/riftbuild/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreAppExecutor.kt` | `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreShellCapabilityRequests.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCorePackageEvents.kt` | `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCorePackageGrants.kt` | `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreSystemCapabilities.kt` | `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreAdminConsent.kt` | `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreAdminRollbackProof.kt` | `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` + `docs/systems/android-host/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftCoreAdminRegistryProof.kt` | `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftRappCapabilityBroker.kt` | `docs/systems/riftbuild/README.md` + `docs/systems/core-shell/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftRappShellCapabilityClient.kt` | `docs/systems/core-shell/README.md` + `docs/PUBLIC_SURFACES.md` |
-| `android/app/src/main/java/com/riftos/app/RiftRappAbsoluteView.kt` | `docs/systems/riftbuild/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftRappManager.kt` | `docs/systems/riftbuild/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftRappHost.kt` | `docs/systems/riftbuild/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftMcpActivity.kt` | `docs/systems/mcp/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftMcpOperationJournal.kt` | `docs/systems/mcp/README.md` + `docs/systems/mcp/server/README.md` + `docs/systems/mcp/relay/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftMcpRelayClient.kt` | `docs/systems/mcp/relay/README.md` + `docs/systems/debugger/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftMcpRuntime.kt` | `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` + `docs/systems/boot/README.md` + `docs/systems/debugger/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftMcpServer.kt` | `docs/systems/mcp/server/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftBoundedAsync.kt` | `docs/systems/mcp/server/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/engine/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftDebugHub.kt` | `docs/systems/debugger/README.md` + `docs/systems/mcp/README.md` + `docs/systems/mcp/server/README.md` + `docs/systems/mcp/tool-host/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftNativeDesktop.kt` | `docs/systems/desktop/README.md` + `docs/systems/android-host/README.md` + `docs/systems/engine/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftNativeSystemApps.kt` | `docs/systems/shell-ui/README.md` + `docs/systems/shell/README.md` + `docs/systems/desktop/README.md` + `docs/systems/engine/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftNativeAdminApprovals.kt` | `docs/systems/shell-ui/README.md` + `docs/systems/desktop/README.md` + `docs/systems/core-shell/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftBrowserAppHost.kt` | `docs/systems/riftrt/README.md` + `docs/systems/apps/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftBrowserRendererCrashGuard.kt` | `docs/systems/android-host/README.md` + `docs/systems/diagnostics/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftVolumePaths.kt` | `docs/systems/riftfs/README.md` + `docs/systems/engine/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftLlmDevClient.kt` | `docs/systems/riftllm-bridge/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftLocalAgentBatch.kt` | `docs/systems/vortex-agent/README.md` + `docs/systems/mcp/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftBrowserPreviewActivity.kt` | `docs/systems/preview/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftProjectExporter.kt` | `docs/systems/mcp/project-exporter/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftRelaySettings.kt` | `docs/systems/mcp/relay/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftSecretStore.kt` | `docs/systems/secrets/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftNativeShell.kt` | `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` + `docs/systems/kernel/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftShellExecutor.kt` | `docs/systems/shell/README.md` + `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftNativeShellServices.kt` | `docs/systems/shell/README.md` + `docs/systems/riftllm-bridge/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/vortex-agent/README.md` + `docs/systems/engine/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftNativeGit.kt` | `docs/systems/git/README.md` + `docs/systems/secrets/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftNativeWorkspaceApps.kt` | `docs/systems/files-app/README.md` + `docs/systems/settings/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/workspace/live/README.md` + `docs/systems/engine/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftNativeDevLab.kt` | `docs/systems/dev-lab/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftMcpEventBus.kt` | `docs/systems/mcp/relay/README.md` + `docs/systems/relay-service/README.md` + `docs/systems/debugger/README.md` |
-| `android/app/src/main/cpp/CMakeLists.txt` | `docs/systems/riftbuild/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftTrainDataTaskRunner.kt` | `docs/systems/riftllm-bridge/README.md` + `docs/systems/shell/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftToolHost.kt` | `docs/systems/mcp/tool-host/README.md` + `docs/systems/engine/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftToolSandbox.kt` | `docs/systems/mcp/sandbox/README.md` + `docs/systems/engine/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftSourceIntelligenceV2.kt` | `docs/systems/mcp/sandbox/README.md` + `docs/systems/workspace/live/README.md` + `docs/systems/workspace/README.md` + `docs/systems/engine/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
-| `android/app/src/main/java/com/riftos/app/RiftVortexBridgeClient.kt` | `docs/systems/vortex-bridge/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftVortexLocalAgent.kt` | `docs/systems/vortex-agent/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftChatHandoff.kt` | `docs/systems/chat-handoff/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftDiffEngineV2.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/workspace/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftFileIdentityV2.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/workspace/README.md` + `docs/systems/build-validation/README.md` + `docs/systems/mcp/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftPatchManifestV1.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/workspace/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
-| `android/app/src/main/java/com/riftos/app/RiftPatchSessions.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/workspace/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/shell/README.md` + `docs/systems/files-app/README.md` + `docs/systems/dev-lab/README.md` + `docs/systems/git/README.md` + `docs/systems/build-validation/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftWorkspaceRecords.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/mcp/README.md` + `docs/systems/engine/README.md` |
-| `android/app/src/main/java/com/riftos/app/RiftWorkspaceWatcher.kt` | `docs/systems/workspace/live/README.md` + `docs/systems/engine/README.md` + `docs/systems/boot/README.md` |
-
-## Browser-injected assets
-
-| Source | Owner |
-| --- | --- |
-| `android/app/src/main/assets/riftbrowser-mcp-app.js` | `docs/systems/browser/mcp-compat/README.md` |
-| `android/app/src/main/assets/adapters/ai-adapter-registry.js` | `docs/systems/browser/ai-adapters/README.md` |
-
-## Workspace Records
-
-| Source | Owner |
-| --- | --- |
-| `workspace-live/index.html` | `docs/systems/workspace/live/README.md` |
-| `workspace-live/style.css` | `docs/systems/workspace/live/README.md` |
-| `workspace-live/app.js` | `docs/systems/workspace/live/README.md` |
-
-## Relay service
-
-| Source | Owner |
-| --- | --- |
-| `relay/src/index.js` | `docs/systems/relay-service/README.md` |
-| `relay/package.json` | `docs/systems/relay-service/README.md` |
-| `relay/wrangler.jsonc` | `docs/systems/relay-service/README.md` |
-
-## Validation/test sources
-
-| Source | Owner |
-| --- | --- |
-| `scripts/test-rift-ai-adapters.mjs` | `docs/systems/build-validation/README.md` + AI adapters |
-| `scripts/test-rift-app-import.mjs` | `docs/systems/build-validation/README.md` + apps |
-| `scripts/test-e1-core-closure.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/android-host/BOOTSTRAP_HOST_MIGRATION.md` |
-| `scripts/test-external-components.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/android-host/PROTECTED_COMPONENT_FORMAT.md` |
-| `scripts/test-external-shell-v2.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/core-shell/README.md` |
-| `scripts/test-simple-recovery.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/android-host/SIMPLE_BOOTSTRAP_RECOVERY_LOCK.md` |
-| `scripts/test-rift-dev-lab.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/dev-lab/README.md` |
-| `scripts/test-rift-raw-protocol.mjs` | `docs/systems/build-validation/README.md` + browser MCP compatibility |
-| `scripts/test-rift-workspace-records.mjs` | `docs/systems/build-validation/README.md` + workspace records |
-| `scripts/test-rift-diff-engine-v2.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/workspace/live/README.md` |
-| `scripts/test-rift-file-identity-v2.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/workspace/live/README.md` |
-| `scripts/test-rift-patch-sessions.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/workspace/live/README.md` + `docs/systems/mcp/sandbox/README.md` |
-| `scripts/test-rift-patch-manifest-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/workspace/live/README.md` + `docs/PATCH_HISTORY.md` |
-| `scripts/test-rift-semantic-impact-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/sandbox/README.md` + `docs/systems/workspace/live/README.md` + `docs/PATCH_HISTORY.md` |
-| `scripts/test-rift-mcp-event-channel.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/relay/README.md` + `docs/systems/debugger/README.md` + `docs/PATCH_HISTORY.md` |
-| `scripts/test-rift-local-agent-batch.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/vortex-agent/README.md` + `docs/systems/mcp/README.md` |
-| `scripts/test-rift-mcp-operation-journal.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/README.md` + `docs/systems/mcp/server/README.md` + `docs/PATCH_HISTORY.md` |
-| `scripts/test-rift-debug-hub.mjs` | `docs/systems/debugger/README.md` + `docs/systems/build-validation/README.md` + `docs/PATCH_HISTORY.md` |
-| `scripts/test-rift-shell-batch.mjs` | `docs/systems/build-validation/README.md` + shell |
-| `scripts/test-rift-shell-git.mjs` | `docs/systems/build-validation/README.md` + Git |
-| `scripts/test-rift-path-compat.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftfs/README.md` + shell/build/repo/Git/Vault/Memory/Dev Lab/RiftLLM/Files owners |
-| `scripts/test-riftbuild-native.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftbuild/README.md` + `docs/PATCH_HISTORY.md` |
-| `scripts/test-rapp-payload-limits.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftbuild/README.md` |
-| `scripts/test-rift-local-platform.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftrepo/README.md` + `docs/systems/riftvault/README.md` + `docs/systems/riftbuild/README.md` + `docs/systems/riftmemory/README.md` |
-| `scripts/test-riftllm-bridge.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftllm-bridge/README.md` |
-| `scripts/test-riftllm-text-encoding-bridge.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftllm-bridge/README.md` |
-| `scripts/test-riftllm-training-bridge.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftllm-bridge/README.md` |
-| `scripts/validate-rift-wiring.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/mcp/relay/README.md` + `docs/systems/debugger/README.md` |
-| `scripts/validate-rift-transport.mjs` | `docs/systems/build-validation/README.md` |
-| `scripts/validate-rift-docs.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftmemory/N2_FEDERATED_MEMORY_ROADMAP.md` |
-
-| `scripts/test-rift-shell-bridge.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/shell/README.md` |
-| `scripts/test-riftllm-corpus.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftllm-bridge/README.md` |
-| `scripts/test-rift-plus-plus-core-v1.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftpp-core/README.md` |
-| `scripts/test-semnexis-bootstrap.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/semnexis-bootstrap/README.md` |
-| `scripts/test-semnexis-arm32-exec.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/semnexis-bootstrap/README.md` |
-| `scripts/test-semnexis-shell.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/semnexis-bootstrap/README.md` + `docs/systems/shell/README.md` |
-| `scripts/test-qjs-shell.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/shell/README.md` |
-| `scripts/test-riftpp-shell.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/shell/README.md` + `docs/systems/riftpp-core/README.md` |
-| `scripts/test-rift-vm.mjs` | `docs/systems/build-validation/README.md` + `docs/systems/riftrt/engines/rift-vm/README.md` |
-
-## Rule for new source
-
-When a new maintained implementation/reference source, browser asset, relay source, Workspace Records source or validation script is added, add its exact repository-relative path here and either assign it to an existing system README or create a new system/subsystem README. Runtime activation is a separate question. Documentation validation is intentionally strict so ownership cannot silently decay.
+**Build qualification is still pending.** The copy of the Android source tree was not rebuilt or installed by this source cleanup.

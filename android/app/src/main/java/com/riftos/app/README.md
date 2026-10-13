@@ -1,38 +1,32 @@
-# Native RiftOS Components
+# RiftOS Android application source ownership
 
-This package contains Android-side authorities and services. Keep class ownership narrow; do not solve a subsystem bug by duplicating its policy in another class.
+This directory is the **signed Android platform host**. It is not a home for individual app, compiler, language, cloud worker, or external component source code.
 
-| Component | Owner |
-| --- | --- |
-| `MainActivity.kt` | [`android-host`](../../../../../../../../docs/systems/android-host/README.md) |
-| `RiftNativeDesktop.kt` | [`desktop`](../../../../../../../../docs/systems/desktop/README.md) |
-| `RiftNativeSystemApps.kt` | [`shell-ui`](../../../../../../../../docs/systems/shell-ui/README.md) + [`shell`](../../../../../../../../docs/systems/shell/README.md) |
-| `RiftBrowserAppHost.kt` | [`riftrt`](../../../../../../../../docs/systems/riftrt/README.md) + [`apps`](../../../../../../../../docs/systems/apps/README.md) |
-| `RiftBrowserRendererCrashGuard.kt` | [`browser`](../../../../../../../../docs/systems/browser/README.md) + [`diagnostics`](../../../../../../../../docs/systems/diagnostics/README.md) |
-| `RiftVolumePaths.kt` | [`riftfs`](../../../../../../../../docs/systems/riftfs/README.md) |
-| `RiftNativeWorkspaceApps.kt`, `RiftNativeDevLab.kt` | [`files-app`](../../../../../../../../docs/systems/files-app/README.md) + [`dev-lab`](../../../../../../../../docs/systems/dev-lab/README.md) + [`settings`](../../../../../../../../docs/systems/settings/README.md) + [`workspace/live`](../../../../../../../../docs/systems/workspace/live/README.md) |
-| `RiftNativeGit.kt` | [`git`](../../../../../../../../docs/systems/git/README.md) + [`secrets`](../../../../../../../../docs/systems/secrets/README.md) |
-| `RiftBrowserWindow.kt` | [`browser`](../../../../../../../../docs/systems/browser/README.md) |
-| `RiftLocalBuildCapability.kt`, `RiftJvmDexService.kt`, `RiftBuildManagedToolchains.kt`, `RiftManagedJvmToolService.kt`, `RiftNativeBufferCompilerService.kt`, `RiftBuildPlatformTools.kt` | [`riftbuild`](../../../../../../../../docs/systems/riftbuild/README.md) + [`build-validation`](../../../../../../../../docs/systems/build-validation/README.md) |
-| `RiftAppAbi.kt`, `RiftRappManager.kt`, `RiftRappHost.kt`, `RiftRappAbsoluteView.kt`, `RiftRappRiftppAdapter.kt`, `RiftRappRiftppWs15Adapter.kt`, `RiftRappRiftppGenericAdapter.kt`, `RiftRappCapabilityBroker.kt` | [`riftbuild`](../../../../../../../../docs/systems/riftbuild/README.md) |
-| `RiftBrowserEngine.kt`, `RiftBrowserAndroidWebViewEngine.kt` | [`browser/engine`](../../../../../../../../docs/systems/browser/engine/README.md) |
-| `RiftBrowserMcpAppBridge.kt` | [`browser/mcp-compat`](../../../../../../../../docs/systems/browser/mcp-compat/README.md) |
-| `RiftMcpRuntime.kt`, `RiftMcpActivity.kt` | [`mcp`](../../../../../../../../docs/systems/mcp/README.md) |
-| `RiftMcpServer.kt`, `RiftMcpOperationJournal.kt`, `RiftBoundedAsync.kt` | [`mcp/server`](../../../../../../../../docs/systems/mcp/server/README.md) + [`mcp/sandbox`](../../../../../../../../docs/systems/mcp/sandbox/README.md) |
-| `RiftDebugHub.kt` | [`debugger`](../../../../../../../../docs/systems/debugger/README.md) + [`mcp`](../../../../../../../../docs/systems/mcp/README.md) |
-| `RiftToolHost.kt` | [`mcp/tool-host`](../../../../../../../../docs/systems/mcp/tool-host/README.md) |
-| `RiftToolSandbox.kt`, `RiftSourceIntelligenceV2.kt` | [`mcp/sandbox`](../../../../../../../../docs/systems/mcp/sandbox/README.md) + [`workspace/live`](../../../../../../../../docs/systems/workspace/live/README.md) |
-| `RiftMcpRelayClient.kt`, `RiftRelaySettings.kt` | [`mcp/relay`](../../../../../../../../docs/systems/mcp/relay/README.md) |
-| `RiftProjectExporter.kt` | [`mcp/project-exporter`](../../../../../../../../docs/systems/mcp/project-exporter/README.md) |
-| `RiftNativeShell.kt`, `RiftShellExecutor.kt`, `RiftNativeShellServices.kt` | [`shell`](../../../../../../../../docs/systems/shell/README.md) + [`mcp`](../../../../../../../../docs/systems/mcp/README.md) |
-| C0.1 project editor shell cleanup | [`public surfaces`](../../../../../../../../docs/PUBLIC_SURFACES.md) + [`shell`](../../../../../../../../docs/systems/shell/README.md) (editor bridge clients removed from the OS; generic platform interfaces retained) |
-| `RiftDiffEngineV2.kt`, `RiftFileIdentityV2.kt`, `RiftPatchManifestV1.kt`, `RiftPatchSessions.kt`, `RiftWorkspaceRecords.kt`, `RiftWorkspaceWatcher.kt` | [`workspace/live`](../../../../../../../../docs/systems/workspace/live/README.md) + [`workspace`](../../../../../../../../docs/systems/workspace/README.md) |
-| `RiftBrowserPreviewActivity.kt` | [`preview`](../../../../../../../../docs/systems/preview/README.md) |
-| `RiftSecretStore.kt` | [`secrets`](../../../../../../../../docs/systems/secrets/README.md) |
-| `RiftVortexBridgeClient.kt` | [`vortex-bridge`](../../../../../../../../docs/systems/vortex-bridge/README.md) |
-| `RiftVortexLocalAgent.kt` | [`vortex-agent` + `riftos-agent`](../../../../../../../../docs/systems/vortex-agent/README.md) |
-| `RiftLlmDevClient.kt` | [`riftllm-bridge`](../../../../../../../../docs/systems/riftllm-bridge/README.md) |
-| `RiftLocalAgentBatch.kt` | [`vortex-agent`](../../../../../../../../docs/systems/vortex-agent/README.md) + [`mcp`](../../../../../../../../docs/systems/mcp/README.md) |
-| `RiftChatHandoff.kt` | [`chat-handoff`](../../../../../../../../docs/systems/chat-handoff/README.md) |
+## Generic runtime responsibilities
 
-`docs/SOURCE_OWNERSHIP.md` is the machine-validated complete ownership ledger.
+- Android lifecycle, desktop/embedded Shell surface, accessibility and input support.
+- RiftFS filesystem and generic sandboxed app/RAPP lifecycle.
+- External Core and graphical Shell component loaders and **manual Recovery**.
+- Generic Binder transport (`RiftHostExternalAppBinderV1.kt`), authenticated IPC and signer validation.
+- Generic signing/installation authorization and platform capabilities.
+- Host diagnostics and recovery safeguards, including a few older `*Proof*` classes **still imported by live Recovery/admin paths**. These are not disposable tests.
+
+## Pending decoupling (DO NOT DELETE until replaced)
+
+The current Android host still contains **active application-specific adapters**:
+- `RiftNativeWorkspaceApps.kt` has a Codynex Editor-specific App Connections form and Send label even though the external Core/host Binder interface is generic. Replace with a configurable generic external-app connection picker (same signer pin and user consent), then move Codynex-only UI into `Codynex-RiftOS-Bridge` if needed.
+- `RiftLlmDevClient.kt` and `RiftTrainDataTaskRunner.kt`, with calls in `RiftNativeShellServices.kt`, `RiftNativeWorkspaceApps.kt`, and `RiftNativeShell.kt`, remain tied to the RiftLLM developer API. Replace those with a generic provider/RAPP gate before removing/moving actual implementations to `RiftLLM`.
+- `RiftVortexBridgeClient.kt` and `RiftVortexLocalAgent.kt`, with callers in `RiftNativeShellServices.kt` and `RiftMcpRuntime.kt`, still implement Vortex-specific host bridges. These must migrate into the Vortex owner behind generic registered provider capabilities before deleting them.
+- Rift++-specific RAPP interpreter/adapters (`RiftRappRiftppGenericAdapter.kt`, `RiftRappRiftppWs15Adapter.kt`) are used by the generic RAPP host today; replace the language-dependent adapter with independent RAPP/VM support before extraction.
+- Old `*Proof*` component names may describe active rollback and admin paths. Follow references, don't delete by filename.
+
+This is an explicit open architecture item; no claim of a fully project-neutral APK is made until the Android source has been refactored and a signed/device regression passes.
+
+## External projects
+
+- Independent Core/Shell DEX, compiler manifests and critical component builder: `/D:/Workspace/RiftComponents`.
+- MCP Cloudflare Worker: `/D:/Workspace/RiftMcpRelay`.
+- Old JavaScript/browser host, snapshots, legacy tests: `/D:/Workspace/RiftOS-LegacyWeb`.
+- Apps, language compilers and proof fixtures belong in their respective `/D:/Workspace/<project>` directories.
+
+The installed device remains Core v0.6.4 external, Shell embedded until user-built updates are manually qualified.

@@ -268,9 +268,9 @@ class RiftNativeWorkspaceApps(
                             text = humanBytes(entry.size); setTextColor(MUTED); textSize = 10f; gravity = Gravity.CENTER_VERTICAL
                         }, LinearLayout.LayoutParams(dp(84), dp(40)))
                     }
-                    if (!isDirectory && (display.startsWith("/D:/Workspace/") ||
+                    if (display.startsWith("/D:/Workspace/") ||
                         display.startsWith("/D:/Projects/") ||
-                        display.startsWith("/D:/Documents/"))) {
+                        display.startsWith("/D:/Documents/")) {
                         row.addView(actionButton("Send") {
                             sendFileToConnectedEditor(display)
                         }, LinearLayout.LayoutParams(dp(65), dp(40)))
@@ -719,7 +719,8 @@ class RiftNativeWorkspaceApps(
     private fun runConnectionTask(label: String, request: JSONObject) {
         connectionOutput?.text = "$label…"
         runNativeTask(
-            timeoutMs = 120_000L,
+            timeoutMs = if (request.optString("operation") == "push")
+                600_000L else 120_000L,
             work = { core.externalAppRequest(request) },
             complete = { outcome ->
                 val result = outcome.value
@@ -739,9 +740,11 @@ class RiftNativeWorkspaceApps(
     private fun sendFileToConnectedEditor(display: String) {
         val normalized = RiftVolumePaths.normalizeDisplay(display)
         android.app.AlertDialog.Builder(activity)
-            .setTitle("Send file to Codynex Editor")
-            .setMessage("Transfer $normalized to the attached Codynex Editor workspace? " +
-                "A same-named file in the Editor may be replaced. Core verifies the remote SHA-256.")
+            .setTitle("Send file or folder to Codynex")
+            .setMessage("Transfer $normalized to your attached Editor? " +
+                "Files may replace a same-named file. Folders import as projects/<folder> " +
+                "without overwriting existing projects. Hidden folders and binary files " +
+                "are included; every file is SHA-256 verified. Requires Core v0.6.5.")
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Send") { _, _ ->
                 runConnectionTask("Send ${normalized.substringAfterLast('/')}",
@@ -765,7 +768,7 @@ class RiftNativeWorkspaceApps(
             setTextColor(ACCENT); textSize = 11f; typeface = Typeface.MONOSPACE
             setPadding(dp(8), dp(8), dp(8), dp(8))
             setTextIsSelectable(true)
-            text = "Core v0.6.4 required. Tap Attach Codynex after manual Core activation."
+            text = "Core v0.6.5 enables complete folder/repo transfer. Existing v0.6.4 remains file-only."
         }
         connectionOutput = output
         fun buttonRow(vararg actions: Pair<String, () -> Unit>) {

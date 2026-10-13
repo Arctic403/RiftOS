@@ -28,7 +28,7 @@ object RiftHostExternalAppBinderV1 {
     private val PACKAGE_NAME = Regex("^[a-zA-Z_][a-zA-Z0-9_]*(\\.[a-zA-Z_][a-zA-Z0-9_]*)+$")
 
     @JvmStatic
-    fun abiVersion(): Int = 1
+    fun abiVersion(): Int = 2
 
     /** Platform derives the identity from Android PackageManager; never from a caller claim. */
     @JvmStatic
@@ -142,6 +142,120 @@ object RiftHostExternalAppBinderV1 {
             }
         } finally {
             context.unbindService(serviceConnection)
+        }
+    }
+
+    /**
+     * Stream one bounded local file into the approved Binder endpoint without
+     * ever materializing it in JSON/Parcel memory. The caller (independent
+     * Core) owns source-tree policy, destination policy and signer pinning.
+     * Returns ONLY after remote stat verifies the complete byte count + SHA.
+     *
+     * The remote Editor already implements OPEN_WRITE at transaction 3.
+     */
+    @JvmStatic
+    fun streamFile(context: Context, packageName: String, serviceClass: String,
+                   descriptor: String, destination: String, source: java.io.File): JSONObject {
+        require(Thread.currentThread().name != "main") {
+            "External app streaming must run off the UI thread"
+        }
+        identity(context, packageName, serviceClass)
+        require(descriptor.length in 3..160 && descriptor.all {
+            it.isLetterOrDigit() || it == '.' || it == '_' || it == '-'
+        }) { "Invalid Binder stream contract" }
+        require(source.isFile && source.length() in 0L..(128L * 1024L * 1024L)) {
+            "Source must be a regular file at most 128 MiB"
+        }
+        require(destination.toByteArray(Charsets.UTF_8).size in 1..768) {
+            "Invalid remote file destination"
+        }
+        val bound = CountDownLatch(1)
+        val endpoint = java.util.concurrent.atomic.AtomicReference<IBinder?>(null)
+        val connection = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName, service: IBinder) {
+                if (name.packageName == packageName && name.className == serviceClass) {
+                    endpoint.set(service)
+                }
+                bound.countDown()
+            }
+            override fun onServiceDisconnected(name: ComponentName) { endpoint.set(null) }
+            override fun onNullBinding(name: ComponentName) { bound.countDown() }
+        }
+        val didBind = context.bindService(
+            Intent().setComponent(ComponentName(packageName, serviceClass)),
+            connection, Context.BIND_AUTO_CREATE)
+        require(didBind) { "External app stream Binder service could not be bound" }
+        try {
+            require(bound.await(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                "External app streaming service timed out"
+            }
+            val binder = endpoint.get() ?: error("External app returned no Binder")
+            val probe = Parcel.obtain()
+            val desc = Parcel.obtain()
+            try {
+                check(binder.transact(IBinder.INTERFACE_TRANSACTION, probe, desc, 0)) {
+                    "Streaming Binder descriptor unavailable"
+                }
+                require(desc.readString() == descriptor) {
+                    "Streaming Binder contract mismatch"
+                }
+            } finally {
+                desc.recycle()
+                probe.recycle()
+            }
+            val data = Parcel.obtain()
+            val reply = Parcel.obtain()
+            val digest = MessageDigest.getInstance("SHA-256")
+            var count = 0L
+            try {
+                data.writeInterfaceToken(descriptor)
+                data.writeString(destination)
+                check(binder.transact(IBinder.FIRST_CALL_TRANSACTION + 2, data, reply, 0)) {
+                    "External app rejected OPEN_WRITE stream"
+                }
+                reply.readException()
+                require(reply.readInt() == 1) {
+                    "External app did not provide write descriptor"
+                }
+                val descriptorFd = android.os.ParcelFileDescriptor.CREATOR
+                    .createFromParcel(reply)
+                android.os.ParcelFileDescriptor.AutoCloseOutputStream(descriptorFd).use { output ->
+                    source.inputStream().buffered(64 * 1024).use { input ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val size = input.read(buffer)
+                            if (size < 0) break
+                            if (size == 0) continue
+                            output.write(buffer, 0, size)
+                            digest.update(buffer, 0, size)
+                            count += size
+                            require(count <= 128L * 1024L * 1024L) {
+                                "External app stream exceeded 128 MiB"
+                            }
+                        }
+                        output.flush()
+                    }
+                }
+            } finally {
+                reply.recycle()
+                data.recycle()
+            }
+            val sha = digest.digest().joinToString("") {
+                "%02x".format(it.toInt() and 0xff)
+            }
+            val stat = execute(context, packageName, serviceClass, descriptor,
+                JSONObject().put("op", "stat").put("path", destination).toString())
+            require(stat.getLong("bytes") == count &&
+                    stat.getString("sha256").equals(sha, ignoreCase = true)) {
+                "Streamed file remote SHA-256/size did not match"
+            }
+            return JSONObject()
+                .put("path", destination)
+                .put("bytes", count)
+                .put("sha256", sha)
+                .put("verified", true)
+        } finally {
+            context.unbindService(connection)
         }
     }
 }
