@@ -13,6 +13,10 @@
         <intent>
             <action android:name="com.riftos.runtime.EXECUTE_V1" />
         </intent>
+        <!-- Narrow, provider-neutral service discovery; no QUERY_ALL_PACKAGES. -->
+        <intent>
+            <action android:name="com.riftos.tool.BIND_V1" />
+        </intent>
     </queries>
 
     <application
