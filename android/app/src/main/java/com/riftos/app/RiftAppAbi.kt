@@ -48,6 +48,7 @@ object RiftAppAbi {
         const val CLIPBOARD_WRITE = "clipboard.write"
         const val SHARE = "share"
         const val BUILD_LOCAL = "build.local"
+        const val TOOL_INVOKE = "tool.invoke"
         const val SIGNING_IDENTITY = "signing.identity"
         const val APK_INSTALL = "apk.install"
         const val WINDOW_TITLE = "window.title"
@@ -61,6 +62,7 @@ object RiftAppAbi {
                 CLIPBOARD_WRITE,
                 SHARE,
                 BUILD_LOCAL,
+                TOOL_INVOKE,
                 SIGNING_IDENTITY,
                 APK_INSTALL,
                 WINDOW_TITLE
