@@ -57,13 +57,6 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
     )
     private val watchdog = Executors.newSingleThreadScheduledExecutor()
     private val services = RiftNativeShellServices(appContext)
-    private val alternateShellClientLazy = lazy {
-        require(!RiftHostCoreComponents.status().optBoolean("externalCoreEnabled", false)) {
-            "Legacy alternate surface proof unavailable under independent external Core"
-        }
-        RiftAlternateShellClient(RiftCoreRuntime.surfaces(appContext))
-    }
-    private val alternateShellClient by alternateShellClientLazy
     private val nativeGit = RiftMcpRuntime.nativeGit(appContext)
     @Volatile private var closed = false
 
@@ -376,7 +369,6 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
 
     override fun close() {
         closed = true
-        if (alternateShellClientLazy.isInitialized()) alternateShellClient.close()
         cancelAllShellJobs("Native RiftShell closed")
         worker.shutdownNow()
         shellJobWorker.shutdownNow()
@@ -506,7 +498,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     args.firstOrNull()?.lowercase()?.startsWith("alt-") == true) {
                     error("Legacy alternate Core surface renderer disabled for independent external Core")
                 }
-                val usage = "usage: core status|shell-crash|sessions|surfaces|focus|apps|app-start <id>|app-stop <id>|alt-list|alt-attach <id>|alt-render <id>|alt-detach <id>|alt-graphic-open <id>|ipc-view <id>"
+                val usage = "usage: core status|shell-crash|sessions|surfaces|focus|apps|app-start <id>|app-stop <id>"
                 val state = when {
                     args.size == 1 -> when (args.single().lowercase()) {
                         "status" -> RiftHostCoreComponents.executionView()
@@ -525,58 +517,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                         "focus" -> RiftHostCoreComponents.executionView().focusView(appContext)
                         "apps" -> JSONObject().put("schema", "riftos.core.apps/1")
                             .put("apps", RiftHostCoreComponents.executionView().runningApps(appContext))
-                        "alt-list" -> alternateShellClient.status()
                         else -> error(usage)
-                    }
-                    args.size == 2 && args[0].lowercase() == "alt-attach" ->
-                        alternateShellClient.attach(args[1])
-                    args.size == 2 && args[0].lowercase() == "alt-render" ->
-                        alternateShellClient.render(args[1])
-                    args.size == 2 && args[0].lowercase() == "alt-detach" ->
-                        alternateShellClient.detach(args[1])
-                    args.size == 2 && args[0].lowercase() == "alt-graphic-open" -> {
-                        val id = args[1]
-                        require(id.isNotBlank() && id.length <= 128) {
-                            "Alternate graphical client app ID is invalid"
-                        }
-                        val surface = RiftHostCoreComponents.core().snapshot(appContext, id)
-                        require(surface.optBoolean("present")) {
-                            "No selected Core surface for alternate graphical client"
-                        }
-                        appContext.startActivity(
-                            Intent(appContext, RiftAlternateGraphicalShellActivity::class.java)
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                .putExtra(RiftAlternateGraphicalShellActivity.EXTRA_APP_ID, id)
-                        )
-                        JSONObject()
-                            .put("schema", "riftos.shell.client.graphical/1")
-                            .put("appId", id)
-                            .put("attachmentGeneration", surface.getLong("attachmentGeneration"))
-                            .put("revision", surface.getLong("revision"))
-                            .put("launchDispatched", true)
-                            .put("separateShellProcess", false)
-                    }
-                    args.size == 2 && args[0].lowercase() == "ipc-view" -> {
-                        val id = args[1]
-                        require(id.isNotBlank() && id.length <= 128) {
-                            "Remote shell IPC proof app ID invalid"
-                        }
-                        val surface = RiftHostCoreComponents.core().snapshot(appContext, id)
-                        require(surface.optBoolean("present")) {
-                            "No selected Core surface for remote shell IPC proof"
-                        }
-                        appContext.startActivity(
-                            Intent(appContext, RiftRemoteShellProbeActivity::class.java)
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                .putExtra(RiftRemoteShellProbeActivity.EXTRA_APP_ID, id)
-                        )
-                        JSONObject()
-                            .put("schema", "riftos.shell.client.remote-ipc/1")
-                            .put("appId", id)
-                            .put("attachmentGeneration", surface.getLong("attachmentGeneration"))
-                            .put("revision", surface.getLong("revision"))
-                            .put("launchDispatched", true)
-                            .put("process", ":riftShellProbe")
                     }
                     args.size == 2 && args[0].lowercase() == "app-start" ->
                         RiftHostCoreComponents.executionView().startApp(appContext, args[1])
@@ -672,11 +613,9 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         protectedProcess("desktop", "Rift Desktop")
         protectedProcess("shell", "Native RiftShell")
 
-        val activity = RiftMcpRuntime.activeActivity()
         val remote = RiftCoreShellWindowBridge.status()
         val remoteOnline = remote.optBoolean("online")
-        val state = if (remoteOnline) remote.optJSONObject("state")
-            else activity?.nativeDesktopStateForShell()
+        val state = if (remoteOnline) remote.optJSONObject("state") else null
         val windows = state?.optJSONArray("windows") ?: JSONArray()
         for (index in 0 until windows.length()) {
             val row = windows.optJSONObject(index) ?: continue
@@ -704,7 +643,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             cwd,
             nativeResult("ps")
                 .put("processes", processes)
-                .put("activityAvailable", remoteOnline || activity != null)
+                .put("activityAvailable", remoteOnline)
                 .put("remoteShellPid", remote.opt("shellPid"))
         )
     }
@@ -721,30 +660,16 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         }
         require(id !in setOf("kernel", "desktop", "shell")) { "protected native process cannot be terminated: $id" }
         val remote = RiftCoreShellWindowBridge.status()
-        if (remote.optBoolean("online")) {
-            val windows = remote.getJSONArray("windows")
-            require((0 until windows.length()).any {
-                windows.optJSONObject(it)?.optString("id") == id
-            }) { "window task not found in remote shell: $id" }
-            require(RiftCoreShellWindowBridge.offer("close", id)) {
-                "Real RiftShell cannot accept a bounded close request"
-            }
-            return ShellOutcome("requested close $id", cwd,
-                nativeResult("kill").put("id", id)
-                    .put("queuedForRemoteShell", true))
+        require(remote.optBoolean("online")) { "External Shell is unavailable" }
+        val windows = remote.getJSONArray("windows")
+        require((0 until windows.length()).any {
+            windows.optJSONObject(it)?.optString("id") == id
+        }) { "External Shell window not found: $id" }
+        require(RiftCoreShellWindowBridge.offer("close", id)) {
+            "External Shell rejected window close request"
         }
-        val activity = RiftMcpRuntime.activeActivity()
-            ?: throw IllegalStateException("RiftOS desktop is not available")
-        val before = activity.nativeDesktopStateForShell().optJSONArray("windows") ?: JSONArray()
-        require((0 until before.length()).any { before.optJSONObject(it)?.optString("id") == id }) {
-            "window task not found: $id"
-        }
-        activity.closeNativeWindowFromShell(id)
-        return ShellOutcome(
-            "terminated $id",
-            cwd,
-            nativeResult("kill").put("id", id).put("terminated", true)
-        )
+        return ShellOutcome("requested close $id", cwd,
+            nativeResult("kill").put("id", id).put("queuedForRemoteShell", true))
     }
 
     private fun appsCommand(cwd: String): ShellOutcome {
@@ -812,7 +737,6 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             if (capability.equals("all", ignoreCase = true)) {
                 val existed = prefs.contains(key)
                 prefs.edit().remove(key).apply()
-                RiftMcpRuntime.activeActivity()?.onInstalledAppGrantRevokedFromShell(appId, "all")
                 val value = nativeResult("permissions revoke").put("appId", appId).put("capability", "all").put("revoked", existed)
                 return ShellOutcome(value.toString(2), cwd, value)
             }
@@ -827,7 +751,6 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             }
             if (next.isEmpty()) prefs.edit().remove(key).apply()
             else prefs.edit().putString(key, JSONObject().put("value", JSONArray(next.sorted())).put("modified", System.currentTimeMillis()).toString()).apply()
-            if (removed) RiftMcpRuntime.activeActivity()?.onInstalledAppGrantRevokedFromShell(appId, capability)
             val value = nativeResult("permissions revoke").put("appId", appId).put("capability", capability).put("revoked", removed)
             return ShellOutcome(value.toString(2), cwd, value)
         }
@@ -1213,17 +1136,12 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
 
     private fun browserCommand(cwd: String, args: MutableList<String>): ShellOutcome {
         val url = args.joinToString(" ").trim().ifBlank { "https://chatgpt.com" }
-        val activity = RiftMcpRuntime.activeActivity()
-        if (activity != null) {
-            activity.openBrowserFromNativeShell(url)
-        } else {
-            require(RiftCoreShellWindowBridge.offer("browser", url.take(2048))) {
-                "Remote RiftShell desktop is not available"
-            }
+        require(RiftCoreShellWindowBridge.offer("browser", url.take(2048))) {
+            "External Shell is unavailable"
         }
         return ShellOutcome("requested RiftBrowser window · $url", cwd,
             nativeResult("browser").put("url", url)
-                .put("remoteShell", activity == null))
+                .put("remoteShell", true))
     }
 
     private fun openCommand(cwd: String, args: MutableList<String>): ShellOutcome {
@@ -1232,18 +1150,12 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
         val builtins = setOf("files", "workspace-live", "terminal", "browser", "editor", "devlab", "tasks", "settings")
         val normalized = rawId.lowercase()
         val id = if (normalized in builtins) normalized else rawId
-        val activity = RiftMcpRuntime.activeActivity()
-        if (activity != null) {
-            activity.openAppFromNativeShell(id)
-        } else {
-            require(id.length <= 128 &&
-                RiftCoreShellWindowBridge.offer("open", id)) {
-                "Remote RiftShell desktop is not available or launch ID invalid"
-            }
+        require(id.length <= 128 && RiftCoreShellWindowBridge.offer("open", id)) {
+            "External Shell is unavailable or launch ID is invalid"
         }
         return ShellOutcome("requested $id", cwd,
             nativeResult("open").put("id", id)
-                .put("remoteShell", activity == null))
+                .put("remoteShell", true))
     }
 
     private fun copyConfined(source: File, target: File) {

@@ -1,7 +1,6 @@
 package com.riftos.app
 
 import android.content.Context
-import java.lang.ref.WeakReference
 
 /** Process-wide Rift MCP runtime. */
 object RiftMcpRuntime {
@@ -14,19 +13,6 @@ object RiftMcpRuntime {
     @Volatile private var debugHub: RiftDebugHub? = null
     @Volatile private var operationJournal: RiftMcpOperationJournal? = null
     @Volatile private var mcpEvents: RiftMcpEventBus? = null
-    @Volatile private var activityRef: WeakReference<MainActivity>? = null
-
-    fun registerActivity(activity: MainActivity) {
-        activityRef = WeakReference(activity)
-    }
-
-    fun unregisterActivity(activity: MainActivity) {
-        val current = activityRef?.get()
-        if (current === activity) activityRef = null
-    }
-
-    fun activeActivity(): MainActivity? = activityRef?.get()?.takeUnless { it.isFinishing || it.isDestroyed }
-
     /** Process-wide bounded RiftCLI event stream. This owns no execution authority. */
     fun mcpEvents(): RiftMcpEventBus {
         mcpEvents?.let { return it }

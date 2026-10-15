@@ -19,4 +19,4 @@ The Shell's host services provide installed RAPP enumeration, launch/stop, Core 
 3. Observe selected hashes/versions and exercise real device regression separately; static checks alone are insufficient.
 4. Recovery restoration is a conscious user action; never silently promote a backup or erase a working selected component.
 
-The old embedded Core/Shell is a frozen compatibility/fallback dependency *still compiled into the host*. Legacy device test plans and E0/E1 migration checklists are retired and must not be turned into ongoing external component tasks inside RiftOS.
+The embedded Core/Shell source and legacy graphical activities have been removed in this new host-only source candidate. No automatic embedded fallback is permitted. Device qualification is still pending a user-built and installed signed APK. Legacy E0/E1 plans remain retired and all external component TODOs belong to RiftComponents.

@@ -12,7 +12,8 @@ import java.nio.file.Files
 import java.security.MessageDigest
 
 /**
- * Guarded alternate real graphical Shell. Default stays APK-embedded.
+ * Exact-SHA selector for the independently packaged graphical Shell.
+ * No APK-owned graphical fallback exists.
  *
  * This is a trusted same-UID Android DEX component, never a sandbox; qualified
  * version must own the actual desktop/window manager to pass device proof.
@@ -26,7 +27,7 @@ internal object RiftShellCandidateSwitch {
     private const val MAX_CLASSES = 4096
     private val SHA = Regex("^[0-9a-f]{64}$")
     private const val TAG = "RiftShellCandidate"
-    @Volatile private var selection = "embedded"
+    @Volatile private var selection = "unselected"
     @Volatile private var selectedSha: String? = null
     @Volatile private var fallbackReason = "none"
 
@@ -131,7 +132,7 @@ internal object RiftShellCandidateSwitch {
     /** Load only the revision the user selected. Recovery never auto-rolls back. */
     @Synchronized
     fun selectAtBoot(application: Application): RiftShellGraphicalComponentV1? {
-        selection = "embedded"
+        selection = "unselected"
         selectedSha = null
         val record = RiftBootstrapComponentStore.active(application, "shell")
             ?: return null
@@ -147,7 +148,7 @@ internal object RiftShellCandidateSwitch {
      * a user may accept a known-good Shell update.
      */
     fun reportAttached(application: Application) {
-        val sha = selectedSha ?: error("Embedded Shell has no external receipt")
+        val sha = selectedSha ?: error("Unselected external Shell has no attached receipt")
         require(selection == "external-selected") {
             "Cannot report an unselected graphical Shell"
         }

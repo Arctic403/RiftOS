@@ -4,7 +4,7 @@ RiftOS is the **signed Android host**, not the implementation repository for its
 
 ## Active architecture (device observation, 2026-10-15)
 
-On the user's device, **external Core v0.6.9** and **graphical Shell V10** are selected and running. These runtime facts do not mean this checked-out Android host source has itself been newly built or installed. The source repository still includes embedded Core/Shell compatibility and fallback classes, which are **frozen**: they are not an active development target or an owner of future UI/runtime features.
+On the user's device, **external Core v0.6.9** and **graphical Shell V10** are selected and running. These runtime facts do not mean this checked-out Android host source has itself been newly built or installed. This **unbuilt source candidate** removes the APK-owned embedded Core and graphical Shell implementations and makes missing external components fail closed to manual Recovery. Existing installed APKs are unchanged until the user builds and installs a new host.
 
 The Android APK is required for host/manifest/ABI/security/service changes. Compatible external Core and Shell DEX revisions are independently built, preflighted, packaged, verified and **manually staged/activated by the user** through the separate Component Builder RAPP. This repository must not contain external component sources, release recipes, or their TODOs.
 
@@ -23,7 +23,7 @@ The Android APK is required for host/manifest/ABI/security/service changes. Comp
 - `docs/` — active host contracts and actual packaged capabilities only.
 - `.riftgit.json` — local native RiftGit metadata.
 
-The legacy embedded Core/Shell implementation is preserved only for APK compatibility/fallback. Historic milestone, test-proof and migration-gate documentation was retired from this branch; previous revision history remains in RiftGit.
+Embedded Core/Shell implementation classes and legacy graphical proof Activities have been removed from the source and Gradle lists. The MCP command shell (`RiftNativeShell`) remains because it is a host tool, not a graphical Shell implementation. Historic code remains in RiftGit history only.
 
 ## Deployment authority
 

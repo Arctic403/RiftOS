@@ -30,7 +30,7 @@ class RiftCoreApplication : Application() {
         if (currentProcess == packageName + ":riftRecovery") return
         if (currentProcess == applicationInfo.processName) {
             // The APK enters the selected Core bootstrap component. The
-            // embedded compatibility entry preserves C1.4 recovery ordering.
+            // Only the qualified external Core is selected; host Recovery ordering stays native.
             RiftBootstrapHost.startCore(this)
         } else if (currentProcess == packageName + ":riftShell" && Build.VERSION.SDK_INT >= 28) {
             // Install the durable Shell fatal observer before WebView setup,

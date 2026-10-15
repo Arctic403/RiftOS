@@ -113,6 +113,14 @@ class RiftRappCapabilityBroker(context: Context) {
      * presents consent, but only Core can validate an app attachment, persist a
      * grant and dispatch an effect. Late shell replies fail closed.
      */
+    /** Query the selected independent Core; never instantiate embedded package state. */
+    private fun selectedCoreHasApp(id: String): Boolean = runCatching {
+        val items = RiftHostCoreComponents.core().installed(appContext)
+        (0 until items.length()).any { index ->
+            items.optJSONObject(index)?.optString("id") == id
+        }
+    }.getOrDefault(false)
+
     fun execute(
         appId: String,
         appName: String,
@@ -139,7 +147,7 @@ class RiftRappCapabilityBroker(context: Context) {
             return
         }
         val run = {
-            if (!stillValid() || !RiftCoreRuntime.packages(appContext).handlesInstalled(appId)) {
+            if (!stillValid() || !selectedCoreHasApp(appId)) {
                 finish(Result(ok = false, error = "Stale or uninstalled Core application"))
             } else {
                 dispatch(appId, appName, effect, finish)
@@ -153,19 +161,16 @@ class RiftRappCapabilityBroker(context: Context) {
             appId, appName, effect.capability
         ) { accepted ->
             if (!accepted || !stillValid() ||
-                !RiftCoreRuntime.packages(appContext).handlesInstalled(appId)) {
+                !selectedCoreHasApp(appId)) {
                 finish(Result(ok = false, error = "${effect.capability} permission denied or expired"))
             } else {
                 runCatching {
                     // Serialize grant approval with the Core package manager's
                     // synchronized update/uninstall + grant revocation path.
-                    val packages = RiftCoreRuntime.packages(appContext)
-                    synchronized(packages) {
-                        check(stillValid() && packages.handlesInstalled(appId)) {
-                            "Stale Core package identity"
-                        }
-                        grant(appId, effect.capability)
+                    check(stillValid() && selectedCoreHasApp(appId)) {
+                        "Stale independent Core package identity"
                     }
+                    grant(appId, effect.capability)
                 }.onSuccess { run() }
                     .onFailure { error ->
                         finish(Result(ok = false, error = error.message ?: "Core grant failed"))

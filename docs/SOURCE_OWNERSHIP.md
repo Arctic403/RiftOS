@@ -12,6 +12,6 @@
 
 ## Rules
 
-The embedded Core/Shell classes that still compile into the Android host are **frozen compatibility/fallback**, not development owners. Their old docs and test-validation gates were retired. No Core/Shell TODOs or enhancement tracking belongs in this repo. Keep functional owner-specific docs/tests in `RiftComponents`, never relabel them as an APK requirement.
+The embedded Core/Shell classes and legacy graphical proof Activities are **removed from this source candidate**. No APK-owned embedded fallback may execute. Their old docs and validation gates were retired. No Core/Shell TODOs or enhancement tracking belongs in this repo. Keep functional owner-specific docs/tests in `RiftComponents`, never relabel them as an APK requirement.
 
 Android permission, signer, IPC, recovery, runtime/tool API and signed artifact checks remain host responsibilities. Use the RiftOS MCP and native RiftGit for edits/pushes. The user alone triggers signed APK builds and independent component installation/activation.

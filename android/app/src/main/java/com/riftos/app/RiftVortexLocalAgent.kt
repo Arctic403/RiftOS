@@ -705,75 +705,14 @@ object RiftOsLocalAgent {
                 return RiftCoreShellRecovery.killShellForProof(
                     appContext, request.optString("appId"))
             }
-            if (request.optString("action") == "recreate-main-activity-proof") {
-                // Generic QA-only lifecycle control. Must target the real
-                // foreground RiftOS Activity, never Core or a remote process.
-                require(context is MainActivity && context.hasWindowFocus() &&
-                    !context.isFinishing && !context.isDestroyed) {
-                    "MainActivity must be live and foreground for recreation proof"
-                }
-                val id = request.optString("appId").trim()
-                require(id.isNotBlank() && id.length <= 128) {
-                    "Recreation proof requires one current Core RAPP id"
-                }
-                val apps = RiftHostCoreComponents.executionView()
-                    .runningApps(context.applicationContext)
-                var generation = 0L
-                for (i in 0 until apps.length()) {
-                    val entry = apps.getJSONObject(i)
-                    if (entry.optString("id") == id && entry.optString("state") == "running" &&
-                        entry.optBoolean("attached")) {
-                        generation = entry.optLong("attachmentGeneration")
-                        break
-                    }
-                }
-                require(generation > 0L) {
-                    "Recreation proof needs a running, attached Core RAPP"
-                }
-                val pid = android.os.Process.myPid()
-                context.runOnUiThread {
-                    if (!context.isFinishing && !context.isDestroyed) context.recreate()
-                }
-                return JSONObject()
-                    .put("schema", "riftos.qa.activity-recreate/1")
-                    .put("status", "requested")
-                    .put("corePidBefore", pid)
-                    .put("appId", id)
-                    .put("attachmentGenerationBefore", generation)
-                    .put("operation", "android-activity-recreate-only")
-                    .put("coreProcessTermination", false)
-            }
             return RiftDevLabLocalAgent.execute(context, args)
         }
         if (op == "keyboard") return RiftOsKeyboardAgent.execute(context, args)
         if (op == "browser-inspect") {
-            require(context is MainActivity) { "RiftBrowser inspector requires the active RiftOS activity" }
-            delegate.ensureActive(context)
-            return context.inspectActiveBrowser(args)
+            throw UnsupportedOperationException(
+                "Embedded desktop browser inspection retired; use an external Shell browser provider")
         }
         if (op == "type-focused") return delegate.typeFocused(context, args.optString("text"))
-        if (op == "back" && context is MainActivity) {
-            delegate.ensureActive(context)
-            val latch = CountDownLatch(1)
-            var failure: Throwable? = null
-            context.runOnUiThread {
-                try {
-                    context.onBackPressed()
-                } catch (error: Throwable) {
-                    failure = error
-                } finally {
-                    latch.countDown()
-                }
-            }
-            require(latch.await(2_000L, TimeUnit.MILLISECONDS)) { "Timed out dispatching RiftOS self Back" }
-            failure?.let { throw IllegalStateException("RiftOS self Back failed", it) }
-            SystemClock.sleep(SELF_BACK_SETTLE_MS)
-            return JSONObject()
-                .put("scope", TARGET_PACKAGE)
-                .put("back", true)
-                .put("input", "riftos_activity_back")
-                .put("settled_ms", SELF_BACK_SETTLE_MS)
-        }
         val out = delegate.execute(context, args)
         if (out.has("target_foreground")) out.put("riftos_foreground", out.optBoolean("target_foreground"))
         return out

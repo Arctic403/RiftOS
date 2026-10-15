@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicLong
  *
  * It observes filesDir/riftfs/workspace directly, so changes made by MCP tools, native Files,
  * Git/process work or another local writer become visible to the shared records layer. The
- * current MainActivity supplies a no-op external event sink; the retained HTML workspace surface
+ * current Android host supplies a no-op external event sink; the retained HTML workspace surface
  * is not the live built-in consumer.
  */
 class RiftWorkspaceWatcher(

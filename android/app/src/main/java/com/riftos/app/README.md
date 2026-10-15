@@ -6,6 +6,6 @@ Stable host: `RiftCoreApplication`, `RiftShellActivity`, `RiftHostComponentAbiV1
 
 Operating services: `RiftMcp*`, `RiftToolHost`, `RiftLocalAgentBatch`, `RiftVortexLocalAgent`, `RiftWorkspaceRecords`, `RiftWorkspaceWatcher`, `RiftVolumePaths`, `RiftNativeGit`.
 
-Legacy compatibility classes, including `RiftNativeDesktop`, `RiftNativeShell`, embedded execution and workspace UI owners, **are frozen** and still compiled for current APK compatibility. They are not the live Shell V10 or independent Core 0.6.9 implementation. No embedded implementation TODOs or per-milestone test validations belong here.
+Embedded Core/Shell implementations such as `RiftNativeDesktop`, `RiftCoreRuntime`, and `MainActivity` were deleted from this source candidate. `RiftNativeShell` remains the **MCP command executor**, not a graphical desktop. No embedded implementation TODOs or per-milestone test validations belong here.
 
 For exact behavior use current Kotlin source and the repository-root `docs/README.md`, not retired embedded milestone reports.

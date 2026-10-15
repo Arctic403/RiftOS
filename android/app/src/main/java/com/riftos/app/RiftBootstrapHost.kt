@@ -10,8 +10,7 @@ import java.nio.file.Files
 import java.security.MessageDigest
 
 /**
- * Stable Android process entrypoint and compatibility fallback. The two
- * critical components still run embedded until physical modularization proof.
+ * Stable Android process entrypoint for externally selected critical components.
  * Probe remains the only component eligible for generic bootstrap loading.
  * Core and Shell use separately verified selected DEX routes. A failed
  * selected external component never triggers silent version rollback or
@@ -55,7 +54,7 @@ internal object RiftBootstrapHost {
             .put("criticalExternalActivationEnabled",
                 RiftHostCoreComponents.status().optBoolean("externalCoreEnabled", false))
             .put("inProcessHotSwapEnabled", false)
-            .put("embeddedFallbackAvailable", true)
+            .put("embeddedFallbackAvailable", false)
     }
 
     fun startCore(application: Application) {
@@ -93,14 +92,15 @@ internal object RiftBootstrapHost {
     fun prepareShell(application: Application) {
         start(application, "shell", object : RiftBootstrapEntry {
             override fun start(application: Application) {
-                RiftBrowserWindow.prepareRemoteShellWebViewDirectory()
+                RiftBrowserAndroidWebViewEngine.prepareRemoteShellWebViewDirectory()
             }
         })
     }
 
     private fun start(application: Application, id: String, embedded: RiftBootstrapEntry) {
-        // Generic bootstrap loading remains probe-only. Core V1 candidate
-        // selection is a separate guarded component path; Shell stays embedded.
+        // Generic bootstrap loading remains probe-only. External Core and
+        // external graphical Shell use their separately guarded selectors.
+        // This host entry calls process bootstrap services, not an embedded UI.
         if (id != "probe") {
             embedded.start(application)
             return

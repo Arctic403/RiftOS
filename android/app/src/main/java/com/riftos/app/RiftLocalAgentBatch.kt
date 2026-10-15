@@ -421,8 +421,7 @@ object RiftLocalAgentBatch {
             val startedAt = System.currentTimeMillis()
             val request = JSONObject(step.toString()).apply { remove("id") }
             val result = try {
-                val activity = RiftMcpRuntime.activeActivity()
-                val executionContext: Context = activity ?: context
+                val executionContext: Context = context
                 val value = if (request.getString("op") in engineeringOps) {
                     RiftMcpRuntime.toolHost(context).executeLocalAgentEngineeringStep(
                         request,

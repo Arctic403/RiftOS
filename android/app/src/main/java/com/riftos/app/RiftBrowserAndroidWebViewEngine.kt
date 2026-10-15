@@ -34,6 +34,10 @@ class RiftBrowserAndroidWebViewEngine(
     private val rendererGone: (String) -> Unit
 ) : RiftBrowserEngine {
     companion object {
+        fun prepareRemoteShellWebViewDirectory() {
+            check(android.os.Build.VERSION.SDK_INT >= 28)
+            WebView.setDataDirectorySuffix("riftShell")
+        }
         private val EXTERNAL_SCHEMES = setOf("mailto", "tel", "geo")
         private val AUTH_FLOW_HOSTS = setOf(
             "chatgpt.com",

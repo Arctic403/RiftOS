@@ -14,11 +14,9 @@ import java.security.MessageDigest
 /**
  * APK-owned exact-SHA selector with user-manual Recovery policy.
  *
- * The APK-owned, proven embedded Core is always available. A future extracted
- * Core DEX can be selected ONLY after a separate trusted installer produces
- * BOTH an immutable Core activation pointer and an independently verified
- * qualification receipt for the exact SHA/entrypoint/ABI. No production
- * activation/qualification writer is exposed in E1; the switch is dormant.
+ * An external Core DEX is selected only when the trusted installer has
+ * produced an immutable pointer and independently qualified receipt for its
+ * exact SHA, entrypoint and ABI. No embedded implementation is available.
  *
  * This is a same-UID, same-process classloader, NOT a security sandbox.
  * Core's current broad Context callback / transitive APK-owned dependencies
@@ -36,7 +34,7 @@ internal object RiftCoreCandidateSwitch {
     private const val TAG = "RiftCoreCandidateSwitch"
     private val DIGEST = Regex("^[0-9a-f]{64}$")
 
-    @Volatile private var lastSelection = "embedded"
+    @Volatile private var lastSelection = "unselected"
     @Volatile private var lastSelectedSha: String? = null
     @Volatile private var lastFallback = "none"
 
@@ -155,7 +153,7 @@ internal object RiftCoreCandidateSwitch {
      */
     @Synchronized
     fun selectAtBoot(application: Application): RiftCoreComponentV1? {
-        lastSelection = "embedded"
+        lastSelection = "unselected"
         lastSelectedSha = null
         val record = RiftBootstrapComponentStore.active(application, "core")
             ?: return null
@@ -182,7 +180,7 @@ internal object RiftCoreCandidateSwitch {
         .put("selected", lastSelection)
         .put("selectedSha256", lastSelectedSha ?: JSONObject.NULL)
         .put("lastFallback", lastFallback)
-        .put("inactiveCandidateOnly", lastSelection == "embedded")
+        .put("inactiveCandidateOnly", false)
         .put("automaticPromotionEnabled", false)
         .put("manualRecoveryOnly", true)
         .put("inProcessHotSwapEnabled", false)

@@ -506,8 +506,7 @@ class RiftToolHost(
                 return
             }
             try {
-                val activity = RiftMcpRuntime.activeActivity()
-                val value = RiftLocalAgentBatch.execute(activity ?: appContext, args)
+                val value = RiftLocalAgentBatch.execute(appContext, args)
                 recordAudit(name, args, true, null)
                 reply(JSONObject().put("ok", true).put("name", name).put("value", value))
             } catch (failure: Throwable) {

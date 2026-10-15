@@ -175,9 +175,7 @@ class RiftNativeShellServices(context: Context) {
                 devLab(args,cwd)
             }
         }
-        val activity=RiftMcpRuntime.activeActivity()
-        val context=activity?:appContext
-        return localAgent("riftos-agent",args){ request -> RiftOsLocalAgent.execute(context,request) }
+        return localAgent("riftos-agent",args){ request -> RiftOsLocalAgent.execute(appContext,request) }
     }
 
     fun riftLlm(args: MutableList<String>, cwd: String): Result {

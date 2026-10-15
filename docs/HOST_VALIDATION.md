@@ -17,9 +17,9 @@ The Builder is **not** the independent Core/Shell Builder RAPP and never compile
 
 ## Retired embedded validation
 
-Historical **embedded Core/Shell milestones, proof-driven E0/E1/C1 checklists, hardcoded source-string requirements for old desktop/test canaries, unbuilt transition narratives and duplicated build gates** are retired. They should not be mandatory preflight tests merely because frozen compatibility classes remain compiled into the APK.
+Historical **embedded Core/Shell milestones, proof-driven E0/E1/C1 checklists, old desktop/test canaries, transition narratives and duplicated build gates** are retired. Current Builder preflight and signed-DEX verification expressly reject the removed embedded implementations. They are no longer required preflight tests because the corresponding embedded implementations are now removed, not retained as compiled compatibility classes.
 
-Retiring those tests does **not** mean removing runtime safety guards, Android permission checks, protected component verification, Recovery integrity or tests of a generic capability actually used by the APK. External Core/Shell unit/device suites now belong with `RiftComponents`.
+Removing the implementations does **not** mean removing runtime safety guards, Android permission checks, protected component verification, Recovery integrity or tests of a generic capability actually used by the APK. External Core/Shell unit/device suites now belong with `RiftComponents`.
 
 ## Evidence rule
 
