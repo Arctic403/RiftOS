@@ -1,7 +1,7 @@
-# RiftOS Android Host Source
+# Android platform host
 
-The `android/` tree builds the native RiftOS APK. Kotlin owns Android framework authority, native rendering surfaces, storage providers, MCP native authority and platform services. The retired HTML/DOM shell is not packaged; generated assets contain only the bounded headless Rift++ Core and RiftVM JavaScript modules plus explicit RiftBrowser assets from Android source.
+The Android Gradle project builds the signed generic RiftOS APK. Production entrypoints, IPC, Accessibility, MCP/relay, RiftFS, selected external component loaders, manual Recovery, Android tooling and browser adapters are under `app/`; the companion `rift-managed-kotlin-tool` module supplies host-registered managed compiler adapter dependencies.
 
-Start with [`../docs/systems/android-host/README.md`](../docs/systems/android-host/README.md), then use [`../docs/README.md`](../docs/README.md) to jump to the subsystem being changed. The Kotlin package has its own component index at `app/src/main/java/com/riftos/app/README.md`, and browser assets are indexed at `app/src/main/assets/README.md`.
+Current selected Core/Shell implementation is externally packaged; existing embedded Core/Shell classes compiled by Gradle are frozen compatibility/fallback. Do not add embedded Shell features, embedded Core TODOs or legacy validation gates here.
 
-Build/source synchronization is documented in [`../docs/systems/build-validation/README.md`](../docs/systems/build-validation/README.md).
+See [active host architecture](../docs/ARCHITECTURE.md) and [host release validation](../docs/HOST_VALIDATION.md). The user runs Riftos-builder manually; this module does not auto-install a host APK or activate external components.

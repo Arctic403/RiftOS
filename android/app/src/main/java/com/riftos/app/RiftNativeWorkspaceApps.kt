@@ -716,6 +716,15 @@ class RiftNativeWorkspaceApps(
         return request
     }
 
+    /** Generic tool verbs deliberately do NOT inherit the Codynex-specific id. */
+    private fun toolConnectionRequest(operation: String, extra: JSONObject = JSONObject()): JSONObject {
+        val request = JSONObject()
+            .put("schema", "riftos.core.app-connection-request/1")
+            .put("operation", operation)
+        for (key in extra.keys()) request.put(key, extra.get(key))
+        return request
+    }
+
     private fun runConnectionTask(label: String, request: JSONObject) {
         connectionOutput?.text = "$label…"
         runNativeTask(

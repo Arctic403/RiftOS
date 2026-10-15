@@ -1,40 +1,30 @@
-# RiftOS — Android platform host (source ownership)
+# RiftOS — Android host and external-component platform
 
-RiftOS owns the **generic Android platform**: external component loading, binder/IPC transportation, RiftFS, shell/desktop hosting, app and capability isolation, Recovery, installation, and host validation. It does **not** own the source of external languages, developer apps, cloud workers, language proofs, or Core/Shell component builder projects.
+RiftOS is the **signed Android host**, not the implementation repository for its independently loaded Core or graphical Shell. It owns process/bootstrap integration, authenticated host IPC, protected component qualification and recovery, Android package installation surfaces, RiftFS / workspace, generic RAPP/platform adapters, MCP/Local Agent tooling and Android permissions.
 
-## Layout
+## Active architecture (device observation, 2026-10-15)
 
-- `android/` — signed Android host and native generic platform services; **currently includes the still-live embedded graphical Shell**.
-- `docs/` — host/platform architecture, active contracts, recovery and security boundaries.
-- `.riftgit.json` — local RiftGit metadata (no GitHub project import implied).
-- `.gitignore` — build exclusion.
+On the user's device, **external Core v0.6.9** and **graphical Shell V10** are selected and running. These runtime facts do not mean this checked-out Android host source has itself been newly built or installed. The source repository still includes embedded Core/Shell compatibility and fallback classes, which are **frozen**: they are not an active development target or an owner of future UI/runtime features.
 
-**Moved out of this repo (2026-10-12 ownership cleanup):**
+The Android APK is required for host/manifest/ABI/security/service changes. Compatible external Core and Shell DEX revisions are independently built, preflighted, packaged, verified and **manually staged/activated by the user** through the separate Component Builder RAPP. This repository must not contain external component sources, release recipes, or their TODOs.
 
-- `/D:/Workspace/RiftComponents` — independent external Core v0.6.1–0.6.5 and graphical Shell DEX source, independent Core/Shell Builder RAPP, recipes and evidence.
-- `/D:/Workspace/RiftMcpRelay` — standalone Cloudflare Worker relay.
-- `/D:/Workspace/RiftOS-LegacyWeb` — retired browser/JavaScript prototype, old tests and original historical docs; **not built into the Android APK**.
-- `/D:/Workspace/rift++` — Rift++ legacy example sources and Rift++ architecture documentation.
-- `/D:/Workspace/RiftLLM` — RiftLLM bridge design documents.
-- `/D:/Workspace/Semnexis` — Semnexis fixture and bootstrap documentation.
-- `/D:/Workspace/Vortex3d` — Vortex integration documentation.
-- `/D:/Workspace/RiftBuild-Hosted` — independent hosted build provider documentation.
+## Current documentation
 
-Old probe files, empty proof folders, retired bootstrap CI and retired RiftCLI documents were **deleted**. Build artifacts live under `/D:/Builds`, not in this source repo.
+- [Architecture and APK boundaries](docs/ARCHITECTURE.md)
+- [External component integration and recovery](docs/EXTERNAL_COMPONENTS.md)
+- [MCP, Local Agent, RiftFS and workspace](docs/OPERATING_SERVICES.md)
+- [RAPP, Android tool and browser host capabilities](docs/PLATFORM_CAPABILITIES.md)
+- [Security, manual APK release and validation](docs/HOST_VALIDATION.md)
+- [Source and documentation ownership](docs/SOURCE_OWNERSHIP.md)
 
-## Running device vs unbuilt source
+## Source tree
 
-As last independently measured on October 12, 2026: installed signed RiftOS **#742** with **independent external Core v0.6.4**, verified Recovery backup v0.6.3 (restore enabled), and **embedded graphical Shell**. Independent Core v0.6.5 / binary folder Binder transfer is **source only** until the user compiles/signs/installs an updated host and manually selects the externally-built Core through Recovery.
+- `android/` — application, manifest, Java/Kotlin, C++ and Gradle host.
+- `docs/` — active host contracts and actual packaged capabilities only.
+- `.riftgit.json` — local native RiftGit metadata.
 
-Never auto-promote, overwrite the verified Recovery backup, or silently replace the embedded Shell.
+The legacy embedded Core/Shell implementation is preserved only for APK compatibility/fallback. Historic milestone, test-proof and migration-gate documentation was retired from this branch; previous revision history remains in RiftGit.
 
-## Strict future ownership rule
+## Deployment authority
 
-1. **Generic reusable platform capability**: RiftOS host or a generic Core plugin contract.
-2. **External Core/Shell implementation**: RiftComponents, not the Android host.
-3. **App/provider/editor/toolchain/compiler/LLM project**: its own workspace/RAPP.
-4. **Test/proof tied to a particular project**: its project repo, not RiftOS.
-5. **Retired prototype or proof**: remove it or archive outside the live RiftOS tree.
-6. **RiftOS-specific existing couplings** in the Android host (for example, historic Codynex connection UI, RiftLLM developer bridge, Vortex client/agent and Rift++ RAPP adapters) must be replaced by generic transport before deleting the live classes. Do not break an existing installed workflow just to pass a directory audit.
-
-Host version and runtime qualification must come from a real signed APK/Recovery/device check, not source inspection.
+The **user** runs the RiftOS Builder manually to produce/install a signed APK and independently uses the Core & Shell Builder RAPP for Core/Shell revisions. Source updates, docs and audits do **not** imply installed-device proof. Neither an assistant nor CI silently promotes, installs or changes Recovery. No direct GitHub repo operation is part of local development: use RiftOS MCP + native RiftGit.

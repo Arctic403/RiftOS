@@ -30,9 +30,12 @@ internal object RiftCoreSystemCapabilities {
         "process.protected.kill"
     )
 
+    // This is an audit allowlist, not privileged authority. All of these
+    // still require the separate authenticated one-use Core admin ticket.
     private val PROBE_ONLY_AUDIT = setOf(
         "bootstrap.probe.stage", "bootstrap.probe.activate",
-        "module.stage", "module.activate", "module.recovery.proof"
+        "module.stage", "module.activate", "module.recovery.proof",
+        "protected.stage", "protected.activate", "protected.accept"
     )
     private val SAFE_ACTOR = Regex("^[A-Za-z0-9._:-]{1,96}$")
 
@@ -59,7 +62,7 @@ internal object RiftCoreSystemCapabilities {
         }
         require(outcome in setOf(
             "requested", "approved", "denied", "revoked", "expired", "consumed",
-            "rolled-back", "failed", "staged", "activated"
+            "rolled-back", "failed", "staged", "activated", "accepted"
         )) { "Core admin decision outcome invalid" }
         require(reason.matches(SAFE_ACTOR)) { "Core admin audit reason invalid" }
         synchronized(LOCK) {
