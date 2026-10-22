@@ -2,7 +2,7 @@
 
 | Scope | Owner |
 | --- | --- |
-| Android lifecycle, permissions, ABI, external DEX loading, host binder services, signed APK Recovery | `/D:/Workspace/RiftOS-main/android` |
+| Android lifecycle, permissions, ABI, generic JVM/D8 services, external DEX loading, host binder services, signed APK Recovery | `/D:/Workspace/RiftOS-main/android` |
 | MCP server/client runtime, Local Agent UI access, tools, RiftFS and workspace | `/D:/Workspace/RiftOS-main/android` |
 | Independent Core/Shell code, regression tests, features, TODOs, versioned DEX recipes, component Builder | `/D:/Workspace/RiftComponents` |
 | Standalone host APK Builder workflow and final signed package verifier | `/D:/Workspace/Riftos-builder-main` |

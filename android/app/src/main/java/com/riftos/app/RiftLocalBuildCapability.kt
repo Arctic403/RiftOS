@@ -60,10 +60,11 @@ class RiftLocalBuildCapability(context: Context) {
         classesDir: String,
         outputDir: String,
         minSdk: Int,
-        cwd: String = "/D:/Workspace"
+        cwd: String = "/D:/Workspace",
+        jvmInputs: JSONObject? = null
     ): JSONObject {
         val ref = resolveProject(project, cwd)
-        return jvmDex.dexJvmClasses(ref.file, classesDir, outputDir, minSdk)
+        return jvmDex.dexJvmClasses(ref.file, classesDir, outputDir, minSdk, jvmInputs)
             .put("project", ref.display)
     }
 
@@ -215,6 +216,10 @@ class RiftLocalBuildCapability(context: Context) {
                 }
                 require(file.isFile) { "Managed compiler classpath entry is missing" }
             }
+        }
+        if (request.has("jvmInputs")) {
+            jvmDex.validateCompilerInputs(ref.file, request.getJSONObject("jvmInputs"),
+                request.getJSONArray("classpath"))
         }
         val outputRelative = request.optString("outputDir").trim()
         if (outputRelative.isNotBlank()) {

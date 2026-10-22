@@ -13,7 +13,12 @@ The Builder is **not** the independent Core/Shell Builder RAPP and never compile
 - Stable host binder interfaces, Core IPC authentication, generic install/FileProvider and native services.
 - MCP relay client, Local Agent accessibility, bounded single-operation workspace tools, project export and RiftGit.
 - Mandatory Gradle source/declaration-to-final-DEX closure; both Android ARM ABIs and appropriate native assets.
+- Generic JVM archive tests: multi-release filtering, duplicate classes, service/resource merging, traversal, reserved paths and cancellation. Release assembly finalizes through `testReleaseUnitTest`.
 - Exact release checkout, alignment, signing and final artifact hashes.
+
+## Current generic JVM dependency source gate
+
+The host advertises verified Android API/stdlib metadata and `jvmDependencyInputsVersion=1`, revalidates pinned JARs before compiler/D8 use, stages inputs immutably, validates DEX outputs and receipts bounded Java resources. Source and authored tests exist; the next Builder run is the first Kotlin/JUnit compilation proof. No installed-host claim exists.
 
 ## Retired embedded validation
 

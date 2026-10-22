@@ -6,6 +6,7 @@ This is the current host-only reference index, replacing historical embedded Cor
 - [External component ABI, qualification, selection and manual Recovery](EXTERNAL_COMPONENTS.md)
 - [MCP, Local Agent, virtual drives, RiftGit and workspace](OPERATING_SERVICES.md)
 - [Generic RAPP/browser/tool/Android host services](PLATFORM_CAPABILITIES.md)
+- [Generic JVM dependency inputs and D8/resource contract](JVM_DEPENDENCIES.md)
 - [Manual host APK build, signing and valid host-only checks](HOST_VALIDATION.md)
 - [Source ownership and external Core/Shell TODO separation](SOURCE_OWNERSHIP.md)
 

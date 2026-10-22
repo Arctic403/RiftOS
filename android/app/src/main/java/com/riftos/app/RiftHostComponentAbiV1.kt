@@ -184,7 +184,8 @@ object RiftHostBuildLocalV1 {
                 val project = request.getString("project").trim()
                 require(project.isNotBlank()) { "Build project missing" }
                 tool.dexJvmClasses(project, request.getString("classesDir"),
-                    request.getString("outputDir"), request.optInt("minSdk", 26))
+                    request.getString("outputDir"), request.optInt("minSdk", 26),
+                    jvmInputs = if (request.has("jvmInputs")) request.getJSONObject("jvmInputs") else null)
             }
             else -> error("Unsupported generic host build operation")
         }

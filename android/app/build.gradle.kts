@@ -262,6 +262,23 @@ val syncRiftBuildKotlinToolchain by tasks.registering {
             .singleOrNull()
             ?: throw GradleException("Pinned Kotlin stdlib jar could not be resolved uniquely")
         stdlib.copyTo(File(root, "kotlin-stdlib.jar"), overwrite = true)
+        fun artifactSha(file: File): String {
+            val hash = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buffer = ByteArray(65536)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    hash.update(buffer, 0, count)
+                }
+            }
+            return hash.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        }
+        File(root, "toolchain.properties").writeText(
+            "androidApiLevel=" + androidJar.parentFile.name.removePrefix("android-").toInt() + "\n" +
+            "androidJarSha256=" + artifactSha(androidJar) + "\n" +
+            "kotlinStdlibSha256=" + artifactSha(stdlib) + "\n"
+        )
     }
 }
 
@@ -372,6 +389,11 @@ val validateRiftBrowserWebViewOwnership by tasks.registering {
     }
 }
 
+// Release assembly must also finish the dependency archive regression gate.
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    finalizedBy("testReleaseUnitTest")
+}
+
 tasks.named("preBuild").configure {
     dependsOn(verifyRiftOsAndroidSources)
     dependsOn(validateRiftBrowserWebViewOwnership)
@@ -382,6 +404,7 @@ tasks.named("preBuild").configure {
 
 dependencies {
     implementation("com.android.tools:r8:8.13.23")
+    testImplementation("junit:junit:4.13.2")
     add(
         riftBuildKotlinCompileClasspath.name,
         "org.jetbrains.kotlin:kotlin-stdlib:2.4.10"

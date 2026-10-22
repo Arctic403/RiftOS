@@ -470,7 +470,8 @@ class RiftRappCapabilityBroker(context: Context) {
                         project,
                         classesDir,
                         outputDir,
-                        minSdk
+                        minSdk,
+                        jvmInputs = if (request.has("jvmInputs")) request.getJSONObject("jvmInputs") else null
                     )
                 }
 
