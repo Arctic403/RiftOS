@@ -5,6 +5,10 @@ import android.accessibilityservice.GestureDescription
 import android.content.Context
 import android.content.Intent
 import android.graphics.Path
+import android.graphics.Bitmap
+import android.view.Display
+import java.io.ByteArrayOutputStream
+import java.util.concurrent.atomic.AtomicReference
 import android.graphics.Rect
 import android.os.Bundle
 import android.os.SystemClock
@@ -46,6 +50,7 @@ private class RiftScopedLocalAgent(
             "status" -> status(context)
             "open" -> open(context)
             "tree" -> tree(context, args)
+            "screenshot" -> screenshot(context)
             "click" -> click(context, args)
             "tap" -> tap(context, args)
             "swipe" -> swipe(context, args)
@@ -148,6 +153,73 @@ private class RiftScopedLocalAgent(
             .put("scanned_nodes", scanned)
             .put("scan_limit_reached", queue.isNotEmpty())
             .put("truncated", total > limit || queue.isNotEmpty())
+    }
+
+    /**
+     * Screenshot of the actual Android display (not the WebView's bitmap).
+     * Access stays scoped to the exact foreground Accessibility target.
+     * A bounded JPEG fits the existing Local Agent result envelope.
+     */
+    private fun screenshot(context: Context): JSONObject {
+        require(android.os.Build.VERSION.SDK_INT >= 30) {
+            "Android Accessibility screenshot requires API 30+"
+        }
+        val (service, _) = requireTargetServiceAndRoot(context)
+        val latch = CountDownLatch(1)
+        val image = AtomicReference<ByteArray?>()
+        val failure = AtomicReference<String?>()
+        service.takeScreenshot(Display.DEFAULT_DISPLAY, context.mainExecutor,
+            object : AccessibilityService.TakeScreenshotCallback {
+                override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
+                    val buffer = result.hardwareBuffer
+                    try {
+                        val source = Bitmap.wrapHardwareBuffer(buffer, result.colorSpace)
+                            ?: error("Android screenshot buffer unavailable")
+                        val scale = minOf(1f, 540f / source.width, 960f / source.height)
+                        val width = (source.width * scale).toInt().coerceAtLeast(1)
+                        val height = (source.height * scale).toInt().coerceAtLeast(1)
+                        val bitmap = Bitmap.createScaledBitmap(source, width, height, true)
+                        try {
+                            val output = ByteArrayOutputStream()
+                            for (quality in listOf(75, 65, 55, 45, 35, 25)) {
+                                output.reset()
+                                check(bitmap.compress(
+                                    Bitmap.CompressFormat.JPEG, quality, output
+                                )) { "Screenshot JPEG encoding failed" }
+                                if (output.size() <= 56 * 1024) break
+                            }
+                            check(output.size() in 1..(56 * 1024)) {
+                                "Screenshot exceeds bounded output"
+                            }
+                            image.set(output.toByteArray())
+                        } finally {
+                            if (bitmap !== source) bitmap.recycle()
+                        }
+                    } catch (e: Exception) {
+                        failure.set((e.message ?: "Screenshot failed").take(160))
+                    } finally {
+                        buffer.close()
+                        latch.countDown()
+                    }
+                }
+                override fun onFailure(errorCode: Int) {
+                    failure.set("Android denied screenshot: code $errorCode")
+                    latch.countDown()
+                }
+            })
+        check(latch.await(6, TimeUnit.SECONDS)) {
+            "Timed out waiting for Android screenshot"
+        }
+        val jpeg = image.get() ?: throw IllegalStateException(
+            failure.get() ?: "Screenshot unavailable"
+        )
+        return JSONObject()
+            .put("scope", targetPackage)
+            .put("captured", true)
+            .put("source", "android-accessibility-takeScreenshot")
+            .put("mimeType", "image/jpeg")
+            .put("bytes", jpeg.size)
+            .put("imageBase64", Base64.encodeToString(jpeg, Base64.NO_WRAP))
     }
 
     private fun click(context: Context, args: JSONObject): JSONObject {
@@ -672,7 +744,25 @@ private object RiftOsKeyboardAgent {
     }
 }
 
-/** RiftOS-self-only fixed local UI authority used for shell-driven UI acceptance testing. */
+/**
+ * Blockbench Mobile is the ONE additional explicitly named Accessibility
+ * target for RiftOS model QA. The caller may select it by its fixed ID, not
+ * by supplying arbitrary Android package names.
+ */
+private object RiftBlockbenchLocalAgent {
+    private val delegate = RiftScopedLocalAgent(
+        "net.blockbench.androidcommunity", "Blockbench Mobile"
+    )
+
+    fun execute(context: Context, args: JSONObject): JSONObject =
+        if (args.optString("op").trim().lowercase() == "type-focused") {
+            delegate.typeFocused(context, args.optString("text"))
+        } else {
+            delegate.execute(context, args)
+        }
+}
+
+/** RiftOS-self local UI authority, plus the explicitly selected Blockbench target. */
 object RiftOsLocalAgent {
     private const val TARGET_PACKAGE = "com.riftos.app"
     private const val SELF_BACK_SETTLE_MS = 400L
@@ -688,6 +778,19 @@ object RiftOsLocalAgent {
 
     private fun executeUnlocked(context: Context, args: JSONObject): JSONObject {
         val op = args.optString("op").trim().lowercase()
+        // 'targetApp' is an exact allowlisted ID, never an arbitrary package.
+        // Existing callers with no targetApp stay scoped to RiftOS itself.
+        val targetApp = args.optString("targetApp").trim()
+        if (targetApp.isNotEmpty()) {
+            require(targetApp == "blockbench-mobile") {
+                "Unsupported Accessibility target: $targetApp"
+            }
+            require(op in setOf("status", "open", "tree", "screenshot",
+                "click", "tap", "swipe", "type", "type-focused", "back")) {
+                "Operation not supported for Blockbench Mobile: $op"
+            }
+            return RiftBlockbenchLocalAgent.execute(context, args)
+        }
         if (op == "devlab") {
             val request = args.optJSONObject("request")
                 ?: throw IllegalArgumentException("Dev Lab request is required")

@@ -10,6 +10,8 @@
         <package android:name="com.riftllm.app" />
         <package android:name="com.codynex.editor" />
         <package android:name="com.samsung.android.honeyboard" />
+        <!-- Fixed-scope local Accessibility QA target; no broad package discovery. -->
+        <package android:name="net.blockbench.androidcommunity" />
         <intent>
             <action android:name="com.riftos.runtime.EXECUTE_V1" />
         </intent>

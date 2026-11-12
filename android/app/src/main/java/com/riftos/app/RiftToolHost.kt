@@ -320,7 +320,7 @@ class RiftToolHost(
         ))
         .put(tool(
             "rift_local_agent_batch",
-            "Submit and control one bounded RiftOS Local Agent batch. Actions: submit, status, result, cancel, list. Submit prevalidates 1..16 device/UI or engineering steps, binds requestId to the exact normalized plan, reserves the Local Agent execution authority, and returns immediately. Engineering steps reuse the canonical workspace sandbox for read/write/patch/search/symbol/reference/audit/scan/diff/export operations; raw RiftShell batching remains disabled. Execution persists locally without RiftCLI, SSE, or a long-lived MCP call. Unfinished jobs are never replayed after process restart.",
+            "Submit and control one bounded RiftOS Local Agent batch. Actions: submit, status, result, cancel, list. Device/UI operations default to RiftOS itself; a step with args.targetApp=blockbench-mobile instead controls only the installed Blockbench Mobile package, including true Android Accessibility screenshots (op screenshot, base64 JPEG) on API 30+. No arbitrary package targets. Submit prevalidates 1..16 device/UI or engineering steps, binds requestId to the exact normalized plan, reserves the Local Agent execution authority, and returns immediately. Engineering steps reuse the canonical workspace sandbox for read/write/patch/search/symbol/reference/audit/scan/diff/export operations; raw RiftShell batching remains disabled. Execution persists locally without RiftCLI, SSE, or a long-lived MCP call. Unfinished jobs are never replayed after process restart.",
             objectSchema(
                 JSONObject()
                     .put("action", JSONObject()
@@ -343,7 +343,7 @@ class RiftToolHost(
                                     .put("type", "string")
                                     .put("description", "Device/UI or engineering batch operation.")
                                     .put("enum", JSONArray(listOf(
-                                        "status", "open", "tree", "click", "tap", "swipe", "type", "back",
+                                        "status", "open", "tree", "screenshot", "click", "tap", "swipe", "type", "back",
                                         "type-focused", "keyboard", "browser-inspect", "devlab",
                                         "info", "project", "snapshot", "stat", "hash", "list", "search", "grep",
                                         "symbols", "references", "read", "read_range", "read_symbol", "write", "replace",
@@ -352,7 +352,7 @@ class RiftToolHost(
                                     ))))
                                 .put("args", JSONObject()
                                     .put("type", "object")
-                                    .put("description", "Operation-specific arguments. Examples: path/text for write, path/query for search or grep, path/startLine/endLine for read_range, request for devlab.")))
+                                    .put("description", "Operation-specific arguments. UI steps may select the fixed target args.targetApp=blockbench-mobile; absence targets RiftOS. Screenshot op returns a bounded base64 JPEG. Engineering steps accept path/text, path/query etc.")))
                             .put("required", JSONArray(listOf("id", "op")))))
                     .put("jobId", stringProperty("Job id returned by submit; required by status, result, and cancel."))
                     .put("offset", JSONObject().put("type", "integer").put("minimum", 0))

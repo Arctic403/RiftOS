@@ -76,7 +76,7 @@ object RiftLocalAgentBatch {
     private const val TERMINAL_RETENTION_MS = 24 * 60 * 60 * 1000L
 
     private val uiOps = setOf(
-        "status", "open", "tree", "click", "tap", "swipe", "type", "back",
+        "status", "open", "tree", "screenshot", "click", "tap", "swipe", "type", "back",
         "type-focused", "keyboard", "browser-inspect", "devlab"
     )
     private val engineeringOps = setOf(
@@ -285,8 +285,20 @@ object RiftLocalAgentBatch {
                 "Local Agent batch step $index $name must be finite"
             }
         }
+        // Explicit named target only; a caller cannot turn this into a
+        // generic Android package automation API by supplying a package name.
+        if (step.has("targetApp")) {
+            require(step.optString("targetApp") == "blockbench-mobile") {
+                "Local Agent targetApp must be blockbench-mobile"
+            }
+            require(step.getString("op") in setOf(
+                "status", "open", "back", "tree", "screenshot", "click", "tap",
+                "swipe", "type", "type-focused")) {
+                "Local Agent operation unavailable for Blockbench target"
+            }
+        }
         when (val op = step.getString("op")) {
-            "status", "open", "back" -> Unit
+            "status", "open", "back", "screenshot" -> Unit
             "tree" -> require(step.optInt("limit", 256) in 1..1024) {
                 "Local Agent batch tree limit must be between 1 and 1024"
             }
