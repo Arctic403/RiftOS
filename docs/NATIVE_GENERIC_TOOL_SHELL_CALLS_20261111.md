@@ -1,5 +1,32 @@
 # Native RiftShell Generic Tool CLI (source candidate, 2026-11-11)
 
+## 2026-11-11 follow-up: explicit temporary trust
+
+The original `tool list` and `tool call` native commands remain intact.
+A new **unbuilt APK Host source revision** adds:
+
+```text
+tool trust start riftbench-bridge status,submit,result 10
+tool trust status riftbench-bridge
+tool trust stop riftbench-bridge
+```
+
+`tool trust start` sends `tool-session-start` with the named operations
+and 1..15-minute TTL to the selected external Core. **Core v0.6.22
+is required**; the currently installed Core v0.6.21 intentionally does
+not support the new verbs. The Core requires explicit consent once,
+checks saved operations + signer identity, and retains trust only in
+memory. This is not a permanent always-allow policy; RAPP calls remain
+per-call consent and listed operations may still modify data (especially
+RiftBench `submit`). Stops and expiry revoke the session. The host
+contains no local trust cache or direct Binder path.
+
+This follow-up requires **two manual user builds**: GitHub RiftOS
+Host APK (the Riftos-builder workflow), and independent Core v0.6.22
+from `/D:/Workspace/RiftComponents/compile-core-v0622.json`.
+The external graphical Shell and RiftBench Android companion remain
+unchanged. Neither build has been triggered by the assistant.
+
 ## User authorization and scope
 User requested **Core or Shell upgrade** so tool calls to approved Generic Tools can be issued directly through RiftShell/MCP rather than manually through the Generic Tool Connections form. This is an explicitly authorized **host-owned native RiftShell** change, not an external selected Core or graphical Shell upgrade.
 

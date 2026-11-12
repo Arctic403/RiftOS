@@ -404,7 +404,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
                     "workspace [cd|info|ls|status|push]\n" +
                     "core status|shell-crash|sessions|surfaces|focus|apps|app-start|app-stop|alt-list|alt-attach|alt-render|alt-detach|alt-graphic-open|ipc-view   [CORE / ALT SHELL]\n" +
-                    "tool list | tool call <approved-id> </D:/Workspace/command.json> | tool call <approved-id> <provider-json>   [CORE CONSENT]\n" +
+                    "tool list | tool call <approved-id> <command.json|provider-json> | tool trust start|status|stop ...   [CORE CONSENT]\n" +
                     "riftcrash help|status|start|capture|latest|reset [package]   [LOCALHOST DIAGNOSTIC BRIDGE]\n" +
                     "Project-specific language/tool CLIs are not APK built-ins; use installed RAPPs/providers.",
                 cwd,
@@ -452,7 +452,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     .put("nativeCommands", JSONArray(listOf(
                         "help", "pwd", "cd", "home", "drives", "df", "sysinfo", "native", "uptime", "version", "ps", "kill", "apps", "permissions",
                         "ls", "tree", "stat", "cat", "head", "tail", "write", "touch", "mkdir", "cp", "mv", "rm", "zip", "unzip", "open", "browser", "workspace cd", "workspace info",
-                        "workspace ls", "workspace status", "workspace push", "tool list", "tool call", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "riftcrash"
+                        "workspace ls", "workspace status", "workspace push", "tool list", "tool call", "tool trust", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "riftcrash"
                     )))
                 ShellOutcome(info.toString(2), cwd, info)
             }
@@ -611,7 +611,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
      *   tool call <approved-id> {"schema":"provider/1","operation":"status"}
      */
     private fun genericToolCommand(raw: String, cwd: String): ShellOutcome {
-        val usage = "usage: tool list | tool call <approved-id> <command.json|full-provider-json>"
+        val usage = "usage: tool list | tool call <approved-id> <command.json|provider-json> | tool trust start|status|stop ..."
         require(raw.toByteArray(Charsets.UTF_8).size in 5..17_408) {
             "Native tool request is too large"
         }
@@ -622,6 +622,49 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "list" -> {
                 require(fields.size == 2) { usage }
                 request.put("operation", "tool-list")
+            }
+            "trust" -> {
+                // Explicit, time-bounded scope approval. Trust is owned
+                // exclusively by the selected Core, never by this CLI.
+                val pieces=raw.trim().split(Regex("\\s+"))
+                require(pieces.size in 4..6) {
+                    "usage: tool trust start <id> <ops.csv> <minutes> | tool trust status|stop <id>"
+                }
+                val action=pieces[2]
+                val key=pieces[3]
+                require(Regex("^[a-z][a-z0-9-]{1,39}$").matches(key)) {
+                    "Invalid approved tool ID"
+                }
+                request.put("id",key)
+                when(action) {
+                    "start" -> {
+                        require(pieces.size==6) {
+                            "usage: tool trust start <id> <ops.csv> <minutes>"
+                        }
+                        val granted=pieces[4].split(',')
+                        require(granted.size in 1..8 &&
+                            granted.size==granted.toSet().size &&
+                            granted.all { Regex("^[A-Za-z][A-Za-z0-9._-]{0,47}$").matches(it) }) {
+                            "Temporary trust operations must be unique approved operation names"
+                        }
+                        val minutes=pieces[5].toIntOrNull()
+                        require(minutes!=null && minutes in 1..15) {
+                            "Temporary trust may last only 1 to 15 minutes"
+                        }
+                        request.put("operation","tool-session-start")
+                            .put("operations",JSONArray(granted))
+                            .put("minutes",minutes)
+                    }
+                    "status" -> {
+                        require(pieces.size==4) { "usage: tool trust status <id>" }
+                        request.put("operation","tool-session-status")
+                    }
+                    "stop" -> {
+                        require(pieces.size==4) { "usage: tool trust stop <id>" }
+                        request.put("operation","tool-session-stop")
+                    }
+                    else -> error("usage: tool trust start|status|stop ...")
+                }
             }
             "call" -> {
                 require(fields.size == 4) { usage }

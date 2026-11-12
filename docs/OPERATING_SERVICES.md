@@ -26,6 +26,22 @@ DEX does NOT activate these native commands. Manual host APK build/sign/install
 is required. No changes are made to currently running processes by this
 source update. See [native shell tool-call checkpoint](NATIVE_GENERIC_TOOL_SHELL_CALLS_20261111.md).
 
+## Opt-in temporary Generic Tool trust
+
+The native host shell has source support for `tool trust start|status|stop`
+in addition to `tool list` and `tool call`. This is a *transport command*,
+not an APK-wide approval bypass. Independent external Core v0.6.22 is
+required: it prompts for one consent to trust named operations on exactly
+one saved signer-pinned Generic Tool for 1..15 minutes, keeps the lease
+process-local, and expires/revokes it on demand or configuration change.
+RAPP calls still use per-call consent, and no operation is presumed
+read-only (a provider may mutate data through `submit`).
+
+This Host and Core update remains unbuilt until explicitly compiled,
+verified, signed, and manually deployed by the user. See
+[NATIVE_GENERIC_TOOL_SHELL_CALLS_20261111.md](NATIVE_GENERIC_TOOL_SHELL_CALLS_20261111.md)
+and `/D:/Workspace/RiftComponents/CORE_V0622_GENERIC_TOOL_TEMP_TRUST_20261111.md`.
+
 ## Security boundary
 
 MCP does not bypass Android permissions, Accessibility opt-in, private-process identity, bounded file operations, tool consent, artifact qualification or explicit user installation. Workspace secrets, signing keys, package state and relay credentials must not be shipped in docs, printed in logs or included in project export.

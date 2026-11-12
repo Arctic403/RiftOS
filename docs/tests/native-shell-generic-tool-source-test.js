@@ -14,7 +14,9 @@ function verifyNativeGenericToolSource(shell, core, commands) {
   check('no Binder direct call in the new routing', !shell.slice(
     shell.indexOf('private fun genericToolCommand'), shell.indexOf('private fun cdCommand'))
     .includes('RiftHostExternalAppBinderV1'));
-  check('Core does per-operation UI consent', core.includes('approval(label, "tool.call."+key)'));
+  check('Core has UI consent fallback when no trust lease',
+    core.includes('approval(label, "tool.call."+key)') ||
+    core.includes('if (!trusted) approval(label,"tool.call."+key)'));
   check('Core checks saved allowed operations',
     core.includes('require(name in ops(item.getJSONArray("operations")))'));
   check('Core compares signer before every invocation',
@@ -81,6 +83,20 @@ function verifyNativeGenericToolSource(shell, core, commands) {
   ];
   yes.forEach(x=>check('accept '+x.slice(0,80),parse(x)));
   no.forEach(x=>check('reject '+x.slice(0,80),!parse(x)));
+  // v0.6.22 Core owns temporary, explicitly consented trust; host is only
+  // a narrow typed command front end. No direct Binder or automatic trust.
+  check('trust start CLI reaches selected Core',shell.includes('"tool-session-start"') &&
+    shell.includes('request.put("operation","tool-session-start")'));
+  check('trust status CLI exists',shell.includes('request.put("operation","tool-session-status")'));
+  check('trust stop CLI exists',shell.includes('request.put("operation","tool-session-stop")'));
+  check('trust duration restricted to 1..15 minutes',
+    shell.includes('minutes in 1..15'));
+  check('trust operation count capped at eight',
+    shell.includes('granted.size in 1..8'));
+  check('trust scope names unique and validated',
+    shell.includes('granted.size==granted.toSet().size'));
+  check('trust still forwards through Core',
+    shell.includes('RiftHostCoreComponents.externalAppConnections()'));
   return {passed:results.filter(x=>x.pass).length,failed:results.filter(x=>!x.pass).length,
     tests:results.length,failures:results.filter(x=>!x.pass),all:results};
 }
