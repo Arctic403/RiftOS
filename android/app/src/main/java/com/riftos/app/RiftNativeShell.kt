@@ -404,7 +404,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
                     "workspace [cd|info|ls|status|push]\n" +
                     "core status|shell-crash|sessions|surfaces|focus|apps|app-start|app-stop|alt-list|alt-attach|alt-render|alt-detach|alt-graphic-open|ipc-view   [CORE / ALT SHELL]\n" +
-                    "tool list | tool call <approved-id> <command.json|provider-json> | tool trust link|start|status|stop ...   [CORE CONSENT]\n" +
+                    "tool list | tool call <approved-id> <command.json|provider-json> | tool trust app|link|start|status|stop ...   [CORE CONSENT]\n" +
                     "riftcrash help|status|start|capture|latest|reset [package]   [LOCALHOST DIAGNOSTIC BRIDGE]\n" +
                     "Project-specific language/tool CLIs are not APK built-ins; use installed RAPPs/providers.",
                 cwd,
@@ -611,7 +611,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
      *   tool call <approved-id> {"schema":"provider/1","operation":"status"}
      */
     private fun genericToolCommand(raw: String, cwd: String): ShellOutcome {
-        val usage = "usage: tool list | tool call <approved-id> <command.json|provider-json> | tool trust link|start|status|stop ..."
+        val usage = "usage: tool list | tool call <approved-id> <command.json|provider-json> | tool trust app|link|start|status|stop ..."
         require(raw.toByteArray(Charsets.UTF_8).size in 5..17_408) {
             "Native tool request is too large"
         }
@@ -628,7 +628,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                 // exclusively by the selected Core, never by this CLI.
                 val pieces=raw.trim().split(Regex("\\s+"))
                 require(pieces.size in 4..6) {
-                    "usage: tool trust link <id> <ops.csv> | start <id> <ops.csv> <minutes> | status|stop <id>"
+                    "usage: tool trust app <id> | link <id> <ops.csv> | start <id> <ops.csv> <minutes> | status|stop <id>"
                 }
                 val action=pieces[2]
                 val key=pieces[3]
@@ -655,6 +655,15 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                             .put("operations",JSONArray(granted))
                             .put("minutes",minutes)
                     }
+                    "app" -> {
+                        require(pieces.size==4) {
+                            "usage: tool trust app <approved-id>"
+                        }
+                        // Only selected Core can show the user one explicit
+                        // app-scope consent and bind its grant to a live
+                        // foreground provider app-run identity.
+                        request.put("operation","tool-session-app-start")
+                    }
                     "link" -> {
                         require(pieces.size==5) {
                             "usage: tool trust link <id> <ops.csv>"
@@ -678,7 +687,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                         require(pieces.size==4) { "usage: tool trust stop <id>" }
                         request.put("operation","tool-session-stop")
                     }
-                    else -> error("usage: tool trust link|start|status|stop ...")
+                    else -> error("usage: tool trust app|link|start|status|stop ...")
                 }
             }
             "call" -> {

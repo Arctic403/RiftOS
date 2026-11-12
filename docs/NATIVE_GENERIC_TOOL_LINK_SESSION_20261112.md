@@ -32,3 +32,24 @@ mode remains intact and `tool trust stop` revokes both kinds of trust.
 
 Security: signer pinned, exact saved grant scope, Shell-only approval,
 RAPP tool calls remain individually consented, no arbitrary JS tool.
+
+## 2026-11-12 update — tool trust app <approved-id>
+
+The user observed that Android sometimes recreates Blockbench Mobile's
+WebView while switching back to RiftOS, causing a new editor `sessionId`
+and revoking the original connection-bound grant. The new native Shell
+command `tool trust app blockbench-mobile` requests a Core-managed
+`tool-session-app-start` approval. The command itself never grants
+permissions.
+
+Independent Core v0.6.24 (separate manual-build candidate) reads all
+previously approved operations from the saved signer-pinned registration,
+displays one explicit scope consent, and validates the provider's
+foreground-service `appRunId` on every subsequent trusted Shell call.
+The grant survives editor WebView recreation but is invalid after app-linked
+service stop, task removal, process death, force-stop, or Core restart.
+RAPP callers retain per-invocation consent.
+
+This is NOT Android device administrator/root access; it is an application-
+specific grant for exactly the saved Blockbench Binder tool operations.
+The external graphical Shell and older selected Core are unchanged.
