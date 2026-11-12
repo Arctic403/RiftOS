@@ -404,6 +404,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
                     "workspace [cd|info|ls|status|push]\n" +
                     "core status|shell-crash|sessions|surfaces|focus|apps|app-start|app-stop|alt-list|alt-attach|alt-render|alt-detach|alt-graphic-open|ipc-view   [CORE / ALT SHELL]\n" +
+                    "tool list | tool call <approved-id> </D:/Workspace/command.json> | tool call <approved-id> <provider-json>   [CORE CONSENT]\n" +
                     "riftcrash help|status|start|capture|latest|reset [package]   [LOCALHOST DIAGNOSTIC BRIDGE]\n" +
                     "Project-specific language/tool CLIs are not APK built-ins; use installed RAPPs/providers.",
                 cwd,
@@ -451,7 +452,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     .put("nativeCommands", JSONArray(listOf(
                         "help", "pwd", "cd", "home", "drives", "df", "sysinfo", "native", "uptime", "version", "ps", "kill", "apps", "permissions",
                         "ls", "tree", "stat", "cat", "head", "tail", "write", "touch", "mkdir", "cp", "mv", "rm", "zip", "unzip", "open", "browser", "workspace cd", "workspace info",
-                        "workspace ls", "workspace status", "workspace push", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "riftcrash"
+                        "workspace ls", "workspace status", "workspace push", "tool list", "tool call", "git", "chat", "devlab", "vortex", "vortex-agent", "riftos-agent", "riftllm-agent", "riftcrash"
                     )))
                 ShellOutcome(info.toString(2), cwd, info)
             }
@@ -485,6 +486,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
             "open" -> openCommand(cwd, args)
             "clear" -> ShellOutcome("", cwd, nativeResult("clear").put("clear", true))
             "workspace" -> workspaceCommand(cwd, args)
+            "tool" -> genericToolCommand(raw, cwd)
             "git" -> nativeGit.execute(args, cwd).let { ShellOutcome(it.output, cwd, it.result) }
             "chat" -> services.chat(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
             "devlab" -> services.devLab(args, cwd).let { ShellOutcome(it.output, cwd, it.value) }
@@ -594,6 +596,98 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
 
 
 
+
+    /**
+     * Native RiftShell's bounded Generic Tool front end.
+     *
+     * This intentionally uses the SELECTED Core's existing registry, signer
+     * pinning, operation allowlist and per-call interactive consent. It never
+     * constructs an Android Binder provider request or grants an operation
+     * directly. The approval UI may deny/time out when no Shell UI is present.
+     *
+     * Supported:
+     *   tool list
+     *   tool call <approved-id> /D:/Workspace/command.json
+     *   tool call <approved-id> {"schema":"provider/1","operation":"status"}
+     */
+    private fun genericToolCommand(raw: String, cwd: String): ShellOutcome {
+        val usage = "usage: tool list | tool call <approved-id> <command.json|full-provider-json>"
+        require(raw.toByteArray(Charsets.UTF_8).size in 5..17_408) {
+            "Native tool request is too large"
+        }
+        val fields = raw.trim().split(Regex("\\s+"), limit = 4)
+        require(fields.firstOrNull() == "tool" && fields.size >= 2) { usage }
+        val request = JSONObject().put("schema", "riftos.core.app-connection-request/1")
+        when (fields[1]) {
+            "list" -> {
+                require(fields.size == 2) { usage }
+                request.put("operation", "tool-list")
+            }
+            "call" -> {
+                require(fields.size == 4) { usage }
+                val id = fields[2]
+                require(Regex("^[a-z][a-z0-9-]{1,39}$").matches(id)) {
+                    "Invalid approved Generic Tool connection ID"
+                }
+                val arg = fields[3].trim()
+                val rawProvider = if (arg.startsWith("{")) {
+                    arg
+                } else {
+                    // Files are RiftFS virtual D: paths, not Android paths.
+                    // Keep the approved request file confined to user
+                    // workspace directories, never external app-private data.
+                    require(arg.length in 20..240 &&
+                        Regex("^/D:/(Workspace|Documents|Projects)/[A-Za-z0-9_./-]+\\.json$")
+                            .matches(arg) &&
+                        !arg.contains("//") &&
+                        arg.removePrefix("/D:/").split('/').none { it == "." || it == ".." }) {
+                        "Use a bounded .json file inside /D:/Workspace, /D:/Documents or /D:/Projects"
+                    }
+                    val input = resolveFile(arg)
+                    val rootName = arg.removePrefix("/D:/").substringBefore('/')
+                    val approvedRoot = resolveFile("/D:/$rootName")
+                    require(input.canonicalPath.startsWith(
+                        approvedRoot.canonicalPath + File.separator) &&
+                        input.isFile &&
+                        !java.nio.file.Files.isSymbolicLink(input.toPath()) &&
+                        input.length() in 2L..16_384L) {
+                        "Generic Tool request file missing, symlinked or oversized"
+                    }
+                    input.readText(Charsets.UTF_8)
+                }
+                require(rawProvider.toByteArray(Charsets.UTF_8).size in 2..16_384) {
+                    "Provider command JSON must be 2..16384 bytes"
+                }
+                val provider = JSONObject(rawProvider)
+                require(provider.optString("schema").isNotBlank() &&
+                    provider.has("operation") != provider.has("op")) {
+                    "Provider JSON requires schema and exactly one operation/op field"
+                }
+                require(provider.toString().toByteArray(Charsets.UTF_8).size <= 16_384) {
+                    "Normalized Generic Tool command exceeds provider size limit"
+                }
+                request.put("operation", "tool-call")
+                    .put("id", id).put("command", provider)
+            }
+            else -> error(usage)
+        }
+        require(request.toString().toByteArray(Charsets.UTF_8).size <= 24_576) {
+            "Core Generic Tool request exceeds IPC limit"
+        }
+        // Core remains the only owner of grants, signer identity and user consent.
+        // Unlike the graphical Shell's authenticated IPC call, native RiftShell
+        // already runs within the trusted Core host process.
+        val result = RiftHostCoreComponents.externalAppConnections()
+            .appConnectionRequest(appContext, request)
+        require(result.optString("schema") == "riftos.core.app-connection-result/1" &&
+            result.optBoolean("ok", false)) {
+            "Selected Core rejected Generic Tool request"
+        }
+        require(result.toString().toByteArray(Charsets.UTF_8).size <= 256 * 1024) {
+            "Core Generic Tool response exceeds native shell result limit"
+        }
+        return ShellOutcome(result.toString(2), cwd, result)
+    }
 
     private fun cdCommand(cwd: String, args: MutableList<String>): ShellOutcome {
         val target = resolveDisplay(cwd, args.firstOrNull() ?: "/D:/Users/Default")
