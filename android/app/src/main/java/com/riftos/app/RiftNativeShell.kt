@@ -404,7 +404,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                     "zip <from> <archive.zip>  unzip <archive.zip> <folder>  open <app-id>  browser [url]\n" +
                     "workspace [cd|info|ls|status|push]\n" +
                     "core status|shell-crash|sessions|surfaces|focus|apps|app-start|app-stop|alt-list|alt-attach|alt-render|alt-detach|alt-graphic-open|ipc-view   [CORE / ALT SHELL]\n" +
-                    "tool list | tool call <approved-id> <command.json|provider-json> | tool trust app|link|start|status|stop ...   [CORE CONSENT]\n" +
+                    "tool list | tool call <approved-id> <command.json|provider-json> | tool file import|export|status|cancel ... | tool trust ...   [CORE CONSENT]\n" +
                     "riftcrash help|status|start|capture|latest|reset [package]   [LOCALHOST DIAGNOSTIC BRIDGE]\n" +
                     "Project-specific language/tool CLIs are not APK built-ins; use installed RAPPs/providers.",
                 cwd,
@@ -611,7 +611,7 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
      *   tool call <approved-id> {"schema":"provider/1","operation":"status"}
      */
     private fun genericToolCommand(raw: String, cwd: String): ShellOutcome {
-        val usage = "usage: tool list | tool call <approved-id> <command.json|provider-json> | tool trust app|link|start|status|stop ..."
+        val usage = "usage: tool list | tool call <id> <command.json|provider-json> | tool file import|export|status|cancel ... | tool trust app|link|start|status|stop ..."
         require(raw.toByteArray(Charsets.UTF_8).size in 5..17_408) {
             "Native tool request is too large"
         }
@@ -688,6 +688,59 @@ class RiftNativeShell(context: Context) : RiftShellExecutor {
                         request.put("operation","tool-session-stop")
                     }
                     else -> error("usage: tool trust app|link|start|status|stop ...")
+                }
+            }
+            "file" -> {
+                // Native RiftShell now forwards provider-neutral binary transfers
+                // directly to the SELECTED Core. No editor UI automation, APK
+                // private-file access, or duplicate trust state in RiftShell.
+                val pieces = raw.trim().split(Regex("\\s+"))
+                require(pieces.size >= 3) {
+                    "usage: tool file import <id> <RiftFS-path> | export <id> <artifact> <RiftFS-path> | status | cancel"
+                }
+                fun checkedId(value: String): String = value.also {
+                    require(Regex("^[a-z][a-z0-9-]{1,39}$").matches(it)) {
+                        "Invalid approved tool ID"
+                    }
+                }
+                fun checkedPath(value: String): String = value.also {
+                    require(it.length in 16..512 &&
+                        Regex("^/D:/(Workspace|Projects|Documents|Downloads|Builds|Temp)/[A-Za-z0-9_./+()-]+$").matches(it) &&
+                        !it.contains("//") &&
+                        it.removePrefix("/D:/").split('/').none { segment ->
+                            segment == "." || segment == ".."
+                        }) { "Invalid public RiftFS file path" }
+                }
+                when (pieces[2]) {
+                    "import" -> {
+                        require(pieces.size == 5) {
+                            "usage: tool file import <approved-id> <RiftFS-source-file>"
+                        }
+                        request.put("operation", "tool-file-send")
+                            .put("id", checkedId(pieces[3]))
+                            .put("from", checkedPath(pieces[4]))
+                    }
+                    "export" -> {
+                        require(pieces.size == 6) {
+                            "usage: tool file export <approved-id> <artifact> <RiftFS-destination>"
+                        }
+                        require(Regex("^[a-z][a-z0-9-]{0,79}$").matches(pieces[4])) {
+                            "Invalid logical provider artifact"
+                        }
+                        request.put("operation", "tool-file-receive")
+                            .put("id", checkedId(pieces[3]))
+                            .put("artifact", pieces[4])
+                            .put("to", checkedPath(pieces[5]))
+                    }
+                    "status" -> {
+                        require(pieces.size == 3) { "usage: tool file status" }
+                        request.put("operation", "tool-file-status")
+                    }
+                    "cancel" -> {
+                        require(pieces.size == 3) { "usage: tool file cancel" }
+                        request.put("operation", "tool-file-cancel")
+                    }
+                    else -> error("usage: tool file import|export|status|cancel ...")
                 }
             }
             "call" -> {
